@@ -294,10 +294,17 @@ def filas_facturas(cerradas: list[dict], zona) -> list[dict]:
 
 
 async def async_escribir_facturas(
-    hass: HomeAssistant, estadistica_id: str, nombre: str, cerradas: list[dict], zona
+    hass: HomeAssistant,
+    estadistica_id: str,
+    nombre: str,
+    cerradas: list[dict],
+    zona,
+    *,
+    rehacer: bool = False,
 ) -> None:
     """Escribe (o reescribe) las horas de los periodos cerrados. No borra los anteriores que ya
-    no se guardan, para que el gráfico conserve toda la evolución."""
+    no se guardan, para que el gráfico conserve toda la evolución, salvo con `rehacer`: entonces
+    se borra entera y se escribe de nuevo (un periodo sustituido por otro con otras fechas)."""
     from homeassistant.components.recorder.models import StatisticMeanType
     from homeassistant.components.recorder.statistics import async_add_external_statistics
 
@@ -313,4 +320,8 @@ async def async_escribir_facturas(
         "mean_type": StatisticMeanType.ARITHMETIC,
         "has_sum": False,
     }
+    if rehacer:
+        from homeassistant.components.recorder import get_instance
+
+        get_instance(hass).async_clear_statistics([metadatos["statistic_id"]])
     async_add_external_statistics(hass, metadatos, filas)

@@ -92,6 +92,10 @@ STORE_VERSION = 1
 INTERVALO = timedelta(minutes=15)
 DIAS_HISTORIAL = 28
 MAX_CERRADAS = 13
+# Periodos anteriores a la primera factura conocida que se calculan con el consumo y los
+# precios guardados (para la gráfica de facturas y el comparador), por ciclo de actualización.
+MAX_CALCULADAS_POR_CICLO = 2
+DIAS_PRECIOS = 395  # algo menos que los que guarda el histórico de precios (400)
 MARGEN_POR_DEFECTO = Decimal(100)  # €/MWh (PCB − TEU) si aún no hay ningún precio
 ISSUE_SIN_FECHA = "falta_fecha_factura"
 ISSUE_CNMC = "factura_no_cuadra"
@@ -103,6 +107,12 @@ def corte_siguiente(inicio: date) -> date:
     """Corte previsto: el mismo día del mes siguiente (o el último día de ese mes)."""
     anio, mes = (inicio.year + 1, 1) if inicio.month == 12 else (inicio.year, inicio.month + 1)
     return date(anio, mes, min(inicio.day, calendar.monthrange(anio, mes)[1]))
+
+
+def corte_anterior(fin: date) -> date:
+    """Inicio del periodo que acaba en `fin`: el mismo día del mes anterior (o el último de ese mes)."""
+    anio, mes = (fin.year - 1, 12) if fin.month == 1 else (fin.year, fin.month - 1)
+    return date(anio, mes, min(fin.day, calendar.monthrange(anio, mes)[1]))
 
 
 def _inicio_local(dia: date) -> datetime:
@@ -426,6 +436,7 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         datos = await self._async_estimar(inicio, corte, ahora, cerrar=False)
         datos.anterior = self._anterior_de(inicio)
         await self._async_escribir_coste(datos)
+        await self._async_calcular_anteriores(ahora)
         await self._async_escribir_facturas()
         await async_revisar_panel(
             self.hass,
@@ -461,16 +472,75 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         """Estadística de la evolución de las facturas, si han cambiado los periodos cerrados."""
         cerradas = self.cerradas
         firma = [[c["inicio"], c["fin"], c["total"]] for c in cerradas]
-        if not cerradas or firma == self._estado.get("facturas_escritas"):
+        previa = self._estado.get("facturas_escritas") or []
+        if not cerradas or firma == previa:
             return
+        # Si ha desaparecido algún periodo (una factura real sustituye a la calculada o estimada
+        # con otras fechas), se rehace la estadística para que no quede su barra.
+        inicios = {c["inicio"] for c in cerradas}
+        rehacer = any(p[0] not in inicios and p[0] >= cerradas[0]["inicio"] for p in previa)
         try:
             await async_escribir_facturas(
-                self.hass, self.estadistica_id, self.subentrada.title, cerradas, REFERENCE_TZ
+                self.hass, self.estadistica_id, self.subentrada.title, cerradas, REFERENCE_TZ, rehacer=rehacer
             )
         except Exception:
             _LOGGER.exception("%s: no se pudo escribir la estadística de facturas", self.subentrada.title)
             return
         self._estado["facturas_escritas"] = firma
+        self._store.async_delay_save(lambda: self._estado, 5)
+
+    async def _async_calcular_anteriores(self, ahora: datetime) -> None:
+        """Calcula hacia atrás los periodos anteriores a la primera factura conocida.
+
+        Con el consumo de la fuente (medidor de HA o Datadis) y los precios guardados, un
+        periodo por mes (mismo día de corte). Quedan como «calculada»: no cuentan para el
+        arrastre del bono ni para la calibración, y una factura real del mismo periodo las
+        sustituye. Se para al primer periodo sin consumo o sin precios guardados y lo vuelve
+        a mirar al día siguiente (el consumo de Datadis llega con días de retraso); si faltan
+        precios porque el histórico aún se está llenando, en el siguiente ciclo.
+        """
+        if self._estado.get("calculadas_revisadas") == ahora.date().isoformat():
+            return
+        cerradas = self.cerradas
+        fin = date.fromisoformat(cerradas[0]["inicio"]) if cerradas else self._inicio_periodo()
+        if fin is None:
+            return
+        for _ in range(MAX_CALCULADAS_POR_CICLO):
+            inicio = corte_anterior(fin)
+            if len(self.cerradas) >= MAX_CERRADAS or inicio < ahora.date() - timedelta(days=DIAS_PRECIOS):
+                self._marcar_calculadas(ahora)
+                return
+            try:
+                datos = await self._async_estimar(inicio, fin, ahora, cerrar=True, arrastre=0)
+            except Exception:
+                self._marcar_calculadas(ahora)
+                return
+            horas = datos.horas_medidas
+            if not horas or datos.estimacion is None or datos.horas_sin_consumo > horas // 20:
+                self._marcar_calculadas(ahora)  # sin consumo de ese periodo
+                return
+            if datos.horas_sin_precio > horas // 50:
+                return  # el histórico de precios aún se está llenando
+            f = datos.estimacion.prevision
+            kwh = datos.estimacion.kwh_medidos
+            calculadas = self._estado.get("cerradas", [])
+            calculadas.append(
+                {
+                    "inicio": inicio.isoformat(),
+                    "fin": fin.isoformat(),
+                    "total": str(f.total),
+                    "kwh": {p: str(v.quantize(Decimal("0.001"))) for p, v in kwh.items()},
+                    "estado": "calculada",
+                    "consumo": int(sum(kwh.values(), Decimal(0)).quantize(Decimal(1))),
+                }
+            )
+            calculadas.sort(key=lambda c: c["fin"])
+            self._estado["cerradas"] = calculadas
+            self._store.async_delay_save(lambda: self._estado, 5)
+            fin = inicio
+
+    def _marcar_calculadas(self, ahora: datetime) -> None:
+        self._estado["calculadas_revisadas"] = ahora.date().isoformat()
         self._store.async_delay_save(lambda: self._estado, 5)
 
     def _coste_hoy_heredado(self) -> str | None:
@@ -699,6 +769,8 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         )
         cerradas.sort(key=lambda c: c["fin"])
         self._estado["cerradas"] = cerradas[-MAX_CERRADAS:]
+        # Si la factura se ha llevado por delante algún periodo calculado, se rellena el hueco.
+        self._estado.pop("calculadas_revisadas", None)
         actual = self._inicio_periodo()
         if actual is None or fin > actual:
             self._estado["corte_actual"] = fin.isoformat()
@@ -754,7 +826,14 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         )
 
     async def _async_estimar(
-        self, inicio: date, corte: date, ahora: datetime, *, cerrar: bool, sin_bono: bool = False
+        self,
+        inicio: date,
+        corte: date,
+        ahora: datetime,
+        *,
+        cerrar: bool,
+        sin_bono: bool = False,
+        arrastre: int | None = None,
     ) -> DatosFacturacion:
         desde = _inicio_local(inicio - timedelta(days=DIAS_HISTORIAL - 1)).astimezone(UTC)
         hasta_periodo = _inicio_local(corte + timedelta(days=1)).astimezone(UTC)
@@ -793,7 +872,8 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         while d <= corte:
             dias_valle[d] = self._valle(d)
             d += timedelta(days=1)
-        arrastre = self._arrastre(inicio)
+        if arrastre is None:
+            arrastre = self._arrastre(inicio)
         ajuste = self.ajuste()
         inicial, cambios = contratos_del_periodo(self.datos, inicio, corte)
         if sin_bono:  # el mismo periodo en el PVPC sin bono social (comparador, §8 bis)

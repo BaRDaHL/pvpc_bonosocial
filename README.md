@@ -185,6 +185,8 @@ La integración trae su propia tarjeta y la carga sola: no hay que instalar nada
 - las facturas, cada una con sus fechas: la del periodo anterior la del periodo en curso (lo gastado hasta hoy) y, si quieres (`prevision`), la estimada al cierre. Pueden ir bajo la gráfica, arriba (en pantallas estrechas pasan abajo solas) u ocultas;
 - si quieres, al pie, la gráfica de las últimas facturas cerradas, con su importe y una línea de tendencia.
 
+Al pulsar el icono se abre una ventana con la tarjeta completa (precio, mínimos y máximos, gráfica, facturas y gráfica de facturas), aunque la tarjeta del panel muestre solo una parte. Se desactiva con `ventana: false`.
+
 Todo se configura en el editor visual. En YAML:
 
 ```yaml
@@ -197,6 +199,7 @@ color_hoy: "#4269d0"               # leyenda, línea y triángulos de hoy (en el
 color_manana: "#f4bd4a"            # lo mismo para mañana
 bandas: true                    # punta y llano sombreados
 entity_injection: sensor.pvpc_bs_precio_excedentes   # opcional: precio de excedentes, en punteado
+ventana: true                   # al pulsar el icono, ventana con la tarjeta completa
 grafica_facturas: true          # gráfica de las últimas facturas al pie (por defecto, no)
 facturas_meses: "6"             # cuántas: 3, 5, 6, 9 o 12
 titulo_facturas: Facturas       # "" = sin título
@@ -234,7 +237,11 @@ Una factura que se solapa con otra ya introducida (por ejemplo, una rectificativ
 
 ### Evolución de las facturas
 
-Cada periodo cerrado (con la factura real o, si aún no la has introducido, la estimada) se guarda en la estadística `pvpc_bonosocial:facturas_<suministro>`: el importe de la factura, el primer día de su periodo. La tarjeta de la integración la pinta con `grafica_facturas: true`; si la quieres aparte, un **gráfico de estadísticas** en barras por mes (una barra por factura, con su importe real):
+Cada periodo cerrado (con la factura real o, si aún no la has introducido, la estimada) se guarda en la estadística `pvpc_bonosocial:facturas_<suministro>`: el importe de la factura, el primer día de su periodo.
+
+Los periodos **anteriores** a la primera factura que conoce la integración también salen: se **calculan con el consumo** que ya tengas guardado (del medidor de HA o de Datadis) y los precios de cada hora, hasta 12 periodos hacia atrás (mientras haya consumo y precios; los precios se guardan unos 400 días). En la tarjeta, la factura real va rellena y la calculada solo con el borde. Al introducir la factura real de un periodo, sustituye a la calculada. Las calculadas no cuentan para la calibración del medidor ni para el arrastre del bono social.
+
+La tarjeta de la integración la pinta con `grafica_facturas: true`; si la quieres aparte, un **gráfico de estadísticas** en barras por mes (una barra por factura, con su importe real):
 
 ```yaml
 type: statistics-graph
@@ -265,7 +272,7 @@ Opcional (rueda **⚙** del suministro → **Cambiar datos del suministro**, en 
 
 ## Comparar tarifas
 
-¿Te saldría más barata otra compañía? Con el botón **Comparar tarifas** de cada suministro (o el servicio `pvpc_bonosocial.comparar_tarifas`), la integración compara **lo que has pagado de verdad en los últimos 12 meses** (las facturas introducidas o, si faltan, las estimadas al cierre) con las ofertas del [comparador oficial de la CNMC](https://comparador.cnmc.gob.es/) para tu código postal, tu potencia y **tu consumo real en punta, llano y valle** (no el perfil medio que usa el formulario de la web).
+¿Te saldría más barata otra compañía? Con el botón **Comparar tarifas** de cada suministro (o el servicio `pvpc_bonosocial.comparar_tarifas`), la integración compara **lo que has pagado de verdad en los últimos 12 meses** (las facturas introducidas o, si faltan, las estimadas al cierre o las calculadas con el consumo) con las ofertas del [comparador oficial de la CNMC](https://comparador.cnmc.gob.es/) para tu código postal, tu potencia y **tu consumo real en punta, llano y valle** (no el perfil medio que usa el formulario de la web).
 
 - Necesita el **código postal** del suministro: **⚙ Reconfigurar → Cambiar datos del suministro**, en el último paso. Ahí también puedes activar una comparativa automática el día 2 de cada mes.
 - El resultado queda en el sensor `sensor.pvpc_bs_mejor_alternativa` (ahorro anual de la mejor oferta; en sus atributos, las 5 mejores con permanencia, servicios adicionales, vigencia y si son solo para nuevos clientes) y en una notificación con las 3 mejores. El servicio también puede mandarlo a Telegram o a cualquier notificación (`destino`).

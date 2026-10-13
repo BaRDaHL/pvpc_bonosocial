@@ -75,7 +75,7 @@ class FacturaActual(_Base):
     _attr_device_class = SensorDeviceClass.MONETARY
     _attr_native_unit_of_measurement = EUR
     _attr_suggested_display_precision = 2
-    _unrecorded_attributes = frozenset({"desglose", "kwh_medidos", "kwh_previstos"})
+    _unrecorded_attributes = frozenset({"desglose", "kwh_medidos", "kwh_previstos", "facturas"})
 
     @property
     def native_value(self) -> float | None:
@@ -107,6 +107,16 @@ class FacturaActual(_Base):
             },
             "horas_sin_consumo": self.d.horas_sin_consumo,
             "horas_sin_precio": self.d.horas_sin_precio,
+            # Periodos cerrados para la gráfica de facturas de la tarjeta: real = factura introducida.
+            "facturas": [
+                {
+                    "inicio": c["inicio"],
+                    "fin": c["fin"],
+                    "total": _euros(Decimal(c["total"])),
+                    "real": c.get("estado") == "conciliada",
+                }
+                for c in self.coordinator.cerradas
+            ],
         }
 
 

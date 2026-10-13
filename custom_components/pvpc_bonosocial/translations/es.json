@@ -356,6 +356,15 @@
         "completo": "Completo (como la notificación)",
         "breve": "Breve (lo pagado, la mejor oferta y el veredicto)"
       }
+    },
+    "formato_tabla": {
+      "options": {
+        "barras": "Barras de color (precio detrás)",
+        "precio_delante": "Precio delante, barras de color detrás",
+        "color_precio": "Color en el precio, barra fina detrás",
+        "barra_fija": "Barra de ancho fijo, precio alineado detrás",
+        "dos_columnas": "Dos columnas (00–11 h y 12–23 h)"
+      }
     }
   },
   "issues": {
@@ -595,13 +604,17 @@
             "incluir_consumo": "Incluir el consumo y el coste de hoy",
             "incluir_factura": "Incluir la factura en curso",
             "color_valle": "Color en los días valle",
-            "mostrar_periodo": "Indicar el periodo de cada hora (laborables)"
+            "mostrar_periodo": "Indicar el periodo de cada hora (laborables)",
+            "formato_tabla": "Formato de la tabla",
+            "resto_hoy": "Por la noche, incluir las horas que quedan de hoy"
           },
           "data_description": {
             "destino": "Cualquier entidad de notificación. Si es un chat de Telegram, el mensaje va con formato (columnas alineadas) y no hace falta escribir el ID del chat.",
             "manana_hora": "ESIOS publica los precios de mañana hacia las 20:20. Si aún no están, se reintenta cada 10 minutos hasta las 23:00.",
             "color_valle": "En fines de semana y festivos todo el día es valle: con «laborables», sus horas se colorean comparando con los 5 días laborables anteriores.",
-            "mostrar_periodo": "Tras la hora, 🔴 punta, 🟡 llano o 🟢 valle. En fines de semana y festivos todo el día es valle y no se indica."
+            "mostrar_periodo": "Tras la hora, P punta, L llano o V valle. En fines de semana y festivos todo el día es valle y no se indica.",
+            "formato_tabla": "Cómo se dibuja cada hora. En «Dos columnas» no caben las flechas frente a hoy.",
+            "resto_hoy": "Antes de las 24 horas de mañana, las que quedan de hoy para compararlas. Las flechas frente a hoy salen igual."
           }
         },
         "reconfigure": {
@@ -620,13 +633,17 @@
             "incluir_consumo": "Incluir el consumo y el coste de hoy",
             "incluir_factura": "Incluir la factura en curso",
             "color_valle": "Color en los días valle",
-            "mostrar_periodo": "Indicar el periodo de cada hora (laborables)"
+            "mostrar_periodo": "Indicar el periodo de cada hora (laborables)",
+            "formato_tabla": "Formato de la tabla",
+            "resto_hoy": "Por la noche, incluir las horas que quedan de hoy"
           },
           "data_description": {
             "destino": "Cualquier entidad de notificación. Si es un chat de Telegram, el mensaje va con formato (columnas alineadas) y no hace falta escribir el ID del chat.",
             "manana_hora": "ESIOS publica los precios de mañana hacia las 20:20. Si aún no están, se reintenta cada 10 minutos hasta las 23:00.",
             "color_valle": "En fines de semana y festivos todo el día es valle: con «laborables», sus horas se colorean comparando con los 5 días laborables anteriores.",
-            "mostrar_periodo": "Tras la hora, 🔴 punta, 🟡 llano o 🟢 valle. En fines de semana y festivos todo el día es valle y no se indica."
+            "mostrar_periodo": "Tras la hora, P punta, L llano o V valle. En fines de semana y festivos todo el día es valle y no se indica.",
+            "formato_tabla": "Cómo se dibuja cada hora. En «Dos columnas» no caben las flechas frente a hoy.",
+            "resto_hoy": "Antes de las 24 horas de mañana, las que quedan de hoy para compararlas. Las flechas frente a hoy salen igual."
           }
         }
       },

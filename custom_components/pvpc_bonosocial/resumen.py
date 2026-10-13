@@ -26,6 +26,14 @@ from datetime import date
 from decimal import ROUND_HALF_EVEN, Decimal
 
 COLORES = ("🟩", "🟨", "🟧", "🟥")
+BOLITAS = ("🟢", "🟡", "🟠", "🔴")  # el mismo color, junto al precio
+# Formatos de la tabla (opción del resumen):
+# - barras: barra de cuadrados del color del precio y el precio detrás (el del script original);
+# - precio_delante: el precio alineado delante y la barra de color detrás;
+# - color_precio: bolita del color y precio alineados delante, barra fina neutra detrás;
+# - barra_fija: barra neutra de ancho fijo (█ y ░) y la bolita y el precio alineados detrás;
+# - dos_columnas: bolita y precio, de 00 a 11 h a la izquierda y de 12 a 23 h a la derecha.
+FORMATOS_TABLA = ("barras", "precio_delante", "color_precio", "barra_fija", "dos_columnas")
 RELOJES = ("🕛", "🕐", "🕑", "🕒", "🕓", "🕔", "🕕", "🕖", "🕗", "🕘", "🕙", "🕚")
 MEDALLAS = ("🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣")
 UMBRAL_FLECHA = Decimal("0.005")  # €/kWh: por debajo, 🟰
@@ -85,6 +93,8 @@ class Opciones:
     color_valle: str = "laborables"  # «laborables» (DISENO §8.2) o «dia»
     markdown: bool = True  # bloque de código y negrita (Telegram); si no, texto plano
     mostrar_periodo: bool = True  # letra del periodo en los laborables
+    formato: str = "barras"  # uno de FORMATOS_TABLA
+    resto_hoy: bool = True  # por la noche, las horas que quedan de hoy antes de las de mañana
     idioma: str = "es"
     # Laborables anteriores para colorear los días valle, por día (los da quien llama).
     referencias: dict[date, Sequence[DiaPrecios]] = field(default_factory=dict)
@@ -160,12 +170,49 @@ def _con_periodo(dia: DiaPrecios, opciones: Opciones) -> bool:
 
 
 def _fila(
-    dia: DiaPrecios, i: int, color: str, escala: Decimal, t: dict, opciones: Opciones, marcas: str = ""
+    dia: DiaPrecios,
+    i: int,
+    color: str,
+    escala: Decimal,
+    t: dict,
+    opciones: Opciones,
+    marcas: str = "",
+    flecha: str = "",
 ) -> str:
     hora = dia.horas[i]
-    barra = color * _cuadrados(dia.precios[i], escala)
+    n = _cuadrados(dia.precios[i], escala)
     periodo = f" {t['periodos'].get(dia.periodos[i] or '', '·')}" if _con_periodo(dia, opciones) else ""
-    return f"{RELOJES[hora % 12]}{hora:02d}{periodo} {barra} {_num(dia.precios[i], 3, t['decimal'])}{marcas}"
+    cabeza = f"{RELOJES[hora % 12]}{hora:02d}{periodo}"
+    precio = _num(dia.precios[i], 3, t["decimal"]) + flecha  # la flecha, pegada al precio
+    bolita = BOLITAS[COLORES.index(color)]
+    if opciones.formato == "precio_delante":
+        return f"{cabeza} {precio} {color * n}{marcas}"
+    if opciones.formato == "color_precio":
+        return f"{cabeza} {bolita} {precio} {'█' * n}{marcas}"
+    if opciones.formato == "barra_fija":
+        n = min(n, 10)
+        return f"{cabeza} {'█' * n}{'░' * (10 - n)} {bolita} {precio}{marcas}"
+    if opciones.formato == "dos_columnas":
+        return f"{cabeza} {bolita} {precio}{marcas}"
+    return f"{cabeza} {color * n} {precio}{marcas}"
+
+
+def _marca_corta(dia: DiaPrecios, i: int, ahora: int | None = None) -> str:
+    """En dos columnas no cabe el texto: solo 🤑 (la más barata), 💸 (la más cara) o 👈 (ahora)."""
+    if i == ahora:
+        return " 👈"
+    if dia.precios[i] == min(dia.precios):
+        return " 🤑"
+    if dia.precios[i] == max(dia.precios):
+        return " 💸"
+    return ""
+
+
+def _dos_columnas(filas: list[str]) -> list[str]:
+    """Las 24 filas en 12: de 00 a 11 h a la izquierda y de 12 a 23 h a la derecha."""
+    mitad = (len(filas) + 1) // 2
+    izquierda, derecha = filas[:mitad], filas[mitad:]
+    return [f"{a} │ {derecha[k]}" if k < len(derecha) else a for k, a in enumerate(izquierda)]
 
 
 def _marcas_extremos(dia: DiaPrecios, i: int, t: dict[str, str]) -> str:
@@ -207,18 +254,26 @@ def texto_hoy(hoy: DiaPrecios | None, ahora: int, opciones: Opciones) -> Mensaje
         return Mensaje(t["titulo_hoy"], t["sin_datos"])
     color = colores(hoy, opciones)
     maximo = max(hoy.precios)
-    filas = [
-        _fila(
-            hoy,
-            i,
-            color[i],
-            maximo,
-            t,
-            opciones,
-            _marcas_extremos(hoy, i, t) + (t["ahora"] if i == ahora else ""),
+    if opciones.formato == "dos_columnas":
+        filas = _dos_columnas(
+            [
+                _fila(hoy, i, color[i], maximo, t, opciones, _marca_corta(hoy, i, ahora))
+                for i in range(len(hoy.precios))
+            ]
         )
-        for i in range(len(hoy.precios))
-    ]
+    else:
+        filas = [
+            _fila(
+                hoy,
+                i,
+                color[i],
+                maximo,
+                t,
+                opciones,
+                _marcas_extremos(hoy, i, t) + (t["ahora"] if i == ahora else ""),
+            )
+            for i in range(len(hoy.precios))
+        ]
     bloques = [
         _franjas(hoy, ahora, opciones.franjas_hoy, opciones.duracion, t["franjas"], sep),
     ]
@@ -243,17 +298,34 @@ def texto_manana(
     filas = []
     if comparar:
         color_hoy = colores(hoy, opciones)
-        filas += [_fila(hoy, i, color_hoy[i], maximo, t, opciones) for i in range(ahora, len(hoy.precios))]
-        filas.append(t["separador"])
+        if opciones.resto_hoy:
+            filas += [
+                _fila(hoy, i, color_hoy[i], maximo, t, opciones) for i in range(ahora, len(hoy.precios))
+            ]
+            filas.append(t["separador"])
     color = colores(manana, opciones)
     hoy_por_hora = dict(zip(hoy.horas, hoy.precios, strict=True)) if comparar else {}
-    for i, precio in enumerate(manana.precios):
-        marcas = ""
+
+    def flecha(i: int) -> str:
+        """🔺/🔻/🟰 frente a la misma hora de hoy; siempre justo a la derecha del precio."""
         anterior = hoy_por_hora.get(manana.horas[i])
-        if anterior is not None:
-            diferencia = precio - anterior
-            marcas = " 🔺" if diferencia > UMBRAL_FLECHA else " 🔻" if diferencia < -UMBRAL_FLECHA else " 🟰"
-        filas.append(_fila(manana, i, color[i], maximo, t, opciones, marcas + _marcas_extremos(manana, i, t)))
+        if anterior is None:
+            return ""
+        diferencia = manana.precios[i] - anterior
+        return " 🔺" if diferencia > UMBRAL_FLECHA else " 🔻" if diferencia < -UMBRAL_FLECHA else " 🟰"
+
+    if opciones.formato == "dos_columnas":
+        filas += _dos_columnas(
+            [
+                _fila(manana, i, color[i], maximo, t, opciones, _marca_corta(manana, i), flecha(i))
+                for i in range(len(manana.precios))
+            ]
+        )
+    else:
+        filas += [
+            _fila(manana, i, color[i], maximo, t, opciones, _marcas_extremos(manana, i, t), flecha(i))
+            for i in range(len(manana.precios))
+        ]
     # Debajo del bloque, en grupos separados por una línea en blanco: la media; el consumo y la
     # factura; las mejores franjas. Sin leyenda de los periodos: las letras se entienden solas.
     precios = []

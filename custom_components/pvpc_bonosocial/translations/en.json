@@ -356,6 +356,15 @@
         "completo": "Full (like the notification)",
         "breve": "Short (paid, best offer and verdict)"
       }
+    },
+    "formato_tabla": {
+      "options": {
+        "barras": "Colour bars (price after)",
+        "precio_delante": "Price first, colour bars after",
+        "color_precio": "Colour on the price, thin bar after",
+        "barra_fija": "Fixed-width bar, aligned price after",
+        "dos_columnas": "Two columns (00–11 h and 12–23 h)"
+      }
     }
   },
   "issues": {
@@ -595,13 +604,17 @@
             "incluir_consumo": "Include today's consumption and cost",
             "incluir_factura": "Include the current bill",
             "color_valle": "Colour on off-peak days",
-            "mostrar_periodo": "Show each hour's period (working days)"
+            "mostrar_periodo": "Show each hour's period (working days)",
+            "formato_tabla": "Table format",
+            "resto_hoy": "At night, include the remaining hours of today"
           },
           "data_description": {
             "destino": "Any notify entity. If it is a Telegram chat, the message is formatted (aligned columns) and you do not need to type the chat ID.",
             "manana_hora": "ESIOS publishes tomorrow's prices around 20:20. If they are not out yet, it retries every 10 minutes until 23:00.",
             "color_valle": "On weekends and holidays the whole day is off-peak: with \"working days\", its hours are coloured against the 5 previous working days.",
-            "mostrar_periodo": "After the hour, 🔴 peak, 🟡 standard or 🟢 off-peak. On weekends and holidays the whole day is off-peak and it is not shown."
+            "mostrar_periodo": "After the hour, P peak, S standard or O off-peak. On weekends and holidays the whole day is off-peak and it is not shown.",
+            "formato_tabla": "How each hour is drawn. «Two columns» has no room for the arrows against today.",
+            "resto_hoy": "Before tomorrow's 24 hours, the hours left today for comparison. The arrows against today are shown either way."
           }
         },
         "reconfigure": {
@@ -620,13 +633,17 @@
             "incluir_consumo": "Include today's consumption and cost",
             "incluir_factura": "Include the current bill",
             "color_valle": "Colour on off-peak days",
-            "mostrar_periodo": "Show each hour's period (working days)"
+            "mostrar_periodo": "Show each hour's period (working days)",
+            "formato_tabla": "Table format",
+            "resto_hoy": "At night, include the remaining hours of today"
           },
           "data_description": {
             "destino": "Any notify entity. If it is a Telegram chat, the message is formatted (aligned columns) and you do not need to type the chat ID.",
             "manana_hora": "ESIOS publishes tomorrow's prices around 20:20. If they are not out yet, it retries every 10 minutes until 23:00.",
             "color_valle": "On weekends and holidays the whole day is off-peak: with \"working days\", its hours are coloured against the 5 previous working days.",
-            "mostrar_periodo": "After the hour, 🔴 peak, 🟡 standard or 🟢 off-peak. On weekends and holidays the whole day is off-peak and it is not shown."
+            "mostrar_periodo": "After the hour, P peak, S standard or O off-peak. On weekends and holidays the whole day is off-peak and it is not shown.",
+            "formato_tabla": "How each hour is drawn. «Two columns» has no room for the arrows against today.",
+            "resto_hoy": "Before tomorrow's 24 hours, the hours left today for comparison. The arrows against today are shown either way."
           }
         }
       },

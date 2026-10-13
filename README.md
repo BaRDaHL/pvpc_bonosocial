@@ -216,7 +216,9 @@ Las tarjetas con `type: custom:pvpc-hourly-pricing-card` siguen funcionando. Si 
 
 ## Resumen de precios por Telegram
 
-Un mensaje por la mañana (07:00) con los precios de hoy y otro por la noche (21:05) con los de mañana comparados con hoy, como gráfico de barras hecho con emojis, con las horas más baratas y más caras, el periodo de cada hora en los laborables (🔴 punta, 🟡 llano, 🟢 valle), las mejores franjas de 3 horas y, si quieres, el consumo y el coste del día y la factura en curso.
+Un mensaje por la mañana (07:00) con los precios de hoy y otro por la noche (21:05) con los de mañana comparados con hoy, como gráfico de barras hecho con emojis, con las horas más baratas y más caras, el periodo de cada hora en los laborables (P punta, L llano, V valle; opcional), las mejores franjas de 3 horas y, si quieres, el consumo y el coste del día y la factura en curso.
+
+La tabla se puede dibujar de cinco formas (**Formato de la tabla**): barras de color con el precio detrás, el precio delante y las barras detrás, una bolita de color junto al precio con una barra fina, una barra de ancho fijo con el precio alineado detrás, o en dos columnas (de 00 a 11 h y de 12 a 23 h). Las flechas 🔺🔻🟰 frente a hoy van siempre junto al precio. Por la noche puedes quitar las horas que quedan de hoy y dejar solo las de mañana.
 
 En la integración, **Añadir resumen por notificación** y elige el destino: un chat de Telegram (la entidad de notificación que crea la integración de Telegram de HA; el ID del chat no hay que escribirlo) o cualquier otra notificación (la app del móvil, por ejemplo, en texto plano). Puedes añadir varios destinos. En fines de semana y festivos, en los que todo el día es valle, las horas se colorean comparando con los 5 días laborables anteriores (se puede cambiar).
 

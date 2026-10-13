@@ -31,6 +31,7 @@ from .const import (
     CONF_COLOR_VALLE,
     CONF_DESTINO,
     CONF_DURACION_FRANJA,
+    CONF_FORMATO_TABLA,
     CONF_FRANJAS_HOY,
     CONF_FRANJAS_MANANA,
     CONF_HOY_ACTIVO,
@@ -40,9 +41,11 @@ from .const import (
     CONF_MANANA_ACTIVO,
     CONF_MANANA_HORA,
     CONF_MOSTRAR_PERIODO,
+    CONF_RESTO_HOY,
     CONF_SUMINISTRO,
     SUBENTRY_SUMINISTRO,
 )
+from .resumen import FORMATOS_TABLA
 
 POR_DEFECTO: dict[str, Any] = {
     CONF_HOY_ACTIVO: True,
@@ -56,6 +59,8 @@ POR_DEFECTO: dict[str, Any] = {
     CONF_INCLUIR_FACTURA: False,
     CONF_COLOR_VALLE: "laborables",
     CONF_MOSTRAR_PERIODO: True,
+    CONF_FORMATO_TABLA: "barras",
+    CONF_RESTO_HOY: True,
 }
 
 
@@ -122,7 +127,15 @@ class ResumenSubentryFlow(ConfigSubentryFlow):
                 vol.Required(CONF_DURACION_FRANJA, default=actual[CONF_DURACION_FRANJA]): _numero(1, 6),
                 vol.Required(CONF_INCLUIR_CONSUMO, default=actual[CONF_INCLUIR_CONSUMO]): BooleanSelector(),
                 vol.Required(CONF_INCLUIR_FACTURA, default=actual[CONF_INCLUIR_FACTURA]): BooleanSelector(),
+                vol.Required(CONF_FORMATO_TABLA, default=actual[CONF_FORMATO_TABLA]): SelectSelector(
+                    SelectSelectorConfig(
+                        options=list(FORMATOS_TABLA),
+                        translation_key=CONF_FORMATO_TABLA,
+                        mode=SelectSelectorMode.DROPDOWN,
+                    )
+                ),
                 vol.Required(CONF_MOSTRAR_PERIODO, default=actual[CONF_MOSTRAR_PERIODO]): BooleanSelector(),
+                vol.Required(CONF_RESTO_HOY, default=actual[CONF_RESTO_HOY]): BooleanSelector(),
                 vol.Required(CONF_COLOR_VALLE, default=actual[CONF_COLOR_VALLE]): SelectSelector(
                     SelectSelectorConfig(
                         options=list(COLORES_VALLE),

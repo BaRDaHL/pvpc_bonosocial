@@ -443,12 +443,14 @@
             "alquiler_contador_eur_mes": "Alquiler del contador (€/mes)",
             "arrastre_inicial_kwh": "kWh con descuento acumulados (arrastre)",
             "codigo_postal": "Código postal (solo para comparar tarifas)",
-            "comparar_mensual": "Comparar tarifas cada mes"
+            "comparar_mensual": "Comparar tarifas cada mes",
+            "segunda_opinion_cnmc": "Segunda opinión de la CNMC para cada factura"
           },
           "data_description": {
             "arrastre_inicial_kwh": "Los kWh bonificables que te sobraron en los últimos 12 meses y que aún no has gastado. Si no lo sabes, deja 0: se corregirá al conciliar las facturas.",
             "codigo_postal": "Opcional. Solo se usa al comparar tarifas: se envían a la CNMC el código postal, las potencias y los kWh anuales por periodo, nada más.",
-            "comparar_mensual": "El día 2 de cada mes compara tus últimos 12 meses con las ofertas de la CNMC y deja una notificación. Necesita el código postal."
+            "comparar_mensual": "El día 2 de cada mes compara tus últimos 12 meses con las ofertas de la CNMC y deja una notificación. Necesita el código postal.",
+            "segunda_opinion_cnmc": "Al cerrar cada periodo, pide la misma factura al simulador oficial de la CNMC y la muestra junto a la nuestra. Se envían el consumo hora a hora del periodo, las potencias, el bono social y el código postal (sin CUPS). Necesita el código postal."
           }
         },
         "comprobacion": {

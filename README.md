@@ -126,6 +126,15 @@ Una factura que se solapa con otra ya introducida (por ejemplo, una rectificativ
 >
 > Si quieres que añada otra comercializadora de referencia (ver [Se buscan voluntarios](#se-buscan-voluntarios)), necesito **al menos de 3 a 5 facturas consecutivas en PDF** (el PDF original, no una foto ni un escaneo). Puedes tapar el nombre, la dirección, el CUPS y los números de contrato: lo que hace falta es la estructura de la factura y sus importes. No las subas a una incidencia pública: abre una incidencia indicando la comercializadora y te diré cómo enviarlas en privado.
 
+### Segunda opinión de la CNMC
+
+Opcional (**⚙ Reconfigurar → Cambiar datos del suministro**, en el último paso, con el código postal): cuando se cierra cada periodo, la integración pide **la misma factura al simulador oficial de la CNMC** ([facturaluz](https://comparador.cnmc.gob.es/facturaluz/inicio)) con tu consumo hora a hora, tus potencias y tu bono social, y la muestra junto a la nuestra: atributos `cnmc`, `cnmc_diferencia` y `cnmc_desglose` de `sensor.pvpc_bs_factura_anterior`, y en la tarjeta («· CNMC 131,66 €»).
+
+- Sirve para comprobar el cálculo con una fuente oficial e independiente. Con una factura real de 133,62 € y la curva del medidor de HA, la CNMC dio 131,66 €: la diferencia (1,5 %) es la misma que hay entre los kWh del medidor y los del contador.
+- La CNMC no aplica el **arrastre** de kWh con descuento de periodos anteriores, y calcula con la curva del medidor, no con la del contador: su importe puede diferir algo del real.
+- **Privacidad**: se envían el consumo hora a hora del periodo, las potencias, el tipo y la categoría del bono y el código postal. El CUPS no: va uno de ejemplo.
+- Se pide una vez por periodo (de madrugada; si la CNMC no responde, se reintenta al día siguiente).
+
 ## Comparar tarifas
 
 ¿Te saldría más barata otra compañía? Con el botón **Comparar tarifas** de cada suministro (o el servicio `pvpc_bonosocial.comparar_tarifas`), la integración compara **lo que has pagado de verdad en los últimos 12 meses** (las facturas introducidas o, si faltan, las estimadas al cierre) con las ofertas del [comparador oficial de la CNMC](https://comparador.cnmc.gob.es/) para tu código postal, tu potencia y **tu consumo real en punta, llano y valle** (no el perfil medio que usa el formulario de la web).
@@ -179,6 +188,7 @@ Revisado el 10-oct-2026, leyendo el código de cada una:
 | **PVPC + Bono Social** | ✅ (los de PVPC Next) | ✅ | Regla de la Circular 3/2020 y peajes publicados por ESIOS | Tarjeta, resumen y comparador de tarifas (CNMC) incluidos |
 | Integración oficial `pvpc_hourly_pricing` (`esios_api` 4.4.0) | ✅ | ❌ | Tablas fijas, 2027–2028 provisionales | |
 | [PVPC Next](https://github.com/privatecoder/ha-pvpc-next) 2.3.0 | ✅ | ❌ | Calculados | Base de la parte de precios de esta integración |
+| [Enchufado](https://github.com/Migux13/enchufado) 0.3 (revisada el 13-oct) | ✅ (ESIOS, con token propio) | Factura simulada por la CNMC, sin bono social | — | Consumo de Datadis; coste horario sin impuestos ni fijos |
 | [`Javisen/ha-pvpc-fixed`](https://github.com/Javisen/ha-pvpc-fixed) 1.8.0 y [`vtb77/ha-pvpc-alternative`](https://github.com/vtb77/ha-pvpc-alternative) 1.2.1 | ✅ | ❌ | Tablas manuales | Cuentan el **Viernes Santo** como valle todo el día, en contra de la Circular 3/2020 |
 
 ## Se buscan voluntarios
@@ -236,6 +246,10 @@ The integration ships and loads its own card (**Add card → PVPC + Bono Social*
 When the bill arrives, open the supply's **Reconfigure** menu (gear icon ⚙) and choose **Enter actual bill**. Upload the bill PDF and the integration reads the billing and issue dates, the kWh in P1, P2 and P3, the total and the discounted kWh; you only have to check them. Without the PDF, type the data by hand. The bill sets the real meter reading date, recalibrates the meter, corrects the social bonus balance and rewrites that period's cost in the Energy dashboard. The PDF is read locally and deleted afterwards.
 
 **Automatic PDF reading only works with bills from Comercializadora Regulada, Gas & Power (Naturgy)**, the only supplier I have bills from to test it. To add another regulated supplier I need **at least 3 to 5 consecutive bills as PDF** (the original PDF, not a photo or scan; personal data can be covered). Do not post them in a public issue: open an issue naming the supplier and I will tell you how to send them privately.
+
+### CNMC second opinion
+
+Optional (set it next to the postal code in **Reconfigure**): when each period closes, the same bill is requested from the official CNMC simulator with your hourly consumption, contracted power and social bonus, and shown next to ours (`cnmc` attributes of `sensor.pvpc_bs_factura_anterior`, and in the card). The CNMC does not apply the bonus carry-over and uses the HA meter curve, so small differences are expected. Hourly consumption, power, bonus type and postal code are sent; the CUPS is not (a sample one is used).
 
 ### Comparing tariffs
 

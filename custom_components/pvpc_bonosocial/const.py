@@ -46,6 +46,8 @@ CONF_ALQUILER = "alquiler_contador_eur_mes"
 CONF_ARRASTRE_INICIAL = "arrastre_inicial_kwh"
 CONF_CODIGO_POSTAL = "codigo_postal"  # solo para el comparador de tarifas (§8 bis)
 CONF_COMPARAR_MENSUAL = "comparar_mensual"
+# Segunda opinión de cada factura cerrada con el simulador de la CNMC (envía la curva horaria)
+CONF_SEGUNDA_OPINION = "segunda_opinion_cnmc"
 # Contratos anteriores del suministro (cambios a mitad de periodo, F7): lista de
 # {"hasta": último día con ese contrato, potencias, bono y categoría}
 CONF_CONTRATOS_ANTERIORES = "contratos_anteriores"

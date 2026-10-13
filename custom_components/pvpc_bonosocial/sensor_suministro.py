@@ -137,6 +137,13 @@ class FacturaAnterior(_Base):
         if a.get("estado") == "conciliada" and a.get("total_estimado"):
             out["estimada"] = float(Decimal(a["total_estimado"]))
             out["desviacion"] = float(Decimal(a["total_estimado"]) - Decimal(a["total"]))
+        if cnmc := a.get("cnmc"):
+            # Segunda opinión: la factura del mismo periodo según el simulador de la CNMC.
+            out["cnmc"] = cnmc["total"]
+            out["cnmc_diferencia"] = round(float(Decimal(a["total"])) - cnmc["total"], 2)
+            out["cnmc_desglose"] = cnmc.get("desglose")
+        elif a.get("cnmc_error"):
+            out["cnmc_error"] = a["cnmc_error"]
         return out
 
 

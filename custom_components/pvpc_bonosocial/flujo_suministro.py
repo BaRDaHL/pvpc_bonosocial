@@ -50,6 +50,7 @@ from .const import (
     CONF_IDS_HEREDADOS,
     CONF_POTENCIA_P1,
     CONF_POTENCIA_P2,
+    CONF_SEGUNDA_OPINION,
     CONF_SHELLY_CANAL,
     CONF_SHELLY_FRECUENCIA,
     CONF_SHELLY_IP,
@@ -259,6 +260,7 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
                     CONF_CODIGO_POSTAL: codigo_postal or None,
                     CONF_COMPARAR_MENSUAL: bool(user_input.get(CONF_COMPARAR_MENSUAL))
                     and bool(codigo_postal),
+                    CONF_SEGUNDA_OPINION: bool(user_input.get(CONF_SEGUNDA_OPINION)) and bool(codigo_postal),
                 }
             )
             self._datos.setdefault(CONF_IDS_HEREDADOS, {})
@@ -296,6 +298,7 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
                 vol.Optional(
                     CONF_COMPARAR_MENSUAL, default=bool(self._datos.get(CONF_COMPARAR_MENSUAL))
                 ): bool,
+                vol.Optional(CONF_SEGUNDA_OPINION, default=bool(self._datos.get(CONF_SEGUNDA_OPINION))): bool,
             }
         )
         return self.async_show_form(step_id="factura", data_schema=esquema, errors=errores)

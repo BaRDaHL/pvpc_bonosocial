@@ -29,11 +29,13 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
+from .cnmc import CnmcNoResponde
 from .comparativa import PeriodoPagado
 from .const import (
     CONF_ARRASTRE_INICIAL,
     CONF_BONO,
     CONF_CATEGORIA,
+    CONF_CODIGO_POSTAL,
     CONF_CONTRATOS_ANTERIORES,
     CONF_DIAS_EMISION,
     CONF_FIN_ULTIMA_FACTURA,
@@ -41,6 +43,7 @@ from .const import (
     CONF_IDS_HEREDADOS,
     CONF_POTENCIA_P1,
     CONF_POTENCIA_P2,
+    CONF_SEGUNDA_OPINION,
     CONF_SHELLY_CANAL,
     CONF_SHELLY_FRECUENCIA,
     CONF_SHELLY_IP,
@@ -75,6 +78,7 @@ from .shelly import (
     horas_completas,
     recortar,
 )
+from .simulador_cnmc import async_simular, periodo_curva
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -265,6 +269,56 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
             return consumo, 0
         ir.async_delete_issue(self.hass, DOMAIN, issue_id)
         return corregir(consumo, shelly)
+
+    # --- segunda opinión de la CNMC ---------------------------------------------------
+
+    @property
+    def usa_segunda_opinion(self) -> bool:
+        return bool(self.datos.get(CONF_SEGUNDA_OPINION)) and bool(self.datos.get(CONF_CODIGO_POSTAL))
+
+    async def async_segunda_opinion(self, *, forzar: bool = False) -> dict[str, Any] | None:
+        """Pide a la CNMC la factura del último periodo cerrado (una vez; `forzar` la repite).
+
+        Se guarda en el periodo («cnmc» o «cnmc_error») y sale en `sensor.*_factura_anterior`.
+        Un fallo no afecta a nada más.
+        """
+        c = self._anterior()
+        if not self.usa_segunda_opinion or c is None or (c.get("cnmc") and not forzar):
+            return c.get("cnmc") if c else None
+        inicio, fin = date.fromisoformat(c["inicio"]), date.fromisoformat(c["fin"])
+        desde, hasta = periodo_curva(inicio, fin, REFERENCE_TZ)
+        desde, hasta = desde.astimezone(UTC), hasta.astimezone(UTC)
+        consumo = await async_kwh_horarios(self.hass, self.datos[CONF_FUENTE], desde, hasta)
+        consumo, _ = self._corregir_con_shelly(consumo, desde, hasta)
+        horas = {t: v for t, v in consumo.items() if desde <= t < hasta}
+        contrato, _ = contratos_del_periodo(self.datos, inicio, fin)
+        try:
+            simulacion = await async_simular(
+                async_get_clientsession(self.hass),
+                horas=horas,
+                inicio=inicio,
+                potencia_p1_kw=contrato.potencia_p1_kw,
+                potencia_p2_kw=contrato.potencia_p2_kw,
+                codigo_postal=self.datos[CONF_CODIGO_POSTAL],
+                bono=contrato.bono,
+                categoria=self.datos.get(CONF_CATEGORIA),
+                zona=REFERENCE_TZ,
+            )
+        except CnmcNoResponde as exc:
+            _LOGGER.warning("%s: el simulador de la CNMC no responde (%s)", self.subentrada.title, exc)
+            c["cnmc_error"] = str(exc)[:200]
+            self._store.async_delay_save(lambda: self._estado, 5)
+            return None
+        c["cnmc"] = {
+            **simulacion.a_dict(),
+            "fecha": dt_util.utcnow().isoformat(),
+            "horas": len(horas),
+            "horas_periodo": int((hasta - desde).total_seconds()) // 3600,
+        }
+        c.pop("cnmc_error", None)
+        self._store.async_delay_save(lambda: self._estado, 5)
+        self.async_update_listeners()
+        return c["cnmc"]
 
     @property
     def estadistica_id(self) -> str:
@@ -549,6 +603,8 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
                 "consumo": sum(kwh.values()),
                 "bonificados": bonificados,
                 "total_estimado": previa.get("total_estimado") if previa else None,
+                # la segunda opinión de la CNMC no depende del importe real: se conserva
+                "cnmc": previa.get("cnmc") if previa and previa["inicio"] == inicio.isoformat() else None,
                 "kwh_medido_bruto": str(sum(consumo.values(), Decimal(0))),
                 "horas": horas if consumo else 0,
             }

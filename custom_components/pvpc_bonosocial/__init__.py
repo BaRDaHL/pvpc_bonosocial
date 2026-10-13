@@ -191,6 +191,8 @@ async def _async_preparar_suministros(
         coordinator.comparadores[subentry_id] = comparador
         if facturacion.usa_shelly:
             _programar_shelly(hass, entry, facturacion)
+        if facturacion.usa_segunda_opinion:
+            _programar_segunda_opinion(hass, entry, facturacion)
 
 
 async def _async_preparar_datadis(
@@ -207,6 +209,19 @@ async def _async_preparar_datadis(
         cuenta.async_set_updated_data(cuenta.resumen())
         coordinator.datadis[subentry_id] = cuenta
         entry.async_create_background_task(hass, cuenta.async_refresh(), f"{DOMAIN} Datadis {sub.title}")
+
+
+def _programar_segunda_opinion(
+    hass: HomeAssistant, entry: PVPCConfigEntry, facturacion: FacturacionSuministro
+) -> None:
+    """Factura del último periodo cerrado según la CNMC: al arrancar y cada día a las 04:10 si
+    falta (el periodo se cierra a medianoche; si la CNMC no responde, se reintenta al día siguiente)."""
+
+    async def _pedir(_ahora: datetime | None = None) -> None:
+        await facturacion.async_segunda_opinion()
+
+    entry.async_on_unload(async_track_time_change(hass, _pedir, hour=4, minute=10, second=0))
+    entry.async_create_background_task(hass, _pedir(), f"{DOMAIN} segunda opinión de la CNMC")
 
 
 def _programar_shelly(

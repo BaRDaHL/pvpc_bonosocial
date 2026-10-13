@@ -443,12 +443,14 @@
             "alquiler_contador_eur_mes": "Meter rental (€/month)",
             "arrastre_inicial_kwh": "Accumulated discounted kWh (carry-over)",
             "codigo_postal": "Postal code (only to compare tariffs)",
-            "comparar_mensual": "Compare tariffs every month"
+            "comparar_mensual": "Compare tariffs every month",
+            "segunda_opinion_cnmc": "Second opinion from the CNMC for each bill"
           },
           "data_description": {
             "arrastre_inicial_kwh": "The discounted kWh left over in the last 12 months that you have not used yet. If you do not know, leave 0: it is corrected when bills are reconciled.",
             "codigo_postal": "Optional. Only used to compare tariffs: the postal code, the contracted power and the yearly kWh per period are sent to the CNMC, nothing else.",
-            "comparar_mensual": "On the 2nd of every month, compares your last 12 months with the CNMC offers and leaves a notification. Needs the postal code."
+            "comparar_mensual": "On the 2nd of every month, compares your last 12 months with the CNMC offers and leaves a notification. Needs the postal code.",
+            "segunda_opinion_cnmc": "When each period closes, asks the official CNMC simulator for the same bill and shows it next to ours. Sends the period's hourly consumption, contracted power, social bonus and postcode (no CUPS). Needs the postcode."
           }
         },
         "comprobacion": {

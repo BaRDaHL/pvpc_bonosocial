@@ -259,6 +259,17 @@
       },
       "mejor_alternativa": {
         "name": "Best tariff alternative"
+      },
+      "comprobacion_factura": {
+        "name": "Bill check",
+        "state": {
+          "correcta": "Correct",
+          "no_cuadra": "Does not match",
+          "arrastre": "Not comparable (bonus carry-over)",
+          "sin_comprobar": "Not checked",
+          "cnmc_no_responde": "CNMC not responding",
+          "desactivada": "Disabled"
+        }
       }
     },
     "date": {
@@ -386,6 +397,10 @@
     "shelly_no_coincide": {
       "title": "The Shelly does not match HA in «{suministro}»",
       "description": "Over the last 7 days the Shelly ({ip}) and HA consumption differ by {diferencia} %. Nothing is corrected until they match again. Check that the IP and channel belong to the meter used by the supply."
+    },
+    "factura_no_cuadra": {
+      "title": "The «{suministro}» bill from {inicio} to {fin} does not match the CNMC",
+      "description": "Bill: €{factura}. The official CNMC simulator, with the same meter kWh, your contracted power and social bonus, computes €{cnmc} (€{diferencia} difference). Check the bill with your retailer. If you already did, ignore this notice: it will not appear again for this bill."
     }
   },
   "config_subentries": {
@@ -452,13 +467,13 @@
             "arrastre_inicial_kwh": "Accumulated discounted kWh (carry-over)",
             "codigo_postal": "Postal code (only to compare tariffs)",
             "comparar_mensual": "Compare tariffs every month",
-            "segunda_opinion_cnmc": "Second opinion from the CNMC for each bill"
+            "segunda_opinion_cnmc": "Check each bill with the CNMC"
           },
           "data_description": {
             "arrastre_inicial_kwh": "The discounted kWh left over in the last 12 months that you have not used yet. If you do not know, leave 0: it is corrected when bills are reconciled.",
             "codigo_postal": "Optional. Only used to compare tariffs: the postal code, the contracted power and the yearly kWh per period are sent to the CNMC, nothing else.",
             "comparar_mensual": "On the 2nd of every month, compares your last 12 months with the CNMC offers and leaves a notification. Needs the postal code.",
-            "segunda_opinion_cnmc": "When each period closes, asks the official CNMC simulator for the same bill and shows it next to ours. Sends the period's hourly consumption, contracted power, social bonus and postcode (no CUPS). Needs the postcode."
+            "segunda_opinion_cnmc": "When you enter an actual bill, the integration asks the official CNMC simulator for the same bill (with the bill's meter kWh) and warns you if it does not match. Hourly consumption, power, bonus type and postcode are sent (no CUPS). Needs the postcode."
           }
         },
         "comprobacion": {

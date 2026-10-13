@@ -39,7 +39,7 @@ HACS te avisa cuando hay versión nueva: **Descargar**, reinicia Home Assistant 
 2. Nombre, potencia contratada (P1 y P2), bono social y unidad de convivencia.
 3. Fuente de consumo: el sensor de energía de tu medidor (por ejemplo, el de un Shelly EM) o una estadística externa.
 4. Opcional: la IP de un Shelly EM de 1.ª generación para corregir las horas que falten.
-5. **Fecha de fin de la última factura** (la «Y» de «del X al Y» de tu última factura), días hasta la emisión y alquiler del contador. Opcional: código postal (comparador de tarifas y segunda opinión de la CNMC).
+5. **Fecha de fin de la última factura** (la «Y» de «del X al Y» de tu última factura), días hasta la emisión y alquiler del contador. Opcional: código postal (comparador de tarifas y comprobación de facturas con la CNMC).
 
 Para cambiar algo después (potencia, bono, código postal…): rueda dentada **⚙** del suministro → **Cambiar datos del suministro**.
 
@@ -59,6 +59,7 @@ En un panel: **Añadir tarjeta → PVPC + Bono Social**, o en YAML (todas las op
 type: custom:pvpc-bono-social-card
 entity: sensor.pvpc_bs_precio      # se detecta sola
 factura: below_chart               # below_chart, header o hidden
+prevision: true                    # línea «Factura estimada» (previsión al cierre)
 colores: fijo                      # fijo o precio (hoy coloreado por precio)
 color_hoy: "#4269d0"
 color_manana: "#f4bd4a"
@@ -95,9 +96,9 @@ La integración lo ofrece con un aviso en **Ajustes → Reparaciones** («Usar e
 
 Con el código postal puesto en el suministro, pulsa el botón **Comparar tarifas** (o la acción `pvpc_bonosocial.comparar_tarifas`). Para que se haga sola cada mes, activa **Comparar tarifas cada mes** en el suministro. Detalles en [Comparar tarifas](#comparar-tarifas).
 
-### Activar la segunda opinión de la CNMC
+### Comprobar cada factura con la CNMC
 
-Rueda dentada **⚙** del suministro → **Cambiar datos del suministro** → último paso: **Segunda opinión de la CNMC para cada factura** (necesita el código postal). Aparece al cerrarse cada periodo.
+Rueda dentada **⚙** del suministro → **Cambiar datos del suministro** → último paso: **Comprobar cada factura con la CNMC** (necesita el código postal). Desde entonces, cada factura que introduzcas se comprueba sola; el resultado, en `sensor.pvpc_bs_comprobacion_factura` y, si no cuadra, en Reparaciones.
 
 ### Conectar Datadis
 
@@ -161,6 +162,7 @@ Todas empiezan por `sensor.pvpc_bs_`.
 | `kwh_bonificables` | kWh con descuento que te quedan en el periodo |
 | `estado_datos` | Diagnóstico: precios, consumo, calibración, precisión, Shelly |
 | `date.pvpc_bs_fin_periodo` | Fecha de fin del periodo (editable si la COR lee otro día) |
+| `comprobacion_factura` | Si la última factura real cuadra con la que calcula la CNMC (ver [Comprobación de la factura con la CNMC](#comprobación-de-la-factura-con-la-cnmc)) |
 | `mejor_alternativa` | Ahorro anual de la mejor oferta de la CNMC frente a lo pagado (ver [Comparar tarifas](#comparar-tarifas)) |
 | `button.pvpc_bs_comparar_tarifas` | Lanza la comparativa de tarifas |
 
@@ -173,7 +175,7 @@ La integración trae su propia tarjeta y la carga sola: no hay que instalar nada
 - el precio actual con un icono € en verde, amarillo, naranja o rojo (o por periodo P1–P3), sin título salvo que se ponga uno (`title`);
 - el mínimo y el máximo de hoy (azul) y de mañana (amarillo), con su hora, como la tarjeta `pvpc-hourly-pricing-card`;
 - la gráfica de hoy y de mañana en escalones por hora, con triángulos en el mínimo y el máximo, la hora actual marcada y, en los laborables, las horas punta y llano sombreadas. Los colores se pueden cambiar, o colorear cada hora de hoy por su precio (la misma regla que el resumen de Telegram);
-- la factura del periodo en curso (lo gastado y, entre paréntesis, la previsión) y, debajo, la del periodo anterior con sus fechas (con la desviación si está conciliada y la segunda opinión de la CNMC si está activada). Puede ir bajo la gráfica, arriba (en pantallas estrechas pasa abajo sola) u oculta.
+- las facturas, cada una con sus fechas: la del periodo anterior la del periodo en curso (lo gastado hasta hoy) y, si quieres (`prevision`), la estimada al cierre. Pueden ir bajo la gráfica, arriba (en pantallas estrechas pasan abajo solas) u ocultas.
 
 Todo se configura en el editor visual. En YAML:
 
@@ -231,14 +233,15 @@ chart_type: bar
 
 Para ver las últimas 5, 6, 9 o 12 facturas, cambia `days_to_show` por 150, 180, 270 o 365 (o «Días a mostrar» en el editor visual de la tarjeta).
 
-### Segunda opinión de la CNMC
+### Comprobación de la factura con la CNMC
 
-Opcional (**⚙ Reconfigurar → Cambiar datos del suministro**, en el último paso, con el código postal): cuando se cierra cada periodo, la integración pide **la misma factura al simulador oficial de la CNMC** ([facturaluz](https://comparador.cnmc.gob.es/facturaluz/inicio)) con tu consumo hora a hora, tus potencias y tu bono social, y la muestra junto a la nuestra: atributos `cnmc`, `cnmc_diferencia` y `cnmc_desglose` de `sensor.pvpc_bs_factura_anterior`, y en la tarjeta («· CNMC 131,66 €»).
+Opcional (rueda **⚙** del suministro → **Cambiar datos del suministro**, en el último paso, con el código postal): **cada vez que introduces una factura real**, la integración pide la misma factura al simulador oficial de la CNMC ([facturaluz](https://comparador.cnmc.gob.es/facturaluz/inicio)) y la compara con lo que te cobraron.
 
-- Sirve para comprobar el cálculo con una fuente oficial e independiente. Con una factura real de 133,62 € y la curva del medidor de HA, la CNMC dio 131,66 €: la diferencia (1,5 %) es la misma que hay entre los kWh del medidor y los del contador.
-- La CNMC no aplica el **arrastre** de kWh con descuento de periodos anteriores, y calcula con la curva del medidor, no con la del contador: su importe puede diferir algo del real.
-- **Privacidad**: se envían el consumo hora a hora del periodo, las potencias, el tipo y la categoría del bono y el código postal. El CUPS no: va uno de ejemplo.
-- Se pide una vez por periodo (de madrugada; si la CNMC no responde, se reintenta al día siguiente).
+- La curva horaria del medidor se **ajusta a los kWh del contador** de la factura en punta, llano y valle: la CNMC calcula con la misma energía que la comercializadora, así que una diferencia es de la factura, no del medidor. Con tu potencia, tu bono y tu código postal.
+- El resultado va al sensor `sensor.pvpc_bs_comprobacion_factura`: *correcta* (hasta 0,10 € de diferencia), *no cuadra*, *no comparable* (la CNMC no aplica el arrastre de kWh con descuento de periodos anteriores), *sin comprobar* o *la CNMC no responde*. En sus atributos, lo facturado, lo que calcula la CNMC, la diferencia y el desglose.
+- Si **no cuadra**, sale un aviso en **Reparaciones**. Si lo ignoras, no vuelve a salir para esa factura.
+- Se hace **una vez por factura** (si la CNMC no responde, se reintenta de madrugada).
+- **Privacidad**: se envían, solo para esa factura, el consumo de cada hora del periodo, las potencias, el tipo y la categoría del bono y el código postal. El CUPS no: va uno de ejemplo.
 
 ## Comparar tarifas
 
@@ -361,9 +364,9 @@ When the bill arrives, open the supply's **Reconfigure** menu (gear icon ⚙) an
 
 **Automatic PDF reading only works with bills from Comercializadora Regulada, Gas & Power (Naturgy)**, the only supplier I have bills from to test it. To add another regulated supplier I need **at least 3 to 5 consecutive bills as PDF** (the original PDF, not a photo or scan; personal data can be covered). Do not post them in a public issue: open an issue naming the supplier and I will tell you how to send them privately.
 
-### CNMC second opinion
+### Bill check with the CNMC
 
-Optional (set it next to the postal code in **Reconfigure**): when each period closes, the same bill is requested from the official CNMC simulator with your hourly consumption, contracted power and social bonus, and shown next to ours (`cnmc` attributes of `sensor.pvpc_bs_factura_anterior`, and in the card). The CNMC does not apply the bonus carry-over and uses the HA meter curve, so small differences are expected. Hourly consumption, power, bonus type and postal code are sent; the CUPS is not (a sample one is used).
+Optional (set it next to the postal code in **Reconfigure**): every time you enter an actual bill, the same bill is requested once from the official CNMC simulator, with the hourly curve scaled to the bill's meter kWh, and compared with what you were charged. Result in `sensor.pvpc_bs_comprobacion_factura`; if it does not match, a Repairs notice (ignore it and it will not come back for that bill). Hourly consumption, power, bonus type and postal code are sent; the CUPS is not (a sample one is used).
 
 ### Comparing tariffs
 

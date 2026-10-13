@@ -137,13 +137,47 @@ class FacturaAnterior(_Base):
         if a.get("estado") == "conciliada" and a.get("total_estimado"):
             out["estimada"] = float(Decimal(a["total_estimado"]))
             out["desviacion"] = float(Decimal(a["total_estimado"]) - Decimal(a["total"]))
-        if cnmc := a.get("cnmc"):
-            # Segunda opinión: la factura del mismo periodo según el simulador de la CNMC.
-            out["cnmc"] = cnmc["total"]
-            out["cnmc_diferencia"] = round(float(Decimal(a["total"])) - cnmc["total"], 2)
-            out["cnmc_desglose"] = cnmc.get("desglose")
-        elif a.get("cnmc_error"):
-            out["cnmc_error"] = a["cnmc_error"]
+        return out
+
+
+class ComprobacionFactura(_Base):
+    """Si la última factura real cuadra con la que calcula el simulador de la CNMC."""
+
+    clave = "comprobacion_factura"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = ["correcta", "no_cuadra", "arrastre", "sin_comprobar", "cnmc_no_responde", "desactivada"]  # noqa: RUF012
+
+    @property
+    def available(self) -> bool:
+        return super(_Base, self).available and self.coordinator.data is not None
+
+    @property
+    def native_value(self) -> str:
+        if not self.coordinator.usa_segunda_opinion:
+            return "desactivada"
+        c = self.coordinator.ultima_conciliada()
+        if c is None:
+            return "sin_comprobar"
+        if c.get("cnmc"):
+            return c["cnmc"]["estado"]
+        return "cnmc_no_responde" if c.get("cnmc_error") else "sin_comprobar"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        c = self.coordinator.ultima_conciliada()
+        if c is None:
+            return {}
+        out: dict[str, Any] = {"inicio": c["inicio"], "fin": c["fin"], "factura": float(Decimal(c["total"]))}
+        if cnmc := c.get("cnmc"):
+            out |= {
+                "cnmc": cnmc["total"],
+                "diferencia": cnmc.get("diferencia"),
+                "desglose_cnmc": cnmc.get("desglose"),
+                "kwh_contador": c.get("kwh"),
+                "comprobada": cnmc.get("fecha"),
+            }
+        elif c.get("cnmc_error"):
+            out["error"] = c["cnmc_error"]
         return out
 
 
@@ -258,7 +292,15 @@ class EstadoDatos(_Base):
         }
 
 
-TIPOS = (FacturaActual, FacturaAnterior, CosteHoy, PrecioReal, KwhBonificables, EstadoDatos)
+TIPOS = (
+    FacturaActual,
+    FacturaAnterior,
+    CosteHoy,
+    PrecioReal,
+    KwhBonificables,
+    EstadoDatos,
+    ComprobacionFactura,
+)
 CLAVES = tuple(t.clave for t in TIPOS)
 
 

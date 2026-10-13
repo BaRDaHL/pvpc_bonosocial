@@ -215,11 +215,11 @@ async def _async_preparar_datadis(
 def _programar_segunda_opinion(
     hass: HomeAssistant, entry: PVPCConfigEntry, facturacion: FacturacionSuministro
 ) -> None:
-    """Factura del último periodo cerrado según la CNMC: al arrancar y cada día a las 04:10 si
-    falta (el periodo se cierra a medianoche; si la CNMC no responde, se reintenta al día siguiente)."""
+    """Comprobación de la última factura real con la CNMC: al subirla (desde la conciliación), al
+    arrancar si falta y cada día a las 04:10 si la CNMC no respondió."""
 
     async def _pedir(_ahora: datetime | None = None) -> None:
-        await facturacion.async_segunda_opinion()
+        await facturacion.async_comprobar_factura()
 
     entry.async_on_unload(async_track_time_change(hass, _pedir, hour=4, minute=10, second=0))
     entry.async_create_background_task(hass, _pedir(), f"{DOMAIN} segunda opinión de la CNMC")

@@ -94,6 +94,8 @@ DIAS_HISTORIAL = 28
 MAX_CERRADAS = 13
 MARGEN_POR_DEFECTO = Decimal(100)  # €/MWh (PCB − TEU) si aún no hay ningún precio
 ISSUE_SIN_FECHA = "falta_fecha_factura"
+ISSUE_CNMC = "factura_no_cuadra"
+TOLERANCIA_CNMC = Decimal("0.10")  # € de diferencia que se dan por buenos (redondeos)
 ISSUE_SHELLY = "shelly_no_coincide"
 
 
@@ -276,19 +278,26 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         ir.async_delete_issue(self.hass, DOMAIN, issue_id)
         return corregir(consumo, shelly)
 
-    # --- segunda opinión de la CNMC ---------------------------------------------------
+    # --- comprobación de la factura con la CNMC ------------------------------------------
 
     @property
     def usa_segunda_opinion(self) -> bool:
         return bool(self.datos.get(CONF_SEGUNDA_OPINION)) and bool(self.datos.get(CONF_CODIGO_POSTAL))
 
-    async def async_segunda_opinion(self, *, forzar: bool = False) -> dict[str, Any] | None:
-        """Pide a la CNMC la factura del último periodo cerrado (una vez; `forzar` la repite).
+    def ultima_conciliada(self) -> dict[str, Any] | None:
+        """La factura real introducida más reciente (la que se comprueba con la CNMC)."""
+        return next((c for c in reversed(self.cerradas) if c.get("estado") == "conciliada"), None)
 
-        Se guarda en el periodo («cnmc» o «cnmc_error») y sale en `sensor.*_factura_anterior`.
-        Un fallo no afecta a nada más.
+    async def async_comprobar_factura(self, *, forzar: bool = False) -> dict[str, Any] | None:
+        """Comprueba con el simulador de la CNMC la última factura real (una vez; `forzar` la repite).
+
+        La curva horaria del medidor se ajusta a los kWh del contador de la factura en cada
+        periodo (P1, P2, P3): la CNMC calcula con la misma energía que la comercializadora, así
+        que la diferencia es de la factura, no del medidor. El resultado se guarda en el periodo
+        («cnmc» o «cnmc_error»), sale en `sensor.*_comprobacion_factura` y, si no cuadra, en
+        Reparaciones (un aviso por factura, que se puede ignorar).
         """
-        c = self._anterior()
+        c = self.ultima_conciliada()
         if not self.usa_segunda_opinion or c is None or (c.get("cnmc") and not forzar):
             return c.get("cnmc") if c else None
         inicio, fin = date.fromisoformat(c["inicio"]), date.fromisoformat(c["fin"])
@@ -296,7 +305,9 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         desde, hasta = desde.astimezone(UTC), hasta.astimezone(UTC)
         consumo = await async_kwh_horarios(self.hass, self.datos[CONF_FUENTE], desde, hasta)
         consumo, _ = self._corregir_con_shelly(consumo, desde, hasta)
-        horas = {t: v for t, v in consumo.items() if desde <= t < hasta}
+        horas = self._ajustar_al_contador(
+            {t: v for t, v in consumo.items() if desde <= t < hasta}, c.get("kwh") or {}
+        )
         contrato, _ = contratos_del_periodo(self.datos, inicio, fin)
         try:
             simulacion = await async_simular(
@@ -314,17 +325,66 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
             _LOGGER.warning("%s: el simulador de la CNMC no responde (%s)", self.subentrada.title, exc)
             c["cnmc_error"] = str(exc)[:200]
             self._store.async_delay_save(lambda: self._estado, 5)
+            self.async_update_listeners()
             return None
+        diferencia = (Decimal(c["total"]) - simulacion.total).quantize(Decimal("0.01"))
+        # La CNMC no aplica el saldo de kWh con descuento de periodos anteriores (arrastre).
+        con_arrastre = (c.get("bonificados") or 0) > (c.get("prorrata") or 0)
+        if abs(diferencia) <= TOLERANCIA_CNMC:
+            estado = "correcta"
+        else:
+            estado = "arrastre" if con_arrastre else "no_cuadra"
         c["cnmc"] = {
             **simulacion.a_dict(),
+            "diferencia": float(diferencia),
+            "estado": estado,
             "fecha": dt_util.utcnow().isoformat(),
             "horas": len(horas),
             "horas_periodo": int((hasta - desde).total_seconds()) // 3600,
         }
         c.pop("cnmc_error", None)
         self._store.async_delay_save(lambda: self._estado, 5)
+        self._avisar_cnmc(c)
         self.async_update_listeners()
         return c["cnmc"]
+
+    def _ajustar_al_contador(
+        self, horas: dict[datetime, Decimal], kwh_factura: dict[str, Any]
+    ) -> dict[datetime, Decimal]:
+        """Escala las horas de cada periodo P1/P2/P3 para que sumen los kWh del contador."""
+        if not kwh_factura:
+            return horas
+        margen = self._margen_medio()
+        periodo = {t: self._precio(t, t.astimezone(REFERENCE_TZ), margen)[0] for t in horas}
+        medido = {p: sum((v for t, v in horas.items() if periodo[t] == p), Decimal(0)) for p in kwh_factura}
+        factor = {
+            p: Decimal(str(kwh_factura[p])) / medido[p] if medido[p] > 0 else Decimal(1) for p in kwh_factura
+        }
+        return {t: v * factor.get(periodo[t], Decimal(1)) for t, v in horas.items()}
+
+    def _avisar_cnmc(self, c: dict[str, Any]) -> None:
+        issue_id = f"{ISSUE_CNMC}_{self.subentrada.subentry_id}_{c['fin']}"
+        cnmc = c.get("cnmc") or {}
+        if cnmc.get("estado") != "no_cuadra":
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+            return
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            issue_id,
+            is_fixable=False,
+            is_persistent=True,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key=ISSUE_CNMC,
+            translation_placeholders={
+                "suministro": self.subentrada.title,
+                "inicio": date.fromisoformat(c["inicio"]).strftime("%d/%m/%Y"),
+                "fin": date.fromisoformat(c["fin"]).strftime("%d/%m/%Y"),
+                "factura": f"{Decimal(c['total']):.2f}".replace(".", ","),
+                "cnmc": f"{cnmc['total']:.2f}".replace(".", ","),
+                "diferencia": f"{abs(cnmc['diferencia']):.2f}".replace(".", ","),
+            },
+        )
 
     @property
     def estadistica_id(self) -> str:
@@ -633,8 +693,6 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
                 "consumo": sum(kwh.values()),
                 "bonificados": bonificados,
                 "total_estimado": previa.get("total_estimado") if previa else None,
-                # la segunda opinión de la CNMC no depende del importe real: se conserva
-                "cnmc": previa.get("cnmc") if previa and previa["inicio"] == inicio.isoformat() else None,
                 "kwh_medido_bruto": str(sum(consumo.values(), Decimal(0))),
                 "horas": horas if consumo else 0,
             }
@@ -650,6 +708,11 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         await self._async_reescribir_periodo(desde, hasta, consumo, total)
         self._escrito = None
         await self.async_request_refresh()
+        if self.usa_segunda_opinion:
+            # Comprobación de la factura recién introducida con el simulador de la CNMC
+            self.hass.async_create_background_task(
+                self.async_comprobar_factura(forzar=True), f"{DOMAIN} comprobación CNMC"
+            )
 
     async def _async_reescribir_periodo(
         self, desde: datetime, hasta: datetime, consumo: dict[datetime, Decimal], total: Decimal

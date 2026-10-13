@@ -84,9 +84,12 @@ class SimulacionCnmc:
 def curva_csv(horas: Mapping[datetime, Decimal], zona) -> str:
     """CSV de la curva horaria (hora local 1–24, kWh con coma), con el CUPS de ejemplo."""
     lineas = ["CUPS;Fecha;Hora;Consumo;Metodo_obtencion\r\n"]
+    resto = Decimal(0)  # redondeo a Wh arrastrado, para que el total no pierda kWh
     for t in sorted(horas):
         local = t.astimezone(zona)
-        kwh = f"{horas[t]:.3f}".replace(".", ",")
+        valor = (Decimal(horas[t]) + resto).quantize(Decimal("0.001"))
+        resto += Decimal(horas[t]) - valor
+        kwh = f"{max(valor, Decimal(0)):.3f}".replace(".", ",")
         lineas.append(f"{CUPS_EJEMPLO};{local:%d/%m/%Y};{local.hour + 1};{kwh};R\r\n")
     return "".join(lineas)
 

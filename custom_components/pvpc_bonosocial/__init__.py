@@ -52,6 +52,7 @@ from .prices.aiopvpc.const import KEY_ADJUSTMENT
 from .prices.coordinator import ElecPricesDataUpdateCoordinator, PVPCConfigEntry, zona_de_tarifa
 from .prices.historico import HistoricoPrecios
 from .servicios import registrar as registrar_servicios
+from .tarjeta import async_quitar as async_quitar_tarjeta
 from .tarjeta import async_registrar as async_registrar_tarjeta
 
 _LOGGER = logging.getLogger(__name__)
@@ -291,6 +292,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: PVPCConfigEntry) -> boo
 async def async_remove_entry(hass: HomeAssistant, entry: PVPCConfigEntry) -> None:
     """Borra el histórico de precios y los datos de los suministros al eliminar la integración."""
     await HistoricoPrecios(hass, zona_de_tarifa(entry.data[ATTR_TARIFF]), None).async_borrar()
+    if not [e for e in hass.config_entries.async_entries(DOMAIN) if e.entry_id != entry.entry_id]:
+        try:
+            await async_quitar_tarjeta(hass)
+        except Exception:
+            _LOGGER.exception("No se pudo quitar el recurso de la tarjeta")
     for subentry_id in entry.subentries:
         await Store(hass, 1, f"{DOMAIN}.suministro_{subentry_id}").async_remove()
         await Store(hass, 1, f"{DOMAIN}.datadis_{subentry_id}").async_remove()

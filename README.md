@@ -58,13 +58,13 @@ En un panel: **Añadir tarjeta → PVPC + Bono Social**, o en YAML (todas las op
 ```yaml
 type: custom:pvpc-bono-social-card
 entity: sensor.pvpc_bs_precio      # se detecta sola
-factura: below_chart               # below_chart, header o hidden
+factura: header                    # header (por defecto), below_chart o hidden
 prevision: true                    # línea «Factura estimada» (previsión al cierre)
 colores: fijo                      # fijo o precio (hoy coloreado por precio)
 color_hoy: "#4269d0"
 color_manana: "#f4bd4a"
 bandas: true                       # punta y llano sombreados
-icon_color: price                  # price o period
+icon_color: price                  # price, period o fijo
 ```
 
 ### Añadir la tarjeta de facturas (evolución)
@@ -73,13 +73,17 @@ Una barra por factura con su importe real. **Añadir tarjeta → Gráfico de est
 
 ```yaml
 type: statistics-graph
-title: Facturas de la luz
+title: Facturas
 entities:
   - pvpc_bonosocial:facturas_casa   # «casa» = nombre del suministro al crearlo
-stat_types: [mean]
+stat_types:
+  - max
 period: month
-days_to_show: 365                   # 150, 180, 270 o 365 = últimas 5, 6, 9 o 12 facturas
+days_to_show: 180                   # 150, 180, 270 o 365 = últimas 5, 6, 9 o 12 facturas
 chart_type: bar
+hide_legend: true
+grid_options:
+  columns: full
 ```
 
 El identificador exacto aparece al escribir «facturas» en el selector de entidades del editor de la tarjeta.
@@ -172,7 +176,7 @@ Además, cada suministro escribe la estadística `pvpc_bonosocial:coste_<suminis
 
 La integración trae su propia tarjeta y la carga sola: no hay que instalar nada aparte ni añadir recursos. En un panel, **Añadir tarjeta → PVPC + Bono Social**. Muestra:
 
-- el precio actual con un icono € en verde, amarillo, naranja o rojo (o por periodo P1–P3), sin título salvo que se ponga uno (`title`);
+- el precio actual con el icono de la integración (la torre con €) en verde, amarillo, naranja o rojo según el precio (o por periodo P1–P3, o azul fijo), sin título salvo que se ponga uno (`title`);
 - el mínimo y el máximo de hoy (azul) y de mañana (amarillo), con su hora, como la tarjeta `pvpc-hourly-pricing-card`;
 - la gráfica de hoy y de mañana en escalones por hora, con triángulos en el mínimo y el máximo, la hora actual marcada y, en los laborables, las horas punta y llano sombreadas. Los colores se pueden cambiar, o colorear cada hora de hoy por su precio (la misma regla que el resumen de Telegram);
 - las facturas, cada una con sus fechas: la del periodo anterior la del periodo en curso (lo gastado hasta hoy) y, si quieres (`prevision`), la estimada al cierre. Pueden ir bajo la gráfica, arriba (en pantallas estrechas pasan abajo solas) u ocultas.
@@ -182,8 +186,8 @@ Todo se configura en el editor visual. En YAML:
 ```yaml
 type: custom:pvpc-bono-social-card
 entity: sensor.pvpc_bs_precio   # opcional: se detecta sola
-factura: below_chart            # below_chart, header o hidden
-icon_color: price               # price o period
+factura: header                 # header (por defecto), below_chart o hidden
+icon_color: price               # price, period o fijo
 colores: fijo                   # fijo (un color por día) o precio (hoy coloreado por precio)
 color_hoy: "#4269d0"               # leyenda, línea y triángulos de hoy (en el editor, selector de color)
 color_manana: "#f4bd4a"            # lo mismo para mañana
@@ -219,16 +223,21 @@ Una factura que se solapa con otra ya introducida (por ejemplo, una rectificativ
 
 ### Evolución de las facturas
 
-Cada periodo cerrado (con la factura real o, si aún no la has introducido, la estimada) se guarda en la estadística `pvpc_bonosocial:facturas_<suministro>`: el importe de la factura, el primer día de su periodo. Para verla, un **gráfico de estadísticas** en barras por mes (una barra por factura, con su importe real; HA lo llama «media» porque es el tipo de estadística, pero cada mes solo tiene una factura):
+Cada periodo cerrado (con la factura real o, si aún no la has introducido, la estimada) se guarda en la estadística `pvpc_bonosocial:facturas_<suministro>`: el importe de la factura, el primer día de su periodo. Para verla, un **gráfico de estadísticas** en barras por mes (una barra por factura, con su importe real):
 
 ```yaml
 type: statistics-graph
+title: Facturas
 entities:
   - pvpc_bonosocial:facturas_casa   # «casa» = nombre del suministro al crearlo
-stat_types: [mean]
+stat_types:
+  - max
 period: month
-days_to_show: 365
+days_to_show: 180                   # 150, 180, 270 o 365 = últimas 5, 6, 9 o 12 facturas
 chart_type: bar
+hide_legend: true
+grid_options:
+  columns: full
 ```
 
 Para ver las últimas 5, 6, 9 o 12 facturas, cambia `days_to_show` por 150, 180, 270 o 365 (o «Días a mostrar» en el editor visual de la tarjeta).
@@ -334,7 +343,7 @@ MIT, © 2026 BaRDaHL: libre uso, modificación y distribución. Ver [LICENSE](LI
 - **Add a supply**: in the integration, **Add supply** (power, social bonus, consumption sensor, end date of the last bill).
 - **Add an actual bill**: gear icon ⚙ of the supply → **Enter actual bill** → upload the PDF.
 - **Price card**: Add card → PVPC + Bono Social (`type: custom:pvpc-bono-social-card`).
-- **Bills card**: a statistics graph of `pvpc_bonosocial:facturas_<supply>` with `stat_types: [mean]`, `period: month`, `chart_type: bar` and `days_to_show` 150/180/270/365 for the last 5/6/9/12 bills.
+- **Bills card**: a statistics graph of `pvpc_bonosocial:facturas_<supply>` with `stat_types: [max]`, `period: month`, `chart_type: bar` and `days_to_show` 150/180/270/365 for the last 5/6/9/12 bills.
 - **Energy dashboard cost**: accept the Repairs notice, or pick the `pvpc_bonosocial:coste_<supply>` statistic as grid cost.
 
 ### What it does

@@ -15,7 +15,6 @@ Este proyecto se apoya en el trabajo de otras personas. Gracias a todas ellas.
 | [CNMC](https://comparador.cnmc.gob.es/) | Comparador oficial de ofertas de energía | — | Fuente de las ofertas del comparador de tarifas |
 | [Home Assistant](https://www.home-assistant.io/) | Plataforma y código de origen de la integración oficial | Apache-2.0 | Base |
 | [Red Eléctrica (REE) / ESIOS](https://www.esios.ree.es/) | Datos de precios | Reutilización con atribución | Fuente de datos |
-| Arya | Estudio inicial del rediseño | — | Análisis del modelo de cálculo |
 
 Cuando se incorpore código de terceros, cada fichero conservará su licencia y su aviso de copyright, con la indicación de los cambios, y se lista en `NOTICE`.
 

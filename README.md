@@ -18,6 +18,95 @@ Una sola integración que reúne:
 - **Panel de Energía** con el coste real de cada hora, corregido hacia atrás cuando llega la factura.
 - **Migración sin perder datos** desde PVPC Next y desde la versión anterior de esta integración.
 
+## Cómo se hace
+
+Guía rápida paso a paso. Los detalles de cada cosa están más abajo.
+
+### Instalar la integración
+
+1. En HACS → ⋮ → **Repositorios personalizados**, añade `https://github.com/BaRDaHL/pvpc_bonosocial` con el tipo **Integración**.
+2. Busca **PVPC + Bono Social** en HACS, **Descargar**, y reinicia Home Assistant.
+3. **Ajustes → Dispositivos y servicios → Añadir integración → PVPC + Bono Social.** Elige la tarifa (Península/Baleares) y, si lo tienes, tu token de ESIOS.
+4. Si tenías PVPC Next, el asistente te ofrece importarlo con su historial (haz antes una copia de seguridad).
+
+### Actualizar
+
+HACS te avisa cuando hay versión nueva: **Descargar**, reinicia Home Assistant y recarga el navegador (Ctrl+F5). En la app del móvil: **Ajustes → Aplicación complementaria → Solución de problemas → Restablecer la caché del frontend**.
+
+### Añadir un suministro (para la factura)
+
+1. **Ajustes → Dispositivos y servicios → PVPC + Bono Social → Añadir suministro.**
+2. Nombre, potencia contratada (P1 y P2), bono social y unidad de convivencia.
+3. Fuente de consumo: el sensor de energía de tu medidor (por ejemplo, el de un Shelly EM) o una estadística externa.
+4. Opcional: la IP de un Shelly EM de 1.ª generación para corregir las horas que falten.
+5. **Fecha de fin de la última factura** (la «Y» de «del X al Y» de tu última factura), días hasta la emisión y alquiler del contador. Opcional: código postal (comparador de tarifas y segunda opinión de la CNMC).
+
+Para cambiar algo después (potencia, bono, código postal…): rueda dentada **⚙** del suministro → **Cambiar datos del suministro**.
+
+### Añadir una factura real
+
+1. **Ajustes → Dispositivos y servicios → PVPC + Bono Social** → rueda dentada **⚙** del suministro → **Introducir factura real**.
+2. Sube el **PDF** de la factura: se leen solos el periodo, la emisión, los kWh de P1, P2 y P3, el total y los kWh bonificados (solo facturas de la Comercializadora Regulada, Gas & Power; con otras, a mano).
+3. Revisa y confirma.
+
+Puedes subir también facturas antiguas, de una en una: afinan la calibración del medidor y llenan el gráfico de facturas.
+
+### Añadir la tarjeta de precios y factura
+
+En un panel: **Añadir tarjeta → PVPC + Bono Social**, o en YAML (todas las opciones son opcionales):
+
+```yaml
+type: custom:pvpc-bono-social-card
+entity: sensor.pvpc_bs_precio      # se detecta sola
+factura: below_chart               # below_chart, header o hidden
+colores: fijo                      # fijo o precio (hoy coloreado por precio)
+color_hoy: "#4269d0"
+color_manana: "#f4bd4a"
+bandas: true                       # punta y llano sombreados
+icon_color: price                  # price o period
+```
+
+### Añadir la tarjeta de facturas (evolución)
+
+Una barra por factura con su importe real. **Añadir tarjeta → Gráfico de estadísticas**, o en YAML:
+
+```yaml
+type: statistics-graph
+title: Facturas de la luz
+entities:
+  - pvpc_bonosocial:facturas_casa   # «casa» = nombre del suministro al crearlo
+stat_types: [mean]
+period: month
+days_to_show: 365                   # 150, 180, 270 o 365 = últimas 5, 6, 9 o 12 facturas
+chart_type: bar
+```
+
+El identificador exacto aparece al escribir «facturas» en el selector de entidades del editor de la tarjeta.
+
+### Poner el coste en el panel de Energía
+
+La integración lo ofrece con un aviso en **Ajustes → Reparaciones** («Usar el coste de PVPC + Bono Social en el panel de Energía»): **Enviar**. También a mano: **Ajustes → Paneles → Energía → Red eléctrica →** coste: estadística `pvpc_bonosocial:coste_<suministro>`.
+
+### Recibir el resumen de precios por Telegram
+
+**Añadir resumen por notificación** → elige el chat de Telegram (o la notificación del móvil) y las horas. Para probarlo: **Herramientas para desarrolladores → Acciones →** `pvpc_bonosocial.enviar_resumen` con `dry_run: true`.
+
+### Comparar tarifas
+
+Con el código postal puesto en el suministro, pulsa el botón **Comparar tarifas** (o la acción `pvpc_bonosocial.comparar_tarifas`). Para que se haga sola cada mes, activa **Comparar tarifas cada mes** en el suministro. Detalles en [Comparar tarifas](#comparar-tarifas).
+
+### Activar la segunda opinión de la CNMC
+
+Rueda dentada **⚙** del suministro → **Cambiar datos del suministro** → último paso: **Segunda opinión de la CNMC para cada factura** (necesita el código postal). Aparece al cerrarse cada periodo.
+
+### Conectar Datadis
+
+**Añadir cuenta de Datadis** → tu usuario y contraseña de datadis.es → elige el suministro de la lista. Ver [Datadis](#datadis).
+
+### Si la tarjeta sale «Error de configuración»
+
+Recarga el navegador con Ctrl+F5 (o restablece la caché del frontend en la app del móvil). Si sigue, comprueba en **Ajustes → Paneles → ⋮ → Recursos** que está `/pvpc_bonosocial/pvpc-bono-social-card.js`.
+
 ## Requisitos
 
 - Suministro **2.0TD** (hasta 15 kW) con **PVPC** en la **Península o Baleares**. Canarias, Ceuta y Melilla no están incluidas.
@@ -84,7 +173,7 @@ La integración trae su propia tarjeta y la carga sola: no hay que instalar nada
 - el precio actual con un icono € en verde, amarillo, naranja o rojo (o por periodo P1–P3), sin título salvo que se ponga uno (`title`);
 - el mínimo y el máximo de hoy (azul) y de mañana (amarillo), con su hora, como la tarjeta `pvpc-hourly-pricing-card`;
 - la gráfica de hoy y de mañana en escalones por hora, con triángulos en el mínimo y el máximo, la hora actual marcada y, en los laborables, las horas punta y llano sombreadas. Los colores se pueden cambiar, o colorear cada hora de hoy por su precio (la misma regla que el resumen de Telegram);
-- la factura del periodo anterior (con la desviación si está conciliada) y la del periodo en curso: lo gastado y, entre paréntesis, la previsión. Puede ir bajo la gráfica, arriba (en pantallas estrechas pasa abajo sola) u oculta.
+- la factura del periodo en curso (lo gastado y, entre paréntesis, la previsión) y, debajo, la del periodo anterior con sus fechas (con la desviación si está conciliada y la segunda opinión de la CNMC si está activada). Puede ir bajo la gráfica, arriba (en pantallas estrechas pasa abajo sola) u oculta.
 
 Todo se configura en el editor visual. En YAML:
 
@@ -139,6 +228,8 @@ period: month
 days_to_show: 365
 chart_type: bar
 ```
+
+Para ver las últimas 5, 6, 9 o 12 facturas, cambia `days_to_show` por 150, 180, 270 o 365 (o «Días a mostrar» en el editor visual de la tarjeta).
 
 ### Segunda opinión de la CNMC
 
@@ -233,6 +324,15 @@ MIT, © 2026 BaRDaHL: libre uso, modificación y distribución. Ver [LICENSE](LI
 **Spanish PVPC hourly prices and real-time electricity bill calculation, with or without social bonus**, for Home Assistant.
 
 > Unofficial tool. The bill that counts is your supplier's; this integration estimates it and tells you before it arrives.
+
+### How to
+
+- **Install**: HACS → ⋮ → Custom repositories → `https://github.com/BaRDaHL/pvpc_bonosocial` (Integration) → Download → restart → Settings → Devices & services → Add integration → PVPC + Bono Social.
+- **Add a supply**: in the integration, **Add supply** (power, social bonus, consumption sensor, end date of the last bill).
+- **Add an actual bill**: gear icon ⚙ of the supply → **Enter actual bill** → upload the PDF.
+- **Price card**: Add card → PVPC + Bono Social (`type: custom:pvpc-bono-social-card`).
+- **Bills card**: a statistics graph of `pvpc_bonosocial:facturas_<supply>` with `stat_types: [mean]`, `period: month`, `chart_type: bar` and `days_to_show` 150/180/270/365 for the last 5/6/9/12 bills.
+- **Energy dashboard cost**: accept the Repairs notice, or pick the `pvpc_bonosocial:coste_<supply>` statistic as grid cost.
 
 ### What it does
 

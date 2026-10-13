@@ -126,6 +126,20 @@ Una factura que se solapa con otra ya introducida (por ejemplo, una rectificativ
 >
 > Si quieres que añada otra comercializadora de referencia (ver [Se buscan voluntarios](#se-buscan-voluntarios)), necesito **al menos de 3 a 5 facturas consecutivas en PDF** (el PDF original, no una foto ni un escaneo). Puedes tapar el nombre, la dirección, el CUPS y los números de contrato: lo que hace falta es la estructura de la factura y sus importes. No las subas a una incidencia pública: abre una incidencia indicando la comercializadora y te diré cómo enviarlas en privado.
 
+### Evolución de las facturas
+
+Cada periodo cerrado (con la factura real o, si aún no la has introducido, la estimada) se guarda en la estadística `pvpc_bonosocial:facturas_<suministro>`: el importe de la factura, el primer día de su periodo. Para verla, un **gráfico de estadísticas** en barras por mes (una barra por factura, con su importe real; HA lo llama «media» porque es el tipo de estadística, pero cada mes solo tiene una factura):
+
+```yaml
+type: statistics-graph
+entities:
+  - pvpc_bonosocial:facturas_casa   # «casa» = nombre del suministro al crearlo
+stat_types: [mean]
+period: month
+days_to_show: 365
+chart_type: bar
+```
+
 ### Segunda opinión de la CNMC
 
 Opcional (**⚙ Reconfigurar → Cambiar datos del suministro**, en el último paso, con el código postal): cuando se cierra cada periodo, la integración pide **la misma factura al simulador oficial de la CNMC** ([facturaluz](https://comparador.cnmc.gob.es/facturaluz/inicio)) con tu consumo hora a hora, tus potencias y tu bono social, y la muestra junto a la nuestra: atributos `cnmc`, `cnmc_diferencia` y `cnmc_desglose` de `sensor.pvpc_bs_factura_anterior`, y en la tarjeta («· CNMC 131,66 €»).

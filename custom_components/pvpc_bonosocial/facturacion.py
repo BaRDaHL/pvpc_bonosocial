@@ -64,7 +64,13 @@ from .engine import (
 from .engine.arrastre import PeriodoBono, prorrata, saldo_arrastre
 from .engine.calibracion import PeriodoCalibracion, ajustar
 from .engine.marginal import precio_marginal
-from .estadistica import async_escribir, async_reescribir_periodo, async_revisar_panel, id_estadistica
+from .estadistica import (
+    async_escribir,
+    async_escribir_facturas,
+    async_reescribir_periodo,
+    async_revisar_panel,
+    id_estadistica,
+)
 from .prices.aiopvpc.const import REFERENCE_TZ
 from .prices.aiopvpc.pvpc_tariff import _price_period_key
 from .prices.festivos import es_festivo_p3
@@ -358,8 +364,9 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
             inicio = corte
         corte = self._corte(inicio)
         datos = await self._async_estimar(inicio, corte, ahora, cerrar=False)
-        datos.anterior = self._anterior()
+        datos.anterior = self._anterior_de(inicio)
         await self._async_escribir_coste(datos)
+        await self._async_escribir_facturas()
         await async_revisar_panel(
             self.hass,
             self.subentrada.subentry_id,
@@ -389,6 +396,22 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
             _LOGGER.exception("%s: no se pudo escribir la estadística de coste", self.subentrada.title)
             return
         self._escrito = firma
+
+    async def _async_escribir_facturas(self) -> None:
+        """Estadística de la evolución de las facturas, si han cambiado los periodos cerrados."""
+        cerradas = self.cerradas
+        firma = [[c["inicio"], c["fin"], c["total"]] for c in cerradas]
+        if not cerradas or firma == self._estado.get("facturas_escritas"):
+            return
+        try:
+            await async_escribir_facturas(
+                self.hass, self.estadistica_id, self.subentrada.title, cerradas, REFERENCE_TZ
+            )
+        except Exception:
+            _LOGGER.exception("%s: no se pudo escribir la estadística de facturas", self.subentrada.title)
+            return
+        self._estado["facturas_escritas"] = firma
+        self._store.async_delay_save(lambda: self._estado, 5)
 
     def _coste_hoy_heredado(self) -> str | None:
         """entity_id del «coste hoy» de la v0.2 si este suministro lo heredó."""
@@ -430,6 +453,13 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         if c is None or c.get("estado") == "conciliada":
             return None
         return date.fromisoformat(c["inicio"]), date.fromisoformat(c["fin"])
+
+    def _anterior_de(self, inicio: date) -> dict[str, Any] | None:
+        """El periodo inmediatamente anterior al que empieza en `inicio` (el que acaba ese día).
+
+        Si falta (por ejemplo, se ha introducido una factura más antigua), no se muestra otra."""
+        c = self._anterior()
+        return c if c is not None and c["fin"] == inicio.isoformat() else None
 
     def _anterior(self) -> dict[str, Any] | None:
         cerradas = self._estado.get("cerradas") or []

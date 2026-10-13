@@ -121,10 +121,18 @@
         "name": "ID del dato PVPC"
       },
       "fuente_api": {
-        "name": "Fuente de los datos"
+        "name": "Fuente de los datos",
+        "state": {
+          "private": "Privada (con token)",
+          "public": "Pública (sin token)"
+        }
       },
       "modo_precio": {
-        "name": "Modo de precio"
+        "name": "Modo de precio",
+        "state": {
+          "pvpc": "PVPC (regulado)",
+          "indexed": "Indexado (mercado libre)"
+        }
       },
       "tarifa": {
         "name": "Tarifa"

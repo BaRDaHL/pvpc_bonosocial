@@ -269,3 +269,48 @@ async def async_usar_en_panel(hass: HomeAssistant, fuente: str, statistic_id: st
     if cambiado:
         await gestor.async_update({"energy_sources": fuentes})
     return cambiado
+
+
+# --- evolución de las facturas -----------------------------------------------------------
+
+
+def id_facturas(estadistica_id: str) -> str:
+    """`pvpc_bonosocial:facturas_<suministro>`, hermana de la de coste."""
+    return estadistica_id.replace(":coste_", ":facturas_", 1)
+
+
+def filas_facturas(cerradas: list[dict], zona) -> list[dict]:
+    """Una fila por factura, en la primera hora de su periodo, con su importe (media = mín = máx).
+
+    Con un gráfico de estadísticas en barras por mes sale una barra por factura con su importe
+    real. Si dos periodos empiezan el mismo día (rectificativa), manda el más reciente.
+    """
+    filas: dict[datetime, float] = {}
+    for c in sorted(cerradas, key=lambda x: x["fin"]):
+        inicio = datetime.fromisoformat(c["inicio"]).date() + timedelta(days=1)
+        t = datetime(inicio.year, inicio.month, inicio.day, tzinfo=zona).astimezone(UTC)
+        filas[t] = float(Decimal(c["total"]))
+    return [{"start": t, "mean": v, "min": v, "max": v} for t, v in sorted(filas.items())]
+
+
+async def async_escribir_facturas(
+    hass: HomeAssistant, estadistica_id: str, nombre: str, cerradas: list[dict], zona
+) -> None:
+    """Escribe (o reescribe) las horas de los periodos cerrados. No borra los anteriores que ya
+    no se guardan, para que el gráfico conserve toda la evolución."""
+    from homeassistant.components.recorder.models import StatisticMeanType
+    from homeassistant.components.recorder.statistics import async_add_external_statistics
+
+    filas = filas_facturas(cerradas, zona)
+    if not filas:
+        return
+    metadatos = {
+        "source": DOMAIN,
+        "statistic_id": id_facturas(estadistica_id),
+        "name": f"Facturas ({nombre})",
+        "unit_of_measurement": "EUR",
+        "unit_class": None,
+        "mean_type": StatisticMeanType.ARITHMETIC,
+        "has_sum": False,
+    }
+    async_add_external_statistics(hass, metadatos, filas)

@@ -41,6 +41,7 @@ from .const import (
     DOMAIN,
     LEGACY_ATTR_ENABLE_INJECTION_PRICE,
     PREFIJO_ENTIDADES,
+    PRICE_MODES,
     SUBENTRY_RESUMEN,
     SUFIJOS_ENTIDADES,
     UPDATE_FREQUENCY_BY_SENSOR,
@@ -566,11 +567,14 @@ ATTRIBUTE_SENSOR_TYPES: tuple[PVPCAttributeSensorDescription, ...] = (
         attribute_key="data_id",
         icon="mdi:identifier",
         entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,  # solo para comprobar el dato en ESIOS
     ),
     PVPCAttributeSensorDescription(
         key="pvpc_api_source",
         translation_key="fuente_api",
         value_fn=_api_source_label,
+        device_class=SensorDeviceClass.ENUM,
+        options=["private", "public"],
         icon="mdi:api",
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
@@ -578,6 +582,8 @@ ATTRIBUTE_SENSOR_TYPES: tuple[PVPCAttributeSensorDescription, ...] = (
         key="pvpc_price_mode",
         translation_key="modo_precio",
         value_fn=_price_mode_label,
+        device_class=SensorDeviceClass.ENUM,
+        options=list(PRICE_MODES),
         icon="mdi:tune-variant",
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
@@ -744,6 +750,7 @@ PRIVATE_API_ATTRIBUTE_SENSOR_TYPES: tuple[PVPCAttributeSensorDescription, ...] =
         value_fn=lambda _coordinator: _data_id_value(KEY_INJECTION),
         icon="mdi:identifier",
         entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,  # solo para comprobar el dato en ESIOS
     ),
     PVPCAttributeSensorDescription(
         key="mag_tax_data_id",

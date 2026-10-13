@@ -1,0 +1,34 @@
+PVPC + Bono Social
+Copyright (c) 2026 BaRDaHL. Licencia MIT (ver LICENSE).
+
+Este proyecto incluye código de terceros. Cada parte conserva su licencia y su
+aviso de copyright; los cambios hechos aquí se indican abajo.
+
+1. PVPC Next — https://github.com/privatecoder/ha-pvpc-next
+   Copyright (c) 2026 privatecoder. Licencia MIT.
+   Versión incorporada: 2.3.0 (commit f3b5049, 27-jul-2026).
+   Ficheros: custom_components/pvpc_bonosocial/{__init__,config_flow,const,
+   helpers,sensor}.py, prices/coordinator.py, translations/ y parte de tests/.
+   Cambios: estructura (prices/), dominio pvpc_next → pvpc_bonosocial, nombre por
+   defecto, textos de las traducciones, clave «very cheap» → «very_cheap» (se sigue aceptando la antigua),
+   formato (ruff) y adaptación de los tests.
+   PVPC Next deriva a su vez de la integración oficial pvpc_hourly_pricing de
+   Home Assistant (https://github.com/home-assistant/core), Copyright Home Assistant
+   contributors, Licencia Apache-2.0.
+
+2. aiopvpc — https://github.com/azogue/aiopvpc
+   Copyright (c) 2020 Eugenio Panadero. Licencia MIT.
+   Se incluye el fork que trae PVPC Next (modificado por privatecoder, MIT), en
+   custom_components/pvpc_bonosocial/prices/aiopvpc/ con su LICENSE.
+   Cambios aquí: rutas de importación, zip(strict=True), formato, periodos con el
+   calendario propio y con el peaje publicado por ESIOS (TEU).
+
+3. comparador-luz-gas — https://github.com/nuncaeslupus/comparador-luz-gas
+   Copyright (c) 2026 nuncaeslupus. Licencia MIT.
+   Se toman la lista de parámetros que exige la API del comparador de la CNMC
+   (custom_components/pvpc_bonosocial/cnmc.py, reescrito para aiohttp y con el
+   consumo real por periodo) y una respuesta grabada de esa API
+   (tests/fixtures/cnmc/ofertas_electricidad.json, sin cambios).
+
+Sin dependencias externas: el calendario de festivos es propio (prices/festivos.py).
+Datos de precios: Red Eléctrica (REE) / ESIOS, con atribución.

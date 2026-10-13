@@ -1,0 +1,110 @@
+{
+  "esquema": 1,
+  "version": "2026-10-10",
+  "nota": "Valores regulados con vigencia. 'desde' y 'hasta' inclusive (AAAA-MM-DD); 'hasta' null = vigente. 'condicion' restringe un valor a ciertos suministros; si ninguno condicionado aplica, vale el general. 'provisional': pendiente de confirmar.",
+  "conceptos": {
+    "peaje_potencia_p1": {
+      "unidad": "EUR/kW/año",
+      "valores": [
+        {"desde": "2024-01-01", "hasta": "2024-12-31", "valor": "25.391661", "fuente": "factura dic-2024", "provisional": true},
+        {"desde": "2025-01-01", "hasta": "2025-12-31", "valor": "26.930550", "fuente": "facturas 2025"},
+        {"desde": "2026-01-01", "hasta": null, "valor": "27.704413", "fuente": "BOE-A-2025-26348 (23,324952) + BOE-A-2025-26705 (4,379461)"}
+      ]
+    },
+    "peaje_potencia_p2": {
+      "unidad": "EUR/kW/año",
+      "valores": [
+        {"desde": "2024-01-01", "hasta": "2024-12-31", "valor": "0.968852", "fuente": "factura dic-2024", "provisional": true},
+        {"desde": "2025-01-01", "hasta": "2025-12-31", "valor": "0.697588", "fuente": "facturas 2025"},
+        {"desde": "2026-01-01", "hasta": null, "valor": "0.725423", "fuente": "BOE-A-2025-26348 (0,443770) + BOE-A-2025-26705 (0,281653)"}
+      ]
+    },
+    "peaje_energia_p1": {
+      "unidad": "EUR/kWh",
+      "valores": [
+        {"desde": "2024-01-01", "hasta": "2024-12-31", "valor": "0.076974", "fuente": "factura dic-2024", "provisional": true},
+        {"desde": "2025-01-01", "hasta": "2025-12-31", "valor": "0.092539", "fuente": "facturas 2025"},
+        {"desde": "2026-01-01", "hasta": null, "valor": "0.097553", "fuente": "BOE-A-2025-26348 (0,033261) + BOE-A-2025-26705 (0,064292)"}
+      ]
+    },
+    "peaje_energia_p2": {
+      "unidad": "EUR/kWh",
+      "valores": [
+        {"desde": "2024-01-01", "hasta": "2024-12-31", "valor": "0.027963", "fuente": "factura dic-2024", "provisional": true},
+        {"desde": "2025-01-01", "hasta": "2025-12-31", "valor": "0.028201", "fuente": "facturas 2025"},
+        {"desde": "2026-01-01", "hasta": null, "valor": "0.029267", "fuente": "BOE-A-2025-26348 (0,016409) + BOE-A-2025-26705 (0,012858)"}
+      ]
+    },
+    "peaje_energia_p3": {
+      "unidad": "EUR/kWh",
+      "valores": [
+        {"desde": "2024-01-01", "hasta": "2024-12-31", "valor": "0.002752", "fuente": "factura dic-2024", "provisional": true},
+        {"desde": "2025-01-01", "hasta": "2025-12-31", "valor": "0.002994", "fuente": "facturas 2025"},
+        {"desde": "2026-01-01", "hasta": null, "valor": "0.003292", "fuente": "BOE-A-2025-26348 (0,000077) + BOE-A-2025-26705 (0,003215)"}
+      ]
+    },
+    "margen_comercializacion": {
+      "unidad": "EUR/kW/año",
+      "valores": [
+        {"desde": "2024-01-01", "hasta": null, "valor": "3.113", "fuente": "facturas 2024-2026 (RD 216/2014)"}
+      ]
+    },
+    "financiacion_bono_social": {
+      "unidad": "EUR/CUPS/año",
+      "valores": [
+        {"desde": "2024-01-01", "hasta": "2024-12-31", "valor": "12.37", "fuente": "deducido de la factura dic-2024 (0,03361-0,03411 EUR/día)", "provisional": true},
+        {"desde": "2025-01-01", "hasta": "2025-12-31", "valor": "4.650987", "fuente": "Orden TED/1487/2024, BOE-A-2024-27289"},
+        {"desde": "2026-01-01", "hasta": "2026-06-30", "valor": "6.979247", "fuente": "Orden TED/1524/2025, BOE-A-2025-26705"},
+        {"desde": "2026-07-01", "hasta": null, "valor": "9.011295", "fuente": "Orden TED/634/2026, BOE-A-2026-13759 (la COR lo aplica desde el 1-jul)"}
+      ]
+    },
+    "alquiler_contador": {
+      "unidad": "EUR/mes",
+      "valores": [
+        {"desde": "2024-01-01", "hasta": null, "valor": "0.81", "fuente": "facturas 2024-2026"}
+      ]
+    },
+    "descuento_bono_vulnerable": {
+      "unidad": "fraccion",
+      "valores": [
+        {"desde": "2024-01-01", "hasta": "2024-06-30", "valor": "0.65", "fuente": "RDL 8/2023", "provisional": true},
+        {"desde": "2024-07-01", "hasta": "2024-12-31", "valor": "0.575", "fuente": "factura dic-2024"},
+        {"desde": "2025-01-01", "hasta": "2025-06-30", "valor": "0.50", "fuente": "facturas ene-jun 2025"},
+        {"desde": "2025-07-01", "hasta": "2026-12-31", "valor": "0.425", "fuente": "facturas desde jul-2025; RDL 7/2026 art. 1 (BOE-A-2026-6544)"},
+        {"desde": "2027-01-01", "hasta": null, "valor": "0.35", "fuente": "RD 897/2017 art. 6.3 (BOE-A-2017-11505), sin prórroga", "provisional": true}
+      ]
+    },
+    "descuento_bono_severo": {
+      "unidad": "fraccion",
+      "valores": [
+        {"desde": "2024-01-01", "hasta": "2024-06-30", "valor": "0.80", "fuente": "RDL 8/2023", "provisional": true},
+        {"desde": "2024-07-01", "hasta": "2024-12-31", "valor": "0.725", "fuente": "RDL 8/2023", "provisional": true},
+        {"desde": "2025-01-01", "hasta": "2025-06-30", "valor": "0.65", "fuente": "RDL 8/2023", "provisional": true},
+        {"desde": "2025-07-01", "hasta": "2026-12-31", "valor": "0.575", "fuente": "RDL 7/2026 art. 1 (BOE-A-2026-6544)"},
+        {"desde": "2027-01-01", "hasta": null, "valor": "0.50", "fuente": "RD 897/2017 art. 6.3, sin prórroga", "provisional": true}
+      ]
+    },
+    "iee_tipo": {
+      "unidad": "fraccion",
+      "valores": [
+        {"desde": "2024-07-01", "hasta": "2026-03-21", "valor": "0.0511269632", "fuente": "Ley 38/1992 art. 99"},
+        {"desde": "2026-03-22", "hasta": "2026-05-31", "valor": "0.005", "fuente": "RDL 7/2026 art. 40; junio no aplicado (RDL 18/2026, preámbulo)"},
+        {"desde": "2026-06-01", "hasta": null, "valor": "0.0511269632", "fuente": "Ley 38/1992 art. 99; ago-sep sin rebaja (facturas)"}
+      ]
+    },
+    "iee_minimo": {
+      "unidad": "EUR/kWh",
+      "valores": [
+        {"desde": "2024-01-01", "hasta": null, "valor": "0.001", "fuente": "Ley 38/1992 art. 99; RDL 7/2026 art. 40.b (1 EUR/MWh en usos no industriales)"}
+      ]
+    },
+    "iva": {
+      "unidad": "fraccion",
+      "valores": [
+        {"desde": "2026-03-22", "hasta": "2026-05-31", "valor": "0.10", "condicion": {"potencia_kw_menor_que": "10"}, "fuente": "RDL 7/2026 art. 42.a (potencia inferior a 10 kW)"},
+        {"desde": "2026-03-22", "hasta": "2026-05-31", "valor": "0.10", "condicion": {"bono": ["severo", "severo_exclusion"]}, "fuente": "RDL 7/2026 art. 42.a (vulnerable severo)"},
+        {"desde": "2021-06-26", "hasta": null, "valor": "0.21", "fuente": "Ley 37/1992"}
+      ]
+    }
+  }
+}

@@ -1,0 +1,95 @@
+conciliar_factura:
+  fields:
+    suministro:
+      required: true
+      selector:
+        device:
+          integration: pvpc_bonosocial
+    inicio:
+      required: true
+      example: "2026-08-12"
+      selector:
+        date:
+    fin:
+      required: true
+      example: "2026-09-13"
+      selector:
+        date:
+    emision:
+      required: false
+      example: "2026-09-16"
+      selector:
+        date:
+    kwh_p1:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100000
+          mode: box
+          unit_of_measurement: kWh
+    kwh_p2:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100000
+          mode: box
+          unit_of_measurement: kWh
+    kwh_p3:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100000
+          mode: box
+          unit_of_measurement: kWh
+    total:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100000
+          step: 0.01
+          mode: box
+          unit_of_measurement: "€"
+    kwh_bonificados:
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 100000
+          mode: box
+          unit_of_measurement: kWh
+enviar_resumen:
+  fields:
+    manana:
+      default: false
+      selector:
+        boolean:
+    destino:
+      required: false
+      selector:
+        entity:
+          domain: notify
+    dry_run:
+      default: false
+      selector:
+        boolean:
+comparar_tarifas:
+  fields:
+    suministro:
+      required: true
+      selector:
+        device:
+          integration: pvpc_bonosocial
+    destino:
+      required: false
+      selector:
+        entity:
+          domain: notify
+    notificacion:
+      required: false
+      default: true
+      selector:
+        boolean:

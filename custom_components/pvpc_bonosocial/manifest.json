@@ -1,0 +1,23 @@
+{
+  "domain": "pvpc_bonosocial",
+  "name": "PVPC + Bono Social",
+  "after_dependencies": [
+    "energy",
+    "file_upload",
+    "frontend",
+    "http",
+    "recorder"
+  ],
+  "codeowners": [
+    "@BaRDaHL"
+  ],
+  "config_flow": true,
+  "documentation": "https://github.com/BaRDaHL/pvpc_bonosocial",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/BaRDaHL/pvpc_bonosocial/issues",
+  "loggers": [
+    "custom_components.pvpc_bonosocial.prices.aiopvpc"
+  ],
+  "version": "1.0.0"
+}

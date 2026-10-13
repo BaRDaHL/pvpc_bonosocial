@@ -1,0 +1,720 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "Esta integración ya está configurada.",
+      "reauth_successful": "Reautenticación completada.",
+      "sin_pvpc_next": "Ya no hay ninguna entrada de PVPC Next con entidades."
+    },
+    "error": {
+      "invalid_auth": "Autenticación inválida.",
+      "cannot_connect": "Error de conexión: no se ha podido acceder a la API de ESIOS.",
+      "indexed_requires_private_api": "El modo indexado requiere API privada y un token válido.",
+      "falta_copia": "Hace falta una copia de seguridad antes de continuar."
+    },
+    "step": {
+      "api_token": {
+        "data": {
+          "api_token": "API Token"
+        },
+        "description": "Para usar la API ampliada debes solicitar un token personal enviando un correo a {mail_to_link}.",
+        "title": "Token de la API de ESIOS"
+      },
+      "price_mode": {
+        "data": {
+          "price_mode": "Modo de precio",
+          "show_reference_price": "Mostrar precio de referencia"
+        },
+        "description": "Selecciona qué serie debe usarse como Precio actual.",
+        "title": "Modo de precio"
+      },
+      "reauth_confirm": {
+        "data": {
+          "api_token": "API Token",
+          "description": "Reautentícate con un token válido"
+        }
+      },
+      "user": {
+        "description": "PVPC + Bono Social funciona sin token (API pública). Si tienes un token, activa la casilla de abajo (API privada), con la que también se puede usar el modo de precio indexado y obtener el precio de inyección, el precio mayorista day-ahead (OMIE) y el ajuste de gas regulado (MAG tax).",
+        "data": {
+          "name": "Nombre del sensor",
+          "power_p1": "P1 (punta) (kW)",
+          "power_p3": "P3 (llano) (kW)",
+          "tariff": "Tarifa aplicable por zona geográfica",
+          "better_price_target": "Objetivo de mejor precio",
+          "next_price_in_update": "Frecuencia de Next Price In",
+          "next_best_in_update": "Frecuencia de Next Best In",
+          "next_period_in_update": "Frecuencia de Next Period In",
+          "next_power_period_in_update": "Frecuencia de Next Power Period In",
+          "enable_private_api": "Activar obtención con token de API (API privada)"
+        }
+      },
+      "origen": {
+        "title": "PVPC Next detectado",
+        "description": "Hay una instalación de PVPC Next. Puedes traer sus entidades con su historial y estadísticas; pasarán a llamarse sensor.pvpc_bs_*.",
+        "menu_options": {
+          "importar_pvpc_next": "Importar de PVPC Next (recomendado)",
+          "nueva": "Empezar de cero"
+        }
+      },
+      "importar_pvpc_next": {
+        "title": "Importar de PVPC Next",
+        "description": "Se moverán {total} entidades de «{titulo}» a esta integración con su historial y estadísticas: {entidades}.\n\nPasarán a llamarse **sensor.pvpc_bs_*** (por ejemplo, sensor.esios_pvpc → sensor.pvpc_bs_precio). El panel de Energía se actualiza solo; tus scripts, automatizaciones y paneles habrá que cambiarlos a mano: al terminar verás la lista completa en Reparaciones.\n\nOpciones que se importan: tarifa {tarifa}, potencias, objetivo de mejor precio, frecuencias, API privada y modo de precio (token: {token}).\n\nLa entrada de PVPC Next quedará desactivada; después podrás eliminarla y desinstalar PVPC Next y su tarjeta desde HACS.\n\n**Haz antes una copia de seguridad de Home Assistant.**",
+        "data": {
+          "copia_seguridad": "He hecho una copia de seguridad de Home Assistant"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "api_token": {
+        "data": {
+          "api_token": "API Token"
+        },
+        "description": "Para usar la API ampliada debes solicitar un token personal enviando un correo a {mail_to_link}.",
+        "title": "Token de la API de ESIOS"
+      },
+      "init": {
+        "description": "PVPC + Bono Social funciona sin token (API pública). Si tienes un token, activa la casilla de abajo (API privada), con la que también se puede usar el modo de precio indexado y obtener el precio de inyección, el precio mayorista day-ahead (OMIE) y el ajuste de gas regulado (MAG tax).",
+        "data": {
+          "power_p1": "P1 (punta) (kW)",
+          "power_p3": "P3 (llano) (kW)",
+          "better_price_target": "Objetivo de mejor precio",
+          "next_price_in_update": "Frecuencia de Next Price In",
+          "next_best_in_update": "Frecuencia de Next Best In",
+          "next_period_in_update": "Frecuencia de Next Period In",
+          "next_power_period_in_update": "Frecuencia de Next Power Period In",
+          "enable_private_api": "Activar obtención con token de API (API privada)"
+        }
+      },
+      "price_mode": {
+        "data": {
+          "price_mode": "Modo de precio",
+          "show_reference_price": "Mostrar precio de referencia"
+        },
+        "description": "Selecciona qué serie debe usarse como Precio actual.",
+        "title": "Modo de precio"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "precio": {
+        "name": "Precio actual"
+      },
+      "precio_excedentes": {
+        "name": "Precio de los excedentes"
+      },
+      "ajuste_gas": {
+        "name": "Ajuste del gas (MAG)"
+      },
+      "precio_omie": {
+        "name": "Precio mayorista (OMIE)"
+      },
+      "precio_indexado": {
+        "name": "Precio indexado"
+      },
+      "precio_pvpc": {
+        "name": "Precio PVPC de referencia"
+      },
+      "id_dato_pvpc": {
+        "name": "ID del dato PVPC"
+      },
+      "fuente_api": {
+        "name": "Fuente de los datos"
+      },
+      "modo_precio": {
+        "name": "Modo de precio"
+      },
+      "tarifa": {
+        "name": "Tarifa"
+      },
+      "periodo": {
+        "name": "Periodo actual"
+      },
+      "periodo_potencia": {
+        "name": "Periodo de potencia actual"
+      },
+      "siguiente_periodo_potencia": {
+        "name": "Siguiente periodo de potencia"
+      },
+      "siguiente_periodo_potencia_en": {
+        "name": "Siguiente periodo de potencia en"
+      },
+      "potencia_disponible": {
+        "name": "Potencia disponible"
+      },
+      "siguiente_periodo": {
+        "name": "Siguiente periodo"
+      },
+      "siguiente_periodo_en": {
+        "name": "Siguiente periodo en"
+      },
+      "precio_minimo": {
+        "name": "Precio mínimo de hoy"
+      },
+      "precio_maximo": {
+        "name": "Precio máximo de hoy"
+      },
+      "siguiente_mejor_precio": {
+        "name": "Siguiente mejor precio"
+      },
+      "siguiente_precio": {
+        "name": "Siguiente precio"
+      },
+      "siguiente_precio_en": {
+        "name": "Siguiente precio en"
+      },
+      "nivel_siguiente_precio": {
+        "name": "Nivel del siguiente precio",
+        "state": {
+          "very_cheap": "Muy barato",
+          "cheap": "Barato",
+          "neutral": "Neutral",
+          "expensive": "Caro",
+          "very_expensive": "Muy caro"
+        }
+      },
+      "siguiente_mejor_precio_en": {
+        "name": "Siguiente mejor precio en"
+      },
+      "precios_mejores": {
+        "name": "Horas más baratas por delante"
+      },
+      "precio_medio": {
+        "name": "Precio medio de hoy"
+      },
+      "nivel_precio": {
+        "name": "Nivel del precio actual",
+        "state": {
+          "very_cheap": "Muy barato",
+          "cheap": "Barato",
+          "neutral": "Neutral",
+          "expensive": "Caro",
+          "very_expensive": "Muy caro"
+        }
+      },
+      "nivel_siguiente_mejor_precio": {
+        "name": "Nivel del siguiente mejor precio",
+        "state": {
+          "very_cheap": "Muy barato",
+          "cheap": "Barato",
+          "neutral": "Neutral",
+          "expensive": "Caro",
+          "very_expensive": "Muy caro"
+        }
+      },
+      "id_dato_excedentes": {
+        "name": "ID del dato de excedentes"
+      },
+      "id_dato_ajuste_gas": {
+        "name": "ID del dato del ajuste del gas"
+      },
+      "id_dato_omie": {
+        "name": "ID del dato OMIE"
+      },
+      "factura_actual": {
+        "name": "Factura del periodo en curso (previsión)"
+      },
+      "factura_anterior": {
+        "name": "Factura del periodo anterior"
+      },
+      "coste_hoy": {
+        "name": "Coste de hoy"
+      },
+      "precio_real": {
+        "name": "Precio real por hora"
+      },
+      "kwh_bonificables": {
+        "name": "kWh bonificables restantes"
+      },
+      "estado_datos": {
+        "name": "Estado de los datos",
+        "state": {
+          "ok": "Correcto",
+          "sin_fecha": "Falta la fecha de la última factura",
+          "sin_consumo": "Sin datos de consumo",
+          "precios_incompletos": "Faltan precios",
+          "consumo_incompleto": "Faltan horas de consumo"
+        }
+      },
+      "estado_datadis": {
+        "name": "Estado de Datadis",
+        "state": {
+          "ok": "Con datos",
+          "sin_datos": "Sin datos",
+          "sin_datos_recientes": "Sin datos recientes",
+          "esperando": "Esperando la primera consulta",
+          "credenciales": "Usuario o contraseña incorrectos",
+          "no_responde": "Datadis no responde"
+        }
+      },
+      "mejor_alternativa": {
+        "name": "Mejor alternativa de tarifa"
+      }
+    },
+    "date": {
+      "fin_periodo": {
+        "name": "Fin del periodo de facturación"
+      }
+    },
+    "button": {
+      "comparar_tarifas": {
+        "name": "Comparar tarifas"
+      }
+    }
+  },
+  "selector": {
+    "better_price_target": {
+      "options": {
+        "neutral": "Neutral",
+        "cheap": "Barato",
+        "very_cheap": "Muy barato"
+      }
+    },
+    "update_frequency": {
+      "options": {
+        "disabled": "Desactivado",
+        "hourly": "Cada hora",
+        "minute": "Cada minuto"
+      }
+    },
+    "price_mode": {
+      "options": {
+        "pvpc": "PVPC",
+        "indexed": "Indexado"
+      }
+    },
+    "bono": {
+      "options": {
+        "ninguno": "Sin bono social",
+        "vulnerable": "Vulnerable",
+        "severo": "Vulnerable severo",
+        "severo_exclusion": "Vulnerable severo en riesgo de exclusión"
+      }
+    },
+    "categoria": {
+      "options": {
+        "individual_o_dos": "1 o 2 personas (1.587 kWh/año)",
+        "tres_o_pensionista_o_dos_con_menor": "3 personas, pensionista o 2 con un menor (2.222 kWh/año)",
+        "cuatro_o_tres_con_dos_menores": "4 personas o 3 con dos menores (2.698 kWh/año)",
+        "cinco_o_mas_o_familia_numerosa": "5 o más personas o familia numerosa (4.761 kWh/año)"
+      }
+    },
+    "tipo_fuente": {
+      "options": {
+        "sensor": "Sensor de energía de Home Assistant",
+        "estadistica": "Estadística externa (dominio:objeto)"
+      }
+    },
+    "shelly_frecuencia": {
+      "options": {
+        "diaria": "Diaria (de madrugada)",
+        "semanal": "Semanal (los lunes)",
+        "desactivada": "Desactivada"
+      }
+    },
+    "shelly_canal": {
+      "options": {
+        "1": "1",
+        "2": "2"
+      }
+    },
+    "color_valle": {
+      "options": {
+        "laborables": "Respecto a los 5 laborables anteriores",
+        "dia": "Respecto al propio día"
+      }
+    }
+  },
+  "issues": {
+    "periodos_discrepantes": {
+      "title": "Periodos de ESIOS distintos del calendario",
+      "description": "En {total} horas con precio publicado, el periodo que aplicó ESIOS (según el peaje de cada hora) no coincide con el del calendario de festivos. La integración usa el de ESIOS. Últimas horas: {horas}. Si se repite, abre un issue."
+    },
+    "importar_pvpc_next": {
+      "title": "Importar las entidades de PVPC Next",
+      "fix_flow": {
+        "step": {
+          "confirmar": {
+            "title": "Importar de PVPC Next",
+            "description": "Se moverán {total} entidades de «{titulo}» a esta integración con su historial y estadísticas: {entidades}.\n\nPasarán a llamarse **sensor.pvpc_bs_*** (por ejemplo, sensor.esios_pvpc → sensor.pvpc_bs_precio). El panel de Energía se actualiza solo; tus scripts, automatizaciones y paneles habrá que cambiarlos a mano: al terminar verás la lista completa en Reparaciones.\n\nOpciones que se importan: tarifa {tarifa}, potencias, objetivo de mejor precio, frecuencias, API privada y modo de precio (token: {token}).\n\nLa entrada de PVPC Next quedará desactivada; después podrás eliminarla y desinstalar PVPC Next y su tarjeta desde HACS.\n\n**Haz antes una copia de seguridad de Home Assistant.**",
+            "data": {
+              "copia_seguridad": "He hecho una copia de seguridad de Home Assistant"
+            }
+          }
+        },
+        "error": {
+          "falta_copia": "Hace falta una copia de seguridad antes de continuar."
+        },
+        "abort": {
+          "ya_no_existe": "La entrada de PVPC Next o la de esta integración ya no existe."
+        }
+      }
+    },
+    "pvpc_next_vacia": {
+      "title": "PVPC Next ya no tiene entidades",
+      "description": "La entrada «{titulo}» de PVPC Next ya no tiene entidades (se importaron a PVPC + Bono Social). Elimínala en Ajustes → Dispositivos y servicios y desinstala PVPC Next y su tarjeta desde HACS para evitar descargas duplicadas."
+    },
+    "nombres_cambiados": {
+      "title": "Entidades renombradas a sensor.pvpc_bs_*",
+      "description": "Estas entidades han cambiado de nombre; su historial y sus estadísticas se conservan y el panel de Energía ya está actualizado. Cambia los nombres antiguos en tus scripts, automatizaciones y paneles:\n\n{cambios}\n\nCuando lo hayas hecho, puedes descartar este aviso."
+    },
+    "falta_fecha_factura": {
+      "title": "Falta la fecha de la última factura de «{suministro}»",
+      "description": "Para saber qué periodo se está facturando hace falta la fecha de fin de la última factura (la que aparece como «del X al Y»: es Y). Añádela en Ajustes → Dispositivos y servicios → PVPC + Bono Social → «{suministro}» → Reconfigurar."
+    },
+    "usar_estadistica_coste": {
+      "title": "Usar el coste de PVPC + Bono Social en el panel de Energía («{suministro}»)",
+      "fix_flow": {
+        "step": {
+          "confirmar": {
+            "title": "Cambiar el coste del panel de Energía",
+            "description": "El panel de Energía calcula el coste de la red con «{actual}». La estadística {nueva} lleva el coste de tu factura de la COR hora a hora (con bono, impuestos y fijos) y se corrige hacia atrás cuando cambia la estimación. ¿Quieres usarla como coste en el panel de Energía? Puedes volver atrás cuando quieras desde el propio panel.\n\nSe pondrá {nueva} como «coste» del consumo de la red en el panel de Energía."
+          }
+        }
+      }
+    },
+    "shelly_no_coincide": {
+      "title": "El Shelly no coincide con HA en «{suministro}»",
+      "description": "En los últimos 7 días el consumo del Shelly ({ip}) y el de HA se diferencian un {diferencia} %. No se corrige nada hasta que vuelvan a coincidir. Comprueba que la IP y el canal son los del medidor que usa el suministro."
+    }
+  },
+  "config_subentries": {
+    "suministro": {
+      "initiate_flow": {
+        "user": "Añadir suministro",
+        "reconfigure": "Reconfigurar suministro"
+      },
+      "entry_type": "Suministro",
+      "step": {
+        "user": {
+          "title": "Añadir suministro",
+          "description": "Datos del contrato de luz de este suministro (PVPC con la comercializadora de referencia).",
+          "data": {
+            "name": "Nombre",
+            "potencia_p1_kw": "Potencia contratada P1 (punta)",
+            "potencia_p2_kw": "Potencia contratada P2 (valle)",
+            "bono": "Bono social",
+            "categoria": "Unidad de convivencia",
+            "tipo_fuente": "Fuente del consumo"
+          },
+          "data_description": {
+            "categoria": "Fija el límite anual de kWh con descuento (RD 897/2017). Obligatoria con bono social.",
+            "tipo_fuente": "Sin una fuente de consumo horario no se puede calcular la factura."
+          }
+        },
+        "reconfigure": {
+          "title": "Suministro",
+          "description": "¿Qué quieres hacer?",
+          "menu_options": {
+            "factura_real": "Introducir factura real",
+            "datos": "Cambiar datos del suministro"
+          }
+        },
+        "datos": {
+          "title": "Cambiar datos del suministro",
+          "data": {
+            "name": "Nombre",
+            "potencia_p1_kw": "Potencia contratada P1 (punta)",
+            "potencia_p2_kw": "Potencia contratada P2 (valle)",
+            "bono": "Bono social",
+            "categoria": "Unidad de convivencia",
+            "tipo_fuente": "Fuente del consumo"
+          },
+          "data_description": {
+            "categoria": "Fija el límite anual de kWh con descuento (RD 897/2017). Obligatoria con bono social.",
+            "tipo_fuente": "Sin una fuente de consumo horario no se puede calcular la factura."
+          }
+        },
+        "fuente": {
+          "title": "Fuente del consumo",
+          "description": "Un sensor de energía (kWh, acumulado) o una estadística externa que importe la curva horaria (por ejemplo, de Datadis).",
+          "data": {
+            "fuente": "Fuente"
+          }
+        },
+        "factura": {
+          "title": "Factura",
+          "description": "La fecha de fin de la última factura fija el periodo de facturación en curso. Si no la sabes, déjala vacía: se podrá ajustar al conciliar la primera factura.",
+          "data": {
+            "fin_ultima_factura": "Fin de la última factura",
+            "dias_hasta_emision": "Días entre el fin del periodo y la emisión",
+            "alquiler_contador_eur_mes": "Alquiler del contador (€/mes)",
+            "arrastre_inicial_kwh": "kWh con descuento acumulados (arrastre)",
+            "codigo_postal": "Código postal (solo para comparar tarifas)",
+            "comparar_mensual": "Comparar tarifas cada mes"
+          },
+          "data_description": {
+            "arrastre_inicial_kwh": "Los kWh bonificables que te sobraron en los últimos 12 meses y que aún no has gastado. Si no lo sabes, deja 0: se corregirá al conciliar las facturas.",
+            "codigo_postal": "Opcional. Solo se usa al comparar tarifas: se envían a la CNMC el código postal, las potencias y los kWh anuales por periodo, nada más.",
+            "comparar_mensual": "El día 2 de cada mes compara tus últimos 12 meses con las ofertas de la CNMC y deja una notificación. Necesita el código postal."
+          }
+        },
+        "comprobacion": {
+          "title": "Comprobación con Shelly EM (opcional)",
+          "description": "Si el medidor es un Shelly EM de 1.ª generación, la integración puede descargar cada noche su memoria interna (10 minutos de casi un año) y corregir las horas que falten o estén mal en las estadísticas de HA. Deja la IP vacía para no usarlo.",
+          "data": {
+            "shelly_ip": "IP del Shelly (por ejemplo, 192.168.0.50)",
+            "shelly_canal": "Canal del Shelly",
+            "shelly_frecuencia": "Frecuencia de la comprobación"
+          }
+        },
+        "factura_real": {
+          "title": "Factura real",
+          "description": "Sube el PDF de la factura para leer los datos automáticamente (solo facturas de la Comercializadora Regulada, Gas & Power, de Naturgy). También puedes dejarlo vacío y escribirlos a mano en el paso siguiente.",
+          "data": {
+            "pdf": "PDF de la factura"
+          }
+        },
+        "factura_datos": {
+          "title": "Datos de la factura real",
+          "description": "Revisa los datos tal como vienen en la factura. Con ellos se fija el periodo real, se recalibra el medidor, se corrige el arrastre del bono y se reescribe el coste del periodo en el panel de Energía. Una factura que se solape con otra ya introducida (por ejemplo, una rectificativa) la sustituye.",
+          "data": {
+            "inicio": "Inicio del periodo",
+            "fin": "Fin del periodo",
+            "emision": "Fecha de emisión",
+            "kwh_p1": "Consumo en P1 (punta)",
+            "kwh_p2": "Consumo en P2 (llano)",
+            "kwh_p3": "Consumo en P3 (valle)",
+            "total": "Total de la factura",
+            "kwh_bonificados": "Consumo bonificado"
+          },
+          "data_description": {
+            "inicio": "El día que figura como inicio del periodo («del … al …»).",
+            "kwh_bonificados": "Los kWh con descuento del bono social que aparecen en la factura. Déjalo vacío si no tienes bono."
+          }
+        },
+        "cambio_contrato": {
+          "title": "Cambio de contrato",
+          "description": "Has cambiado la potencia, el bono social o la unidad de convivencia. Indica desde qué día rige el contrato nuevo: los días anteriores del periodo se calculan con el antiguo. Si solo estás corrigiendo un dato mal puesto, deja la fecha vacía y se aplicará a todo.",
+          "data": {
+            "vigente_desde": "En vigor desde"
+          },
+          "data_description": {
+            "vigente_desde": "El primer día con el contrato nuevo (lo pone la carta de la comercializadora o la factura)."
+          }
+        }
+      },
+      "error": {
+        "categoria_requerida": "Con bono social hay que indicar la unidad de convivencia.",
+        "fuente_en_uso": "Esa fuente ya la usa otro suministro.",
+        "estadistica_no_externa": "Elige una estadística externa (dominio:objeto). Para un sensor, vuelve atrás y elige «Sensor de energía».",
+        "fuente_no_encontrada": "No existe esa entidad o todavía no tiene estado.",
+        "fuente_no_energia": "El sensor debe ser de energía (kWh, Wh o MWh) con state_class total o total_increasing.",
+        "pdf_no_reconocido": "No se reconoce el PDF. Solo se leen las facturas de la Comercializadora Regulada, Gas & Power (Naturgy); con otras, deja el archivo vacío e introduce los datos a mano.",
+        "pdf_no_subido": "No se ha podido leer el archivo subido. Vuelve a subirlo.",
+        "es_abono": "Es un abono (factura rectificativa con importe negativo). Sube la factura que la sustituye.",
+        "periodo_no_valido": "El periodo de la factura debe tener entre 1 y 62 días.",
+        "fecha_futura": "No puede ser una fecha futura: haz el cambio el mismo día que empiece.",
+        "codigo_postal_invalido": "El código postal debe tener 5 cifras"
+      },
+      "abort": {
+        "reconfigure_successful": "Suministro actualizado.",
+        "factura_conciliada": "Factura del {inicio} al {fin} conciliada.",
+        "no_cargada": "La integración no está cargada. Actívala y vuelve a intentarlo."
+      }
+    },
+    "resumen": {
+      "initiate_flow": {
+        "user": "Añadir resumen por notificación",
+        "reconfigure": "Cambiar resumen"
+      },
+      "entry_type": "Resumen de precios por notificación",
+      "step": {
+        "user": {
+          "title": "Resumen de precios por notificación",
+          "description": "Un mensaje por la mañana con los precios de hoy y otro por la noche con los de mañana comparados con hoy, como gráfico de barras hecho con emojis.",
+          "data": {
+            "destino": "Destino",
+            "suministro": "Suministro (consumo y factura)",
+            "hoy_activo": "Enviar el resumen de hoy",
+            "hoy_hora": "Hora del resumen de hoy",
+            "manana_activo": "Enviar el resumen de mañana",
+            "manana_hora": "Hora del resumen de mañana",
+            "franjas_hoy": "Mejores franjas de hoy",
+            "franjas_manana": "Mejores franjas de mañana",
+            "duracion_franja": "Horas de cada franja",
+            "incluir_consumo": "Incluir el consumo y el coste de hoy",
+            "incluir_factura": "Incluir la factura en curso",
+            "color_valle": "Color en los días valle",
+            "mostrar_periodo": "Indicar el periodo de cada hora (laborables)"
+          },
+          "data_description": {
+            "destino": "Cualquier entidad de notificación. Si es un chat de Telegram, el mensaje va con formato (columnas alineadas) y no hace falta escribir el ID del chat.",
+            "manana_hora": "ESIOS publica los precios de mañana hacia las 20:20. Si aún no están, se reintenta cada 10 minutos hasta las 23:00.",
+            "color_valle": "En fines de semana y festivos todo el día es valle: con «laborables», sus horas se colorean comparando con los 5 días laborables anteriores.",
+            "mostrar_periodo": "Tras la hora, 🔴 punta, 🟡 llano o 🟢 valle. En fines de semana y festivos todo el día es valle y no se indica."
+          }
+        },
+        "reconfigure": {
+          "title": "Resumen de precios por notificación",
+          "description": "Un mensaje por la mañana con los precios de hoy y otro por la noche con los de mañana comparados con hoy, como gráfico de barras hecho con emojis.",
+          "data": {
+            "destino": "Destino",
+            "suministro": "Suministro (consumo y factura)",
+            "hoy_activo": "Enviar el resumen de hoy",
+            "hoy_hora": "Hora del resumen de hoy",
+            "manana_activo": "Enviar el resumen de mañana",
+            "manana_hora": "Hora del resumen de mañana",
+            "franjas_hoy": "Mejores franjas de hoy",
+            "franjas_manana": "Mejores franjas de mañana",
+            "duracion_franja": "Horas de cada franja",
+            "incluir_consumo": "Incluir el consumo y el coste de hoy",
+            "incluir_factura": "Incluir la factura en curso",
+            "color_valle": "Color en los días valle",
+            "mostrar_periodo": "Indicar el periodo de cada hora (laborables)"
+          },
+          "data_description": {
+            "destino": "Cualquier entidad de notificación. Si es un chat de Telegram, el mensaje va con formato (columnas alineadas) y no hace falta escribir el ID del chat.",
+            "manana_hora": "ESIOS publica los precios de mañana hacia las 20:20. Si aún no están, se reintenta cada 10 minutos hasta las 23:00.",
+            "color_valle": "En fines de semana y festivos todo el día es valle: con «laborables», sus horas se colorean comparando con los 5 días laborables anteriores.",
+            "mostrar_periodo": "Tras la hora, 🔴 punta, 🟡 llano o 🟢 valle. En fines de semana y festivos todo el día es valle y no se indica."
+          }
+        }
+      },
+      "abort": {
+        "reconfigure_successful": "Resumen actualizado."
+      }
+    },
+    "datadis": {
+      "initiate_flow": {
+        "user": "Añadir cuenta de Datadis",
+        "reconfigure": "Datadis"
+      },
+      "entry_type": "Cuenta de Datadis",
+      "step": {
+        "user": {
+          "title": "Cuenta de Datadis",
+          "description": "Opcional: el consumo horario oficial del contador, desde datadis.es. Se descarga una vez al día y se guarda como estadística de energía, que puedes elegir como fuente de consumo de un suministro o usar como referencia. Si Datadis no da datos, todo sigue funcionando con tu medidor.",
+          "data": {
+            "usuario": "Usuario (NIF/NIE)",
+            "clave": "Contraseña"
+          }
+        },
+        "suministro": {
+          "title": "Suministro",
+          "description": "Tu cuenta tiene varios suministros: elige uno (puedes añadir otra cuenta de Datadis para cada uno).",
+          "data": {
+            "cups": "Suministro"
+          }
+        },
+        "reconfigure": {
+          "title": "Datadis",
+          "description": "¿Qué quieres hacer?",
+          "menu_options": {
+            "importar_csv": "Importar un CSV de datadis.es",
+            "cuenta": "Cambiar usuario o contraseña"
+          }
+        },
+        "importar_csv": {
+          "title": "Importar CSV de Datadis",
+          "description": "Sube el CSV de consumo que se descarga en datadis.es (Consumo_….csv). Se comprueba igual que lo que llega por la API: se descartan los días con horas repetidas o idénticos a otro día.",
+          "data": {
+            "csv": "CSV de consumo"
+          }
+        },
+        "cuenta": {
+          "title": "Cuenta de Datadis",
+          "data": {
+            "usuario": "Usuario (NIF/NIE)",
+            "clave": "Contraseña"
+          }
+        }
+      },
+      "error": {
+        "credenciales": "Usuario o contraseña de Datadis incorrectos.",
+        "no_responde": "Datadis no responde. Inténtalo más tarde.",
+        "sin_suministros": "Datadis no devuelve ningún suministro para esta cuenta.",
+        "csv_no_valido": "No es un CSV de consumo de Datadis (faltan las columnas de fecha, hora y consumo).",
+        "csv_vacio": "El CSV no tiene consumos."
+      },
+      "abort": {
+        "ya_configurado": "Ese suministro ya está configurado.",
+        "reconfigure_successful": "Cuenta actualizada: se consultará Datadis ahora.",
+        "no_cargada": "La integración no está cargada. Actívala y vuelve a intentarlo.",
+        "csv_importado": "Importadas {horas} horas. Días descartados: {rechazados}."
+      }
+    }
+  },
+  "services": {
+    "conciliar_factura": {
+      "name": "Conciliar factura",
+      "description": "Introduce la factura real de un periodo. Fija el corte real, recalibra el medidor, corrige el saldo del bono y reescribe la estadística de coste del periodo con el total real.",
+      "fields": {
+        "suministro": {
+          "name": "Suministro",
+          "description": "El suministro de la factura."
+        },
+        "inicio": {
+          "name": "Inicio del periodo",
+          "description": "La fecha «del X» de la factura (ese día no se factura)."
+        },
+        "fin": {
+          "name": "Fin del periodo",
+          "description": "La fecha «al Y» de la factura."
+        },
+        "emision": {
+          "name": "Fecha de emisión",
+          "description": "La fecha de la factura (si no se indica, fin + días hasta la emisión)."
+        },
+        "kwh_p1": {
+          "name": "kWh en P1 (punta)",
+          "description": "Consumo de P1 de la factura."
+        },
+        "kwh_p2": {
+          "name": "kWh en P2 (llano)",
+          "description": "Consumo de P2 de la factura."
+        },
+        "kwh_p3": {
+          "name": "kWh en P3 (valle)",
+          "description": "Consumo de P3 de la factura."
+        },
+        "total": {
+          "name": "Total de la factura",
+          "description": "Importe total con impuestos."
+        },
+        "kwh_bonificados": {
+          "name": "kWh bonificados",
+          "description": "Suma de los kWh con descuento de la factura (opcional, mejora el cálculo del bono)."
+        }
+      }
+    },
+    "enviar_resumen": {
+      "name": "Enviar resumen de precios",
+      "description": "Envía el resumen de precios de hoy o de mañana a los destinos configurados o a uno concreto. Con «Solo devolver el texto» no envía nada y devuelve el mensaje.",
+      "fields": {
+        "manana": {
+          "name": "Mañana",
+          "description": "El resumen de mañana comparado con hoy (si no, el de hoy)."
+        },
+        "destino": {
+          "name": "Destino",
+          "description": "Entidad de notificación. Si no se indica, se envía a todos los resúmenes configurados."
+        },
+        "dry_run": {
+          "name": "Solo devolver el texto",
+          "description": "No envía nada: devuelve el texto en la respuesta del servicio."
+        }
+      }
+    },
+    "comparar_tarifas": {
+      "name": "Comparar tarifas",
+      "description": "Compara lo pagado en los últimos 12 meses con las ofertas del comparador de la CNMC para el código postal del suministro y deja el resultado en el sensor «Mejor alternativa de tarifa».",
+      "fields": {
+        "suministro": {
+          "name": "Suministro",
+          "description": "Dispositivo del suministro."
+        },
+        "destino": {
+          "name": "Destino",
+          "description": "Entidad de notificación (por ejemplo, un chat de Telegram) a la que enviar también el resultado."
+        },
+        "notificacion": {
+          "name": "Notificación persistente",
+          "description": "Deja el resultado (o el error) en una notificación persistente."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,720 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "This integration is already configured.",
+      "reauth_successful": "Re-authentication successful.",
+      "sin_pvpc_next": "There is no PVPC Next entry with entities any more."
+    },
+    "error": {
+      "invalid_auth": "Invalid authentication.",
+      "cannot_connect": "Failed to connect: the ESIOS API could not be reached.",
+      "indexed_requires_private_api": "Indexed mode requires private API and a valid API token.",
+      "falta_copia": "A backup is required before continuing."
+    },
+    "step": {
+      "api_token": {
+        "data": {
+          "api_token": "API Token"
+        },
+        "description": "To use the extended API you must request a personal token by mailing to {mail_to_link}.",
+        "title": "ESIOS API token"
+      },
+      "price_mode": {
+        "data": {
+          "price_mode": "Price mode",
+          "show_reference_price": "Show Reference Price"
+        },
+        "description": "Select which series should be used as Current Price.",
+        "title": "Price mode"
+      },
+      "reauth_confirm": {
+        "data": {
+          "api_token": "API Token",
+          "description": "Re-authenticate with a valid token"
+        }
+      },
+      "user": {
+        "description": "PVPC + Bono Social works without a token (public API). If you have a token, enable the checkbox below (private API), which also allows using indexed price mode and fetching injection price, day-ahead wholesale price (OMIE), and the regulated gas adjustment (MAG tax).",
+        "data": {
+          "name": "Sensor Name",
+          "power_p1": "P1 (punta) (kW)",
+          "power_p3": "P3 (llano) (kW)",
+          "tariff": "Applicable tariff by geographic zone",
+          "better_price_target": "Better Price Target",
+          "next_price_in_update": "Next Price In update frequency",
+          "next_best_in_update": "Next Best In update frequency",
+          "next_period_in_update": "Next Period In update frequency",
+          "next_power_period_in_update": "Next Power Period In update frequency",
+          "enable_private_api": "Enable API token fetching (private API)"
+        }
+      },
+      "origen": {
+        "title": "PVPC Next found",
+        "description": "There is a PVPC Next installation. You can bring its entities over with their history and statistics; they will be renamed to sensor.pvpc_bs_*.",
+        "menu_options": {
+          "importar_pvpc_next": "Import from PVPC Next (recommended)",
+          "nueva": "Start from scratch"
+        }
+      },
+      "importar_pvpc_next": {
+        "title": "Import from PVPC Next",
+        "description": "{total} entities of «{titulo}» will move to this integration with their history and statistics: {entidades}.\n\nThey will be renamed to **sensor.pvpc_bs_*** (for example, sensor.esios_pvpc → sensor.pvpc_bs_precio). The Energy dashboard is updated automatically; your scripts, automations and dashboards must be changed by hand: the full list will be shown in Repairs when finished.\n\nImported options: tariff {tarifa}, powers, better-price target, update frequencies, private API and price mode (token: {token}).\n\nThe PVPC Next entry will be disabled; afterwards you can delete it and uninstall PVPC Next and its card from HACS.\n\n**Make a Home Assistant backup first.**",
+        "data": {
+          "copia_seguridad": "I have made a Home Assistant backup"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "api_token": {
+        "data": {
+          "api_token": "API Token"
+        },
+        "description": "To use the extended API you must request a personal token by mailing to {mail_to_link}.",
+        "title": "ESIOS API token"
+      },
+      "init": {
+        "description": "PVPC + Bono Social works without a token (public API). If you have a token, enable the checkbox below (private API), which also allows using indexed price mode and fetching injection price, day-ahead wholesale price (OMIE), and the regulated gas adjustment (MAG tax).",
+        "data": {
+          "power_p1": "P1 (punta) (kW)",
+          "power_p3": "P3 (llano) (kW)",
+          "better_price_target": "Better Price Target",
+          "next_price_in_update": "Next Price In update frequency",
+          "next_best_in_update": "Next Best In update frequency",
+          "next_period_in_update": "Next Period In update frequency",
+          "next_power_period_in_update": "Next Power Period In update frequency",
+          "enable_private_api": "Enable API token fetching (private API)"
+        }
+      },
+      "price_mode": {
+        "data": {
+          "price_mode": "Price mode",
+          "show_reference_price": "Show Reference Price"
+        },
+        "description": "Select which series should be used as Current Price.",
+        "title": "Price mode"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "precio": {
+        "name": "Current price"
+      },
+      "precio_excedentes": {
+        "name": "Surplus price"
+      },
+      "ajuste_gas": {
+        "name": "Gas adjustment (MAG)"
+      },
+      "precio_omie": {
+        "name": "Wholesale price (OMIE)"
+      },
+      "precio_indexado": {
+        "name": "Indexed price"
+      },
+      "precio_pvpc": {
+        "name": "Reference PVPC price"
+      },
+      "id_dato_pvpc": {
+        "name": "PVPC data ID"
+      },
+      "fuente_api": {
+        "name": "Data source"
+      },
+      "modo_precio": {
+        "name": "Price mode"
+      },
+      "tarifa": {
+        "name": "Tariff"
+      },
+      "periodo": {
+        "name": "Current period"
+      },
+      "periodo_potencia": {
+        "name": "Current power period"
+      },
+      "siguiente_periodo_potencia": {
+        "name": "Next power period"
+      },
+      "siguiente_periodo_potencia_en": {
+        "name": "Next power period in"
+      },
+      "potencia_disponible": {
+        "name": "Available power"
+      },
+      "siguiente_periodo": {
+        "name": "Next period"
+      },
+      "siguiente_periodo_en": {
+        "name": "Next period in"
+      },
+      "precio_minimo": {
+        "name": "Today's minimum price"
+      },
+      "precio_maximo": {
+        "name": "Today's maximum price"
+      },
+      "siguiente_mejor_precio": {
+        "name": "Next best price"
+      },
+      "siguiente_precio": {
+        "name": "Next price"
+      },
+      "siguiente_precio_en": {
+        "name": "Next price in"
+      },
+      "nivel_siguiente_precio": {
+        "name": "Next price level",
+        "state": {
+          "very_cheap": "Very cheap",
+          "cheap": "Cheap",
+          "neutral": "Neutral",
+          "expensive": "Expensive",
+          "very_expensive": "Very expensive"
+        }
+      },
+      "siguiente_mejor_precio_en": {
+        "name": "Next best price in"
+      },
+      "precios_mejores": {
+        "name": "Cheaper hours ahead"
+      },
+      "precio_medio": {
+        "name": "Today's average price"
+      },
+      "nivel_precio": {
+        "name": "Current price level",
+        "state": {
+          "very_cheap": "Very cheap",
+          "cheap": "Cheap",
+          "neutral": "Neutral",
+          "expensive": "Expensive",
+          "very_expensive": "Very expensive"
+        }
+      },
+      "nivel_siguiente_mejor_precio": {
+        "name": "Next best price level",
+        "state": {
+          "very_cheap": "Very cheap",
+          "cheap": "Cheap",
+          "neutral": "Neutral",
+          "expensive": "Expensive",
+          "very_expensive": "Very expensive"
+        }
+      },
+      "id_dato_excedentes": {
+        "name": "Surplus data ID"
+      },
+      "id_dato_ajuste_gas": {
+        "name": "Gas adjustment data ID"
+      },
+      "id_dato_omie": {
+        "name": "OMIE data ID"
+      },
+      "factura_actual": {
+        "name": "Current period bill (forecast)"
+      },
+      "factura_anterior": {
+        "name": "Previous period bill"
+      },
+      "coste_hoy": {
+        "name": "Cost today"
+      },
+      "precio_real": {
+        "name": "Real hourly price"
+      },
+      "kwh_bonificables": {
+        "name": "Remaining discounted kWh"
+      },
+      "estado_datos": {
+        "name": "Data status",
+        "state": {
+          "ok": "OK",
+          "sin_fecha": "Last bill date missing",
+          "sin_consumo": "No consumption data",
+          "precios_incompletos": "Prices missing",
+          "consumo_incompleto": "Consumption hours missing"
+        }
+      },
+      "estado_datadis": {
+        "name": "Datadis status",
+        "state": {
+          "ok": "With data",
+          "sin_datos": "No data",
+          "sin_datos_recientes": "No recent data",
+          "esperando": "Waiting for the first query",
+          "credenciales": "Wrong user or password",
+          "no_responde": "Datadis not responding"
+        }
+      },
+      "mejor_alternativa": {
+        "name": "Best tariff alternative"
+      }
+    },
+    "date": {
+      "fin_periodo": {
+        "name": "Billing period end"
+      }
+    },
+    "button": {
+      "comparar_tarifas": {
+        "name": "Compare tariffs"
+      }
+    }
+  },
+  "selector": {
+    "better_price_target": {
+      "options": {
+        "neutral": "Neutral",
+        "cheap": "Cheap",
+        "very_cheap": "Very cheap"
+      }
+    },
+    "update_frequency": {
+      "options": {
+        "disabled": "Disabled",
+        "hourly": "Hourly",
+        "minute": "Every minute"
+      }
+    },
+    "price_mode": {
+      "options": {
+        "pvpc": "PVPC",
+        "indexed": "Indexed"
+      }
+    },
+    "bono": {
+      "options": {
+        "ninguno": "No bono social",
+        "vulnerable": "Vulnerable",
+        "severo": "Severely vulnerable",
+        "severo_exclusion": "Severely vulnerable at risk of exclusion"
+      }
+    },
+    "categoria": {
+      "options": {
+        "individual_o_dos": "1 or 2 people (1,587 kWh/year)",
+        "tres_o_pensionista_o_dos_con_menor": "3 people, pensioner or 2 with a minor (2,222 kWh/year)",
+        "cuatro_o_tres_con_dos_menores": "4 people or 3 with two minors (2,698 kWh/year)",
+        "cinco_o_mas_o_familia_numerosa": "5 or more people or large family (4,761 kWh/year)"
+      }
+    },
+    "tipo_fuente": {
+      "options": {
+        "sensor": "Home Assistant energy sensor",
+        "estadistica": "External statistic (domain:object)"
+      }
+    },
+    "shelly_frecuencia": {
+      "options": {
+        "diaria": "Daily (at night)",
+        "semanal": "Weekly (Mondays)",
+        "desactivada": "Disabled"
+      }
+    },
+    "shelly_canal": {
+      "options": {
+        "1": "1",
+        "2": "2"
+      }
+    },
+    "color_valle": {
+      "options": {
+        "laborables": "Against the 5 previous working days",
+        "dia": "Against the day itself"
+      }
+    }
+  },
+  "issues": {
+    "periodos_discrepantes": {
+      "title": "ESIOS periods differ from the calendar",
+      "description": "In {total} hours with published prices, the period ESIOS applied (from each hour's access toll) does not match the holiday calendar. The integration uses the ESIOS period. Latest hours: {horas}. If it keeps happening, please open an issue."
+    },
+    "importar_pvpc_next": {
+      "title": "Import the PVPC Next entities",
+      "fix_flow": {
+        "step": {
+          "confirmar": {
+            "title": "Import from PVPC Next",
+            "description": "{total} entities of «{titulo}» will move to this integration with their history and statistics: {entidades}.\n\nThey will be renamed to **sensor.pvpc_bs_*** (for example, sensor.esios_pvpc → sensor.pvpc_bs_precio). The Energy dashboard is updated automatically; your scripts, automations and dashboards must be changed by hand: the full list will be shown in Repairs when finished.\n\nImported options: tariff {tarifa}, powers, better-price target, update frequencies, private API and price mode (token: {token}).\n\nThe PVPC Next entry will be disabled; afterwards you can delete it and uninstall PVPC Next and its card from HACS.\n\n**Make a Home Assistant backup first.**",
+            "data": {
+              "copia_seguridad": "I have made a Home Assistant backup"
+            }
+          }
+        },
+        "error": {
+          "falta_copia": "A backup is required before continuing."
+        },
+        "abort": {
+          "ya_no_existe": "The PVPC Next entry or this integration's entry no longer exists."
+        }
+      }
+    },
+    "pvpc_next_vacia": {
+      "title": "PVPC Next has no entities left",
+      "description": "The PVPC Next entry «{titulo}» has no entities left (they were imported into PVPC + Bono Social). Delete it in Settings → Devices & services and uninstall PVPC Next and its card from HACS to avoid duplicate downloads."
+    },
+    "nombres_cambiados": {
+      "title": "Entities renamed to sensor.pvpc_bs_*",
+      "description": "These entities have been renamed; their history and statistics are kept and the Energy dashboard is already updated. Replace the old names in your scripts, automations and dashboards:\n\n{cambios}\n\nOnce done, you can ignore this notice."
+    },
+    "falta_fecha_factura": {
+      "title": "Last bill date missing for «{suministro}»",
+      "description": "The end date of the last bill is needed to know which period is being billed (the bill shows «from X to Y»: it is Y). Add it in Settings → Devices & services → PVPC + Bono Social → «{suministro}» → Reconfigure."
+    },
+    "usar_estadistica_coste": {
+      "title": "Use the PVPC + Bono Social cost in the Energy dashboard («{suministro}»)",
+      "fix_flow": {
+        "step": {
+          "confirmar": {
+            "title": "Change the Energy dashboard cost",
+            "description": "The Energy dashboard computes the grid cost with «{actual}». The statistic {nueva} holds your COR bill cost hour by hour (with bono social, taxes and fixed terms) and is corrected backwards when the estimate changes. Do you want to use it as the cost in the Energy dashboard? You can change it back at any time from the dashboard itself.\n\n{nueva} will be set as the grid consumption «cost» in the Energy dashboard."
+          }
+        }
+      }
+    },
+    "shelly_no_coincide": {
+      "title": "The Shelly does not match HA in «{suministro}»",
+      "description": "Over the last 7 days the Shelly ({ip}) and HA consumption differ by {diferencia} %. Nothing is corrected until they match again. Check that the IP and channel belong to the meter used by the supply."
+    }
+  },
+  "config_subentries": {
+    "suministro": {
+      "initiate_flow": {
+        "user": "Add supply",
+        "reconfigure": "Reconfigure supply"
+      },
+      "entry_type": "Supply",
+      "step": {
+        "user": {
+          "title": "Add supply",
+          "description": "Electricity contract of this supply (PVPC with the reference retailer).",
+          "data": {
+            "name": "Name",
+            "potencia_p1_kw": "Contracted power P1 (peak)",
+            "potencia_p2_kw": "Contracted power P2 (off-peak)",
+            "bono": "Bono social (social discount)",
+            "categoria": "Household",
+            "tipo_fuente": "Consumption source"
+          },
+          "data_description": {
+            "categoria": "Sets the yearly discounted kWh limit (RD 897/2017). Required with bono social.",
+            "tipo_fuente": "The bill cannot be computed without an hourly consumption source."
+          }
+        },
+        "reconfigure": {
+          "title": "Supply",
+          "description": "What do you want to do?",
+          "menu_options": {
+            "factura_real": "Enter actual bill",
+            "datos": "Change supply details"
+          }
+        },
+        "datos": {
+          "title": "Change supply details",
+          "data": {
+            "name": "Name",
+            "potencia_p1_kw": "Contracted power P1 (peak)",
+            "potencia_p2_kw": "Contracted power P2 (off-peak)",
+            "bono": "Bono social (social discount)",
+            "categoria": "Household",
+            "tipo_fuente": "Consumption source"
+          },
+          "data_description": {
+            "categoria": "Sets the yearly discounted kWh limit (RD 897/2017). Required with bono social.",
+            "tipo_fuente": "The bill cannot be computed without an hourly consumption source."
+          }
+        },
+        "fuente": {
+          "title": "Consumption source",
+          "description": "An energy sensor (kWh, cumulative) or an external statistic that imports the hourly curve (for example, from Datadis).",
+          "data": {
+            "fuente": "Source"
+          }
+        },
+        "factura": {
+          "title": "Bill",
+          "description": "The end date of the last bill sets the current billing period. If you don't know it, leave it empty: it can be adjusted when reconciling the first bill.",
+          "data": {
+            "fin_ultima_factura": "End of the last bill",
+            "dias_hasta_emision": "Days between the end of the period and the issue date",
+            "alquiler_contador_eur_mes": "Meter rental (€/month)",
+            "arrastre_inicial_kwh": "Accumulated discounted kWh (carry-over)",
+            "codigo_postal": "Postal code (only to compare tariffs)",
+            "comparar_mensual": "Compare tariffs every month"
+          },
+          "data_description": {
+            "arrastre_inicial_kwh": "The discounted kWh left over in the last 12 months that you have not used yet. If you do not know, leave 0: it is corrected when bills are reconciled.",
+            "codigo_postal": "Optional. Only used to compare tariffs: the postal code, the contracted power and the yearly kWh per period are sent to the CNMC, nothing else.",
+            "comparar_mensual": "On the 2nd of every month, compares your last 12 months with the CNMC offers and leaves a notification. Needs the postal code."
+          }
+        },
+        "comprobacion": {
+          "title": "Shelly EM check (optional)",
+          "description": "If the meter is a 1st-generation Shelly EM, the integration can download its internal memory every night (10-minute data for almost a year) and correct the hours that are missing or wrong in HA statistics. Leave the IP empty to skip it.",
+          "data": {
+            "shelly_ip": "Shelly IP (for example, 192.168.0.50)",
+            "shelly_canal": "Shelly channel",
+            "shelly_frecuencia": "Check frequency"
+          }
+        },
+        "factura_real": {
+          "title": "Actual bill",
+          "description": "Upload the bill PDF to read its data automatically (only bills from Comercializadora Regulada, Gas & Power, by Naturgy). You can also leave it empty and type the data by hand in the next step.",
+          "data": {
+            "pdf": "Bill PDF"
+          }
+        },
+        "factura_datos": {
+          "title": "Actual bill details",
+          "description": "Check the data exactly as printed on the bill. They set the real billing period, recalibrate the meter, correct the social bonus carry-over and rewrite the period cost in the Energy dashboard. A bill overlapping one already entered (for example, a corrective bill) replaces it.",
+          "data": {
+            "inicio": "Period start",
+            "fin": "Period end",
+            "emision": "Issue date",
+            "kwh_p1": "Consumption in P1 (peak)",
+            "kwh_p2": "Consumption in P2 (standard)",
+            "kwh_p3": "Consumption in P3 (off-peak)",
+            "total": "Bill total",
+            "kwh_bonificados": "Discounted consumption"
+          },
+          "data_description": {
+            "inicio": "The day shown as the start of the period (\"from … to …\").",
+            "kwh_bonificados": "The kWh with social bonus discount shown on the bill. Leave it empty if you have no social bonus."
+          }
+        },
+        "cambio_contrato": {
+          "title": "Contract change",
+          "description": "You changed the contracted power, the social bonus or the household size. Enter the day the new contract starts: the earlier days of the period are calculated with the old one. If you are only fixing a wrong value, leave the date empty and it will apply to everything.",
+          "data": {
+            "vigente_desde": "Effective from"
+          },
+          "data_description": {
+            "vigente_desde": "The first day with the new contract (as stated by the supplier's letter or the bill)."
+          }
+        }
+      },
+      "error": {
+        "categoria_requerida": "With bono social the household must be set.",
+        "fuente_en_uso": "That source is already used by another supply.",
+        "estadistica_no_externa": "Choose an external statistic (domain:object). For a sensor, go back and choose «Energy sensor».",
+        "fuente_no_encontrada": "That entity does not exist or has no state yet.",
+        "fuente_no_energia": "The sensor must be an energy sensor (kWh, Wh or MWh) with state_class total or total_increasing.",
+        "pdf_no_reconocido": "The PDF is not recognised. Only bills from Comercializadora Regulada, Gas & Power (Naturgy) can be read; for others, leave the file empty and enter the data by hand.",
+        "pdf_no_subido": "The uploaded file could not be read. Upload it again.",
+        "es_abono": "This is a credit note (corrective bill with a negative amount). Upload the bill that replaces it.",
+        "periodo_no_valido": "The billing period must be between 1 and 62 days long.",
+        "fecha_futura": "It cannot be a future date: make the change on the day it starts.",
+        "codigo_postal_invalido": "The postal code must have 5 digits"
+      },
+      "abort": {
+        "reconfigure_successful": "Supply updated.",
+        "factura_conciliada": "Bill from {inicio} to {fin} reconciled.",
+        "no_cargada": "The integration is not loaded. Enable it and try again."
+      }
+    },
+    "resumen": {
+      "initiate_flow": {
+        "user": "Add price summary notification",
+        "reconfigure": "Change summary"
+      },
+      "entry_type": "Price summary notification",
+      "step": {
+        "user": {
+          "title": "Price summary notification",
+          "description": "A morning message with today's prices and an evening one with tomorrow's prices compared with today, as an emoji bar chart.",
+          "data": {
+            "destino": "Destination",
+            "suministro": "Supply (consumption and bill)",
+            "hoy_activo": "Send today's summary",
+            "hoy_hora": "Time of today's summary",
+            "manana_activo": "Send tomorrow's summary",
+            "manana_hora": "Time of tomorrow's summary",
+            "franjas_hoy": "Best slots today",
+            "franjas_manana": "Best slots tomorrow",
+            "duracion_franja": "Hours per slot",
+            "incluir_consumo": "Include today's consumption and cost",
+            "incluir_factura": "Include the current bill",
+            "color_valle": "Colour on off-peak days",
+            "mostrar_periodo": "Show each hour's period (working days)"
+          },
+          "data_description": {
+            "destino": "Any notify entity. If it is a Telegram chat, the message is formatted (aligned columns) and you do not need to type the chat ID.",
+            "manana_hora": "ESIOS publishes tomorrow's prices around 20:20. If they are not out yet, it retries every 10 minutes until 23:00.",
+            "color_valle": "On weekends and holidays the whole day is off-peak: with \"working days\", its hours are coloured against the 5 previous working days.",
+            "mostrar_periodo": "After the hour, 🔴 peak, 🟡 standard or 🟢 off-peak. On weekends and holidays the whole day is off-peak and it is not shown."
+          }
+        },
+        "reconfigure": {
+          "title": "Price summary notification",
+          "description": "A morning message with today's prices and an evening one with tomorrow's prices compared with today, as an emoji bar chart.",
+          "data": {
+            "destino": "Destination",
+            "suministro": "Supply (consumption and bill)",
+            "hoy_activo": "Send today's summary",
+            "hoy_hora": "Time of today's summary",
+            "manana_activo": "Send tomorrow's summary",
+            "manana_hora": "Time of tomorrow's summary",
+            "franjas_hoy": "Best slots today",
+            "franjas_manana": "Best slots tomorrow",
+            "duracion_franja": "Hours per slot",
+            "incluir_consumo": "Include today's consumption and cost",
+            "incluir_factura": "Include the current bill",
+            "color_valle": "Colour on off-peak days",
+            "mostrar_periodo": "Show each hour's period (working days)"
+          },
+          "data_description": {
+            "destino": "Any notify entity. If it is a Telegram chat, the message is formatted (aligned columns) and you do not need to type the chat ID.",
+            "manana_hora": "ESIOS publishes tomorrow's prices around 20:20. If they are not out yet, it retries every 10 minutes until 23:00.",
+            "color_valle": "On weekends and holidays the whole day is off-peak: with \"working days\", its hours are coloured against the 5 previous working days.",
+            "mostrar_periodo": "After the hour, 🔴 peak, 🟡 standard or 🟢 off-peak. On weekends and holidays the whole day is off-peak and it is not shown."
+          }
+        }
+      },
+      "abort": {
+        "reconfigure_successful": "Summary updated."
+      }
+    },
+    "datadis": {
+      "initiate_flow": {
+        "user": "Add Datadis account",
+        "reconfigure": "Datadis"
+      },
+      "entry_type": "Datadis account",
+      "step": {
+        "user": {
+          "title": "Datadis account",
+          "description": "Optional: the official hourly consumption of your meter, from datadis.es. It is downloaded once a day and stored as an energy statistic that you can choose as a supply's consumption source or use as a reference. If Datadis returns no data, everything keeps working with your meter.",
+          "data": {
+            "usuario": "User (NIF/NIE)",
+            "clave": "Password"
+          }
+        },
+        "suministro": {
+          "title": "Supply",
+          "description": "Your account has several supplies: choose one (you can add another Datadis account for each).",
+          "data": {
+            "cups": "Supply"
+          }
+        },
+        "reconfigure": {
+          "title": "Datadis",
+          "description": "What do you want to do?",
+          "menu_options": {
+            "importar_csv": "Import a CSV from datadis.es",
+            "cuenta": "Change user or password"
+          }
+        },
+        "importar_csv": {
+          "title": "Import Datadis CSV",
+          "description": "Upload the consumption CSV downloaded from datadis.es (Consumo_….csv). It is checked like the API data: days with repeated hours or identical to another day are discarded.",
+          "data": {
+            "csv": "Consumption CSV"
+          }
+        },
+        "cuenta": {
+          "title": "Datadis account",
+          "data": {
+            "usuario": "User (NIF/NIE)",
+            "clave": "Password"
+          }
+        }
+      },
+      "error": {
+        "credenciales": "Wrong Datadis user or password.",
+        "no_responde": "Datadis is not responding. Try again later.",
+        "sin_suministros": "Datadis returns no supply for this account.",
+        "csv_no_valido": "Not a Datadis consumption CSV (date, hour and consumption columns missing).",
+        "csv_vacio": "The CSV has no consumption data."
+      },
+      "abort": {
+        "ya_configurado": "That supply is already configured.",
+        "reconfigure_successful": "Account updated: Datadis will be queried now.",
+        "no_cargada": "The integration is not loaded. Enable it and try again.",
+        "csv_importado": "Imported {horas} hours. Discarded days: {rechazados}."
+      }
+    }
+  },
+  "services": {
+    "conciliar_factura": {
+      "name": "Reconcile bill",
+      "description": "Enter the real bill of a period. It sets the real cut-off date, recalibrates the meter, corrects the bono social balance and rewrites the period cost statistic with the real total.",
+      "fields": {
+        "suministro": {
+          "name": "Supply",
+          "description": "The supply of the bill."
+        },
+        "inicio": {
+          "name": "Period start",
+          "description": "The «from X» date of the bill (that day is not billed)."
+        },
+        "fin": {
+          "name": "Period end",
+          "description": "The «to Y» date of the bill."
+        },
+        "emision": {
+          "name": "Issue date",
+          "description": "The bill date (if omitted, end + days until issue)."
+        },
+        "kwh_p1": {
+          "name": "kWh in P1 (peak)",
+          "description": "P1 consumption on the bill."
+        },
+        "kwh_p2": {
+          "name": "kWh in P2 (flat)",
+          "description": "P2 consumption on the bill."
+        },
+        "kwh_p3": {
+          "name": "kWh in P3 (off-peak)",
+          "description": "P3 consumption on the bill."
+        },
+        "total": {
+          "name": "Bill total",
+          "description": "Total amount including taxes."
+        },
+        "kwh_bonificados": {
+          "name": "Discounted kWh",
+          "description": "Sum of discounted kWh on the bill (optional, improves the bono calculation)."
+        }
+      }
+    },
+    "enviar_resumen": {
+      "name": "Send price summary",
+      "description": "Sends today's or tomorrow's price summary to the configured destinations or to a given one. With \"Only return the text\" nothing is sent and the message is returned.",
+      "fields": {
+        "manana": {
+          "name": "Tomorrow",
+          "description": "Tomorrow's summary compared with today (otherwise, today's)."
+        },
+        "destino": {
+          "name": "Destination",
+          "description": "Notify entity. If not given, it is sent to all configured summaries."
+        },
+        "dry_run": {
+          "name": "Only return the text",
+          "description": "Sends nothing: returns the text in the service response."
+        }
+      }
+    },
+    "comparar_tarifas": {
+      "name": "Compare tariffs",
+      "description": "Compares what was paid in the last 12 months with the offers of the CNMC comparator for the supply's postal code and stores the result in the \"Best tariff alternative\" sensor.",
+      "fields": {
+        "suministro": {
+          "name": "Supply",
+          "description": "Supply device."
+        },
+        "destino": {
+          "name": "Destination",
+          "description": "Notify entity (for example, a Telegram chat) to also send the result to."
+        },
+        "notificacion": {
+          "name": "Persistent notification",
+          "description": "Leaves the result (or the error) in a persistent notification."
+        }
+      }
+    }
+  }
+}

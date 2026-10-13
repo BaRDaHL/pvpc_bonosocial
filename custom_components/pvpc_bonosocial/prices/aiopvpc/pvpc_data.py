@@ -1,0 +1,606 @@
+"""
+Simple aio library to download Spanish electricity hourly prices.
+
+Externalization of download and parsing logic for the `pvpc_next`
+HomeAssistant integration,
+https://www.home-assistant.io/integrations/pvpc_hourly_pricing/
+"""
+
+from __future__ import annotations
+
+import asyncio
+import io
+import json
+import logging
+import random
+import zipfile
+from collections import deque
+from datetime import datetime, timedelta
+from typing import Any
+
+import aiohttp
+
+from .const import (
+    ALL_SENSORS,
+    ATTRIBUTIONS,
+    DEFAULT_POWER_KW,
+    DEFAULT_TIMEOUT,
+    KEY_PVPC,
+    REFERENCE_TZ,
+    SENSOR_KEY_TO_API_SERIES,
+    SENSOR_KEY_TO_DATAID,
+    TARIFFS,
+    UTC_TZ,
+    DataSource,
+    EsiosApiData,
+    EsiosResponse,
+    normalize_tariff,
+    zoneinfo,
+)
+from .parser import extract_esios_data, get_daily_urls_to_download
+from .prices import add_composed_price_sensors, make_price_sensor_attributes
+from .pvpc_tariff import (
+    PublishedPeriodFn,
+    get_current_and_next_power_periods,
+    get_current_and_next_price_periods,
+)
+from .utils import ensure_utc_time
+
+_LOGGER = logging.getLogger(__name__)
+
+_STANDARD_USER_AGENTS = [
+    ("Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:47.0) Gecko/20100101 Firefox/47.3"),
+    ("Mozilla/5.0 (Macintosh; Intel Mac OS X x.y; rv:42.0) Gecko/20100101 Firefox/43.4"),
+    (
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/77.0.3865.90 Safari/537.36"
+    ),
+    ("Mozilla/5.0 (iPhone; CPU iPhone OS 11_3_1 like Mac OS X) AppleWebKit/603.1.30 (KHTML, like Gecko)"),
+    "Version/10.0 Mobile/14E304 Safari/602.1",
+]
+
+
+class BadApiTokenAuthError(Exception):
+    """Exception to signal HA that ESIOS API token is invalid (401 status)."""
+
+
+class PVPCData:
+    """
+    Data handler for PVPC hourly prices.
+
+    * Async download of prices for each day
+    * Generate state attributes for HA integration.
+
+    - Prices are returned in a `dict[datetime, float]`,
+    with timestamps in UTC and prices in €/kWh.
+    """
+
+    def __init__(
+        self,
+        *,
+        session: aiohttp.ClientSession,
+        tariff: str = TARIFFS[0],
+        local_timezone: str | zoneinfo.ZoneInfo = REFERENCE_TZ,
+        power: float = DEFAULT_POWER_KW,
+        power_valley: float = DEFAULT_POWER_KW,
+        timeout: float = DEFAULT_TIMEOUT,
+        data_source: DataSource = "esios_public",
+        api_token: str | None = None,
+        sensor_keys: tuple[str, ...] = (KEY_PVPC,),
+    ) -> None:
+        """Set up API access."""
+        self.states: dict[str, float | None] = {}
+        self.sensor_attributes: dict[str, dict[str, Any]] = {}
+        self._sensor_keys: set[str] = {key for key in sensor_keys if key in ALL_SENSORS}
+
+        self._timeout = timeout
+        self._session = session
+        self._data_source = data_source
+        self._api_token = api_token
+        if self._api_token is not None:
+            self._data_source = "esios"
+        if data_source == "esios" and self._api_token is None:
+            raise ValueError(f"data_source '{data_source}' requires an API token")
+        agents = list(_STANDARD_USER_AGENTS)
+        random.shuffle(agents)
+        self._user_agents = deque(agents)
+
+        self._local_timezone = zoneinfo.ZoneInfo(str(local_timezone))
+        tariff = normalize_tariff(tariff)
+        if tariff not in TARIFFS:
+            raise ValueError(f"Unknown tariff: {tariff}")
+        self.tariff = tariff
+
+        self._power = power
+        self._power_valley = power_valley
+        # Periodo publicado (TEU del histórico de precios); None = solo la regla.
+        self.published_period: PublishedPeriodFn | None = None
+
+    @property
+    def using_private_api(self) -> bool:
+        """Check if an API token is available and data-source is ESIOS."""
+        return self._api_token is not None and self._data_source == "esios"
+
+    async def _api_get_data(self, sensor_key: str, url: str) -> EsiosResponse | None:
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "Host": "api.esios.ree.es",
+            "User-Agent": self._user_agents[0],
+        }
+        if self.using_private_api:
+            assert self._api_token is not None
+            headers["x-api-key"] = self._api_token
+            headers["Authorization"] = f"Token token={self._api_token}"
+
+        async with self._session.get(url, headers=headers) as resp:
+            if resp.status < 400:
+                # Read raw bytes: ESIOS transiently serves bad Content-Type
+                # headers (e.g. `json`) and may wrap the daily file in a ZIP,
+                # so don't rely on aiohttp's strict content-type check.
+                raw = await resp.read()
+                if raw[:4] == b"PK\x03\x04":
+                    try:
+                        with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+                            names = zf.namelist()
+                            member = next(
+                                (n for n in names if n.upper().startswith("PVPC")),
+                                names[0],
+                            )
+                            raw = zf.read(member)
+                    except (zipfile.BadZipFile, IndexError):
+                        _LOGGER.warning("[%s] Corrupt ZIP payload from '%s'", sensor_key, url)
+                        return None
+                try:
+                    data = json.loads(raw)
+                except ValueError:
+                    _LOGGER.warning(
+                        "[%s] Non-JSON payload from '%s' (%d bytes, content-type=%s)",
+                        sensor_key,
+                        url,
+                        len(raw),
+                        resp.content_type,
+                    )
+                    return None
+                if not isinstance(data, dict):
+                    _LOGGER.warning(
+                        "[%s] Unexpected JSON payload type (%s) from '%s'",
+                        sensor_key,
+                        type(data).__name__,
+                        url,
+                    )
+                    return None
+                return extract_esios_data(data, url, sensor_key, self.tariff, tz=self._local_timezone)
+            if resp.status == 401 and self._data_source == "esios":
+                _LOGGER.warning(
+                    "[%s] Unauthorized error with '%s': %s",
+                    sensor_key,
+                    self._data_source,
+                    url,
+                )
+                raise BadApiTokenAuthError(
+                    f"[{sensor_key}] Unauthorized access with API token '{self._api_token}'"
+                )
+            if resp.status == 403:
+                # transient forbidden (rate-limit/WAF), not a bad token
+                _LOGGER.warning(
+                    "[%s] Forbidden error with '%s': %s",
+                    sensor_key,
+                    self._data_source,
+                    url,
+                )
+                # loop user-agent and data-source
+                self._user_agents.rotate()
+                return None
+
+            _LOGGER.error(
+                "[%s] Unknown error [%d] with '%s': %s",
+                sensor_key,
+                resp.status,
+                self._data_source,
+                url,
+            )
+            return None
+
+    async def _download_daily_data(self, sensor_key: str, url: str) -> EsiosResponse | None:
+        """
+        PVPC data extractor.
+
+        Make GET request to 'api.esios.ree.es' and extract hourly prices.
+
+        Prices are referenced with datetimes in UTC.
+        """
+        try:
+            _LOGGER.debug("[%s] Requesting %s", sensor_key, url)
+            async with asyncio.timeout(self._timeout):
+                response = await self._api_get_data(sensor_key, url)
+                if _LOGGER.isEnabledFor(logging.DEBUG) and response is not None:
+                    _LOGGER.debug(
+                        "[%s] Response meta name=%s data_id=%s unit=%s last_update=%s",
+                        sensor_key,
+                        response.name,
+                        response.data_id,
+                        response.unit,
+                        response.last_update,
+                    )
+                    for series_key, series in response.series.items():
+                        _LOGGER.debug(
+                            "[%s] Response series=%s points=%d",
+                            sensor_key,
+                            series_key,
+                            len(series),
+                        )
+                        for ts, price in sorted(series.items()):
+                            _LOGGER.debug(
+                                "[%s] Response point series=%s ts=%s price=%.5f",
+                                sensor_key,
+                                series_key,
+                                ts.isoformat(),
+                                price,
+                            )
+                return response
+        except (AttributeError, KeyError) as exc:
+            _LOGGER.debug("[%s] Bad try on getting prices (%s)", sensor_key, exc)
+        except (TypeError, ValueError) as exc:
+            _LOGGER.warning("[%s] Malformed response from '%s' (%s)", sensor_key, url, exc)
+        except TimeoutError:
+            _LOGGER.warning("[%s] Timeout error requesting data from '%s'", sensor_key, url)
+        except aiohttp.ClientError as exc:
+            _LOGGER.warning("[%s] Client error in '%s' -> %s", sensor_key, url, exc)
+        return None
+
+    async def check_api_token(self, now: datetime, api_token: str | None = None) -> bool:
+        """
+        Check if ESIOS API token is valid.
+
+        Returns False only when the API rejects the token (401).
+        Transient failures (timeouts, connection errors, 403/5xx responses)
+        are raised instead, so callers can tell a bad token apart from an
+        unreachable API. The private data-source and token are kept only on
+        success; any failure restores the previous configuration.
+        """
+        prev_data_source = self._data_source
+        prev_api_token = self._api_token
+        if api_token is not None:
+            self._api_token = api_token
+        self._data_source = "esios"
+        local_ref_now = ensure_utc_time(now).astimezone(REFERENCE_TZ)
+        today, _ = get_daily_urls_to_download(
+            self._data_source,
+            {KEY_PVPC},
+            local_ref_now,
+            local_ref_now,
+        )
+        token_ok = False
+        try:
+            try:
+                async with asyncio.timeout(self._timeout):
+                    response = await self._api_get_data(KEY_PVPC, today[0])
+            except BadApiTokenAuthError:
+                return False
+            except (AttributeError, KeyError, TypeError, ValueError) as exc:
+                # malformed payload from the parsers: the token could not
+                # be validated, which is not the same as invalid
+                raise aiohttp.ClientError("ESIOS API unavailable, could not validate token") from exc
+            if response is None:
+                # transient failure (403/5xx/malformed payload): the token
+                # could not be validated, which is not the same as invalid
+                raise aiohttp.ClientError("ESIOS API unavailable, could not validate token")
+            token_ok = True
+            return True
+        finally:
+            if not token_ok:
+                self._data_source = prev_data_source
+                self._api_token = prev_api_token
+
+    def update_active_sensors(self, data_id: str, enabled: bool):
+        """Update enabled API indicators to download."""
+        if data_id not in ALL_SENSORS:
+            raise ValueError(f"Unknown sensor: {data_id}")
+        if enabled:
+            self._sensor_keys.add(data_id)
+        elif data_id in self._sensor_keys:
+            self._sensor_keys.remove(data_id)
+
+    async def async_update_all(self, current_data: EsiosApiData | None, now: datetime) -> EsiosApiData:
+        """
+        Update all prices from the ESIOS API.
+
+        Input `now: datetime` is assumed tz-aware in UTC.
+        If not, it is converted to UTC from the original timezone,
+        or set as UTC-time if it is a naive datetime.
+        """
+        utc_now = ensure_utc_time(now)
+        local_ref_now = utc_now.astimezone(REFERENCE_TZ)
+        next_day = local_ref_now + timedelta(days=1)
+
+        is_first_load = current_data is None
+        if current_data is None:
+            current_data = EsiosApiData(
+                sensors={},
+                availability={},
+                data_source=self._data_source,
+                last_update=utc_now,
+            )
+
+        api_sensors = sorted(
+            {
+                api_sensor_key
+                for sensor_key in self._sensor_keys
+                for api_sensor_key in SENSOR_KEY_TO_API_SERIES[sensor_key]
+            }
+        )
+        urls_now, urls_next = get_daily_urls_to_download(
+            self._data_source,
+            api_sensors,
+            local_ref_now,
+            next_day,
+        )
+        updated = False
+        tasks = []
+        for url_now, url_next, sensor_key in zip(urls_now, urls_next, api_sensors, strict=True):
+            if sensor_key not in current_data.sensors:
+                current_data.sensors[sensor_key] = {}
+
+            tasks.append(
+                self._update_prices_series(
+                    sensor_key,
+                    current_data.sensors[sensor_key],
+                    url_now,
+                    url_next,
+                    local_ref_now,
+                )
+            )
+
+        results = await asyncio.gather(*tasks)
+        for new_data, sensor_key in zip(results, api_sensors, strict=True):
+            if new_data:
+                updated = True
+                current_data.sensors[sensor_key] = new_data
+                current_data.availability[sensor_key] = True
+
+        # Retry failed sensors on first load (e.g. rate-limited after token check)
+        if is_first_load and updated:
+            await self._retry_failed_first_load(
+                current_data,
+                api_sensors,
+                results,
+                urls_now,
+                urls_next,
+                local_ref_now,
+            )
+
+        if updated:
+            current_data.data_source = self._data_source
+            current_data.last_update = utc_now
+
+        add_composed_price_sensors(current_data)
+        for sensor_key in current_data.sensors:
+            self.process_state_and_attributes(current_data, sensor_key, now)
+        return current_data
+
+    async def _retry_failed_first_load(
+        self,
+        current_data: EsiosApiData,
+        api_sensors: list[str],
+        results: list[dict[datetime, float] | None],
+        urls_now: list[str],
+        urls_next: list[str],
+        local_ref_now: datetime,
+    ) -> None:
+        """Retry sensors that failed on first load, updating data in place."""
+        failed = [i for i, result in enumerate(results) if not result]
+        if not failed:
+            return
+        _LOGGER.debug(
+            "First load: retrying %d failed sensor(s) %s",
+            len(failed),
+            [api_sensors[i] for i in failed],
+        )
+        await asyncio.sleep(3)
+        retry_tasks = [
+            self._update_prices_series(
+                api_sensors[i],
+                current_data.sensors.get(api_sensors[i], {}),
+                urls_now[i],
+                urls_next[i],
+                local_ref_now,
+            )
+            for i in failed
+        ]
+        retry_results = await asyncio.gather(*retry_tasks)
+        for new_data, idx in zip(retry_results, failed, strict=True):
+            if new_data:
+                current_data.sensors[api_sensors[idx]] = new_data
+                current_data.availability[api_sensors[idx]] = True
+
+    async def _update_prices_series(
+        self,
+        sensor_key: str,
+        current_prices: dict[datetime, float],
+        url_now: str,
+        url_next: str,
+        local_ref_now: datetime,
+    ) -> dict[datetime, float] | None:
+        current_num_prices = len(current_prices)
+        evening = (local_ref_now.hour, local_ref_now.minute) >= (20, 20)
+        if evening and current_num_prices > 30:
+            # already have today+tomorrow prices, avoid requests
+            _LOGGER.debug(
+                "[%s] Evening download avoided, now with %d prices from %s UTC",
+                sensor_key,
+                current_num_prices,
+                next(iter(current_prices)).strftime("%Y-%m-%d %Hh"),
+            )
+            return None
+        if (
+            not evening
+            and current_num_prices > 20
+            and (list(current_prices)[-12].astimezone(REFERENCE_TZ).date() == local_ref_now.date())
+        ):
+            # already have today prices, avoid request
+            _LOGGER.debug(
+                "[%s] Download avoided, now with %d prices up to %s UTC",
+                sensor_key,
+                current_num_prices,
+                list(current_prices)[-1].strftime("%Y-%m-%d %Hh"),
+            )
+            return None
+
+        downloaded = False
+        if current_num_prices and (
+            next(iter(current_prices)).astimezone(REFERENCE_TZ).date() == local_ref_now.date()
+        ):
+            # avoid download of today prices
+            _LOGGER.debug(
+                "[%s] Avoided: %s, with %d prices -> last: %s, download-day: %s",
+                sensor_key,
+                local_ref_now,
+                current_num_prices,
+                next(iter(current_prices)).astimezone(REFERENCE_TZ).date(),
+                local_ref_now.date(),
+            )
+        else:
+            # make API call to download today prices
+            prices_response = await self._download_daily_data(sensor_key, url_now)
+            if prices_response is None:
+                # failed fetch: keep cached prices, signal 'nothing new'
+                _LOGGER.debug("[%s] No response for %s", sensor_key, url_now)
+                return None
+            if not prices_response.series.get(sensor_key):
+                _LOGGER.debug(
+                    "[%s] Response missing series for %s (keys=%s)",
+                    sensor_key,
+                    url_now,
+                    list(prices_response.series),
+                )
+                return None
+            prices = prices_response.series[sensor_key]
+            current_prices.update(prices)
+            downloaded = True
+
+        # At evening (after 20:20), it is possible to retrieve next day prices
+        if evening:
+            prices_fut_response = await self._download_daily_data(sensor_key, url_next)
+            if prices_fut_response is None:
+                _LOGGER.debug("[%s] No response for %s", sensor_key, url_next)
+            elif not prices_fut_response.series.get(sensor_key):
+                _LOGGER.debug(
+                    "[%s] Next-day response missing series for %s (keys=%s)",
+                    sensor_key,
+                    url_next,
+                    list(prices_fut_response.series),
+                )
+            else:
+                prices_fut = prices_fut_response.series[sensor_key]
+                current_prices.update(prices_fut)
+                downloaded = True
+
+        if _LOGGER.isEnabledFor(logging.DEBUG) and current_prices:
+            min_ts = min(current_prices)
+            max_ts = max(current_prices)
+            _LOGGER.debug(
+                "[%s] Download done, %d prices %s..%s UTC",
+                sensor_key,
+                len(current_prices),
+                min_ts.strftime("%Y-%m-%d %Hh"),
+                max_ts.strftime("%Y-%m-%d %Hh"),
+            )
+
+        # only report data when something was actually fetched this cycle,
+        # so failed refreshes don't refresh availability or last_update
+        return current_prices if downloaded else None
+
+    @property
+    def attribution(self) -> str:
+        """Return data-source attribution string."""
+        return ATTRIBUTIONS[self._data_source]
+
+    def process_state_and_attributes(
+        self, current_data: EsiosApiData, sensor_key: str, utc_now: datetime
+    ) -> bool:
+        """
+        Generate the current state and sensor attributes.
+
+        The data source provides prices in 0 to 24h sets, with correspondence
+        with the main timezone in Spain. They are stored with UTC datetimes.
+
+        Input `now: datetime` is assumed tz-aware in UTC.
+        If not, it is converted to UTC from the original timezone,
+        or set as UTC-time if it is a naive datetime.
+        """
+        attributes: dict[str, Any] = {
+            "sensor_id": sensor_key,
+            "data_id": SENSOR_KEY_TO_DATAID.get(sensor_key, "composed"),
+        }
+        utc_time = ensure_utc_time(utc_now.replace(minute=0, second=0, microsecond=0))
+        actual_time = utc_time.astimezone(self._local_timezone)
+        current_prices = current_data.sensors.get(sensor_key, {})
+        if len(current_prices) > 25 and actual_time.hour < 20:
+            # there are 'today' and 'next day' prices, but 'today' has expired
+            max_age = utc_time.astimezone(REFERENCE_TZ).replace(hour=0).astimezone(UTC_TZ)
+            current_data.sensors[sensor_key] = {
+                key_ts: price for key_ts, price in current_prices.items() if key_ts >= max_age
+            }
+
+        # set current price
+        try:
+            self.states[sensor_key] = current_data.sensors[sensor_key][utc_time]
+            current_data.availability[sensor_key] = True
+        except KeyError:
+            self.states[sensor_key] = None
+            current_data.availability[sensor_key] = False
+            if current_prices:
+                first_ts = min(current_prices)
+                last_ts = max(current_prices)
+                _LOGGER.debug(
+                    "[%s] Missing price for %s; available range %s..%s (%d prices)",
+                    sensor_key,
+                    utc_time,
+                    first_ts,
+                    last_ts,
+                    len(current_prices),
+                )
+            else:
+                _LOGGER.debug(
+                    "[%s] No prices available to compute state at %s",
+                    sensor_key,
+                    utc_time,
+                )
+            self.sensor_attributes[sensor_key] = attributes
+            return False
+
+        # generate price attributes
+        price_attrs = make_price_sensor_attributes(
+            sensor_key, current_data.sensors[sensor_key], utc_time, self._local_timezone
+        )
+
+        # generate PVPC 2.0TD sensor attributes
+        if sensor_key == KEY_PVPC:
+            local_time = utc_time.astimezone(self._local_timezone)
+            (
+                current_period,
+                next_period,
+                delta,
+            ) = get_current_and_next_price_periods(
+                local_time,
+                zone_ceuta_melilla=self.tariff != TARIFFS[0],
+                published=self.published_period,
+            )
+            attributes["tariff"] = self.tariff
+            attributes["period"] = current_period
+            power_period, next_power_period, power_delta = get_current_and_next_power_periods(
+                local_time,
+                zone_ceuta_melilla=self.tariff != TARIFFS[0],
+                published=self.published_period,
+            )
+            attributes["power_period"] = power_period
+            attributes["next_power_period"] = next_power_period
+            attributes["hours_to_next_power_period"] = int(power_delta.total_seconds()) // 3600
+            power = self._power if power_period == "P1" else self._power_valley
+            attributes["available_power"] = int(1000 * power)
+            attributes["next_period"] = next_period
+            attributes["hours_to_next_period"] = int(delta.total_seconds()) // 3600
+
+        self.sensor_attributes[sensor_key] = {**attributes, **price_attrs}
+        return True

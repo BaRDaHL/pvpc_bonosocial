@@ -14,7 +14,8 @@ Reproduce el script del titular «PVPC Gráfico Telegram» (plantilla Jinja de H
 
 Cambio respecto al script, decidido por el titular (DISENO §8.2): los días valle completos
 se colorean frente a los 5 laborables anteriores y cada hora con la regla de su día. Además,
-en los laborables cada hora lleva su periodo tras la hora (🔴 punta, 🟡 llano, 🟢 valle).
+en los laborables cada hora lleva la letra de su periodo tras la hora (P punta, L llano, V valle;
+las bolitas de colores confundían con los colores del precio).
 """
 
 from __future__ import annotations
@@ -27,7 +28,6 @@ from decimal import ROUND_HALF_EVEN, Decimal
 COLORES = ("🟩", "🟨", "🟧", "🟥")
 RELOJES = ("🕛", "🕐", "🕑", "🕒", "🕓", "🕔", "🕕", "🕖", "🕗", "🕘", "🕙", "🕚")
 MEDALLAS = ("🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣")
-PERIODOS = {"P1": "🔴", "P2": "🟡", "P3": "🟢"}  # punta, llano, valle
 UMBRAL_FLECHA = Decimal("0.005")  # €/kWh: por debajo, 🟰
 
 TEXTOS = {
@@ -38,14 +38,13 @@ TEXTOS = {
         "cara": " ⬅️ 💸 cara",
         "ahora": " 👈 ahora",
         "separador": "──── mañana ────",
-        "franjas": "🧺 Mejores franjas de {horas} h:",
-        "franjas_manana": "🧺 Mejores franjas de {horas} h mañana:",
+        "franjas": "🧺 Mejores franjas de {horas}h:",
+        "franjas_manana": "🧺 Mejores franjas de {horas}h mañana:",
         "media": "Media: hoy {hoy} → mañana {manana} ({cambio} %)",
         "consumo": "⚡ Consumido hasta ahora: {negrita}{kwh} kWh · {eur} €{negrita}",
         "factura": "🧾 Factura en curso: {acumulado} € (previsión {prevision} €)",
         "sin_datos": "Sin datos de precios todavía.",
-        "periodos": PERIODOS,
-        "leyenda": "🟢 valle · 🟡 llano · 🔴 punta",
+        "periodos": {"P1": "P", "P2": "L", "P3": "V"},
         "decimal": ",",
     },
     "en": {
@@ -61,8 +60,7 @@ TEXTOS = {
         "consumo": "⚡ Used so far: {negrita}{kwh} kWh · {eur} €{negrita}",
         "factura": "🧾 Current bill: {acumulado} € (forecast {prevision} €)",
         "sin_datos": "No price data yet.",
-        "periodos": PERIODOS,
-        "leyenda": "🟢 off-peak · 🟡 standard · 🔴 peak",
+        "periodos": {"P1": "P", "P2": "S", "P3": "O"},
         "decimal": ".",
     },
 }
@@ -190,8 +188,11 @@ def _franjas(dia: DiaPrecios, desde: int, n: int, duracion: int, cabecera: str, 
 
 
 def _bloque(filas: list[str], opciones: Opciones) -> str:
-    cuerpo = "".join(f"{f}\n" for f in filas)
-    return f"```\n{cuerpo}```\n" if opciones.markdown else cuerpo
+    # El bloque se cierra pegado a la última fila: con un salto de línea antes del cierre,
+    # Telegram deja un hueco entre la tabla y lo que va debajo.
+    if opciones.markdown:
+        return "```\n" + "\n".join(filas) + "```\n"
+    return "".join(f"{f}\n" for f in filas)
 
 
 def _valido(dia: DiaPrecios | None) -> bool:
@@ -218,11 +219,10 @@ def texto_hoy(hoy: DiaPrecios | None, ahora: int, opciones: Opciones) -> Mensaje
         )
         for i in range(len(hoy.precios))
     ]
-    texto = _bloque(filas, opciones)
-    if _con_periodo(hoy, opciones):
-        texto += t["leyenda"] + "\n"
-    texto += _franjas(hoy, ahora, opciones.franjas_hoy, opciones.duracion, t["franjas"], sep)
-    return Mensaje(t["titulo_hoy"], texto.rstrip("\n"))
+    bloques = [
+        _franjas(hoy, ahora, opciones.franjas_hoy, opciones.duracion, t["franjas"], sep),
+    ]
+    return Mensaje(t["titulo_hoy"], _juntar(_bloque(filas, opciones), bloques))
 
 
 def texto_manana(
@@ -254,27 +254,35 @@ def texto_manana(
             diferencia = precio - anterior
             marcas = " 🔺" if diferencia > UMBRAL_FLECHA else " 🔻" if diferencia < -UMBRAL_FLECHA else " 🟰"
         filas.append(_fila(manana, i, color[i], maximo, t, opciones, marcas + _marcas_extremos(manana, i, t)))
-    texto = _bloque(filas, opciones)
-    if _con_periodo(manana, opciones) or (comparar and _con_periodo(hoy, opciones)):
-        texto += t["leyenda"] + "\n"
+    # Debajo del bloque, en grupos separados por una línea en blanco: la media; el consumo y la
+    # factura; las mejores franjas. Sin leyenda de los periodos: las letras se entienden solas.
+    precios = []
     if comparar:
         media_hoy, media_manana = _media(hoy.precios), _media(manana.precios)
         cambio = f"{float((media_manana - media_hoy) / media_hoy * 100):+.0f}" if media_hoy else "+0"
         medias = {"hoy": _num(media_hoy, 3, sep), "manana": _num(media_manana, 3, sep)}
-        texto += t["media"].format(cambio=cambio, **medias)
-    texto += "\n"
+        precios.append(t["media"].format(cambio=cambio, **medias))
+    gasto = []
     if consumo is not None:
-        texto += (
+        gasto.append(
             t["consumo"].format(
                 negrita="*" if opciones.markdown else "",
                 kwh=_num(consumo[0], 1, sep),
                 eur=_num(consumo[1], 2, sep),
             )
-            + "\n"
         )
     if factura is not None:
-        texto += (
-            t["factura"].format(acumulado=_num(factura[0], 2, sep), prevision=_num(factura[1], 2, sep)) + "\n"
+        gasto.append(
+            t["factura"].format(acumulado=_num(factura[0], 2, sep), prevision=_num(factura[1], 2, sep))
         )
-    texto += _franjas(manana, 0, opciones.franjas_manana, opciones.duracion, t["franjas_manana"], sep)
-    return Mensaje(t["titulo_manana"], texto.rstrip("\n"))
+    bloques = [
+        "\n".join(precios),
+        "\n".join(gasto),
+        _franjas(manana, 0, opciones.franjas_manana, opciones.duracion, t["franjas_manana"], sep),
+    ]
+    return Mensaje(t["titulo_manana"], _juntar(_bloque(filas, opciones), bloques))
+
+
+def _juntar(tabla: str, bloques: list[str]) -> str:
+    """La tabla y, debajo, los bloques que no estén vacíos separados por una línea en blanco."""
+    return (tabla + "\n\n".join(b for b in bloques if b)).rstrip("\n")

@@ -49,7 +49,17 @@ from .comparativa import (
     consulta_anual,
     ventana_12_meses,
 )
-from .const import CONF_CODIGO_POSTAL, CONF_COMPARAR_MENSUAL, CONF_POTENCIA_P1, CONF_POTENCIA_P2, DOMAIN
+from .const import (
+    CONF_CODIGO_POSTAL,
+    CONF_COMPARADOR_DESTINO,
+    CONF_COMPARADOR_ENVIO,
+    CONF_COMPARADOR_FORMATO,
+    CONF_COMPARADOR_UMBRAL,
+    CONF_COMPARAR_MENSUAL,
+    CONF_POTENCIA_P1,
+    CONF_POTENCIA_P2,
+    DOMAIN,
+)
 from .facturacion import FacturacionSuministro
 
 _LOGGER = logging.getLogger(__name__)
@@ -218,8 +228,8 @@ TEXTOS = {
 }
 
 
-def texto(r: Mapping[str, Any], nombre: str, idioma: str = "es") -> tuple[str, str]:
-    """(título, texto) de la comparativa guardada."""
+def texto(r: Mapping[str, Any], nombre: str, idioma: str = "es", *, breve: bool = False) -> tuple[str, str]:
+    """(título, texto) de la comparativa guardada; `breve`: lo pagado, la mejor oferta y el veredicto."""
     idioma = "es" if idioma.split("-")[0] == "es" else "en"
     t = TEXTOS[idioma]
     p = r["periodo"]
@@ -259,7 +269,7 @@ def texto(r: Mapping[str, Any], nombre: str, idioma: str = "es") -> tuple[str, s
             t["pagado"].format(pagado=_eur(r["pagado"], idioma), anual=_eur(r["pagado_anual"], idioma))
         )
     lineas.append("")
-    ofertas = r["ofertas"][:MOSTRADAS]
+    ofertas = r["ofertas"][: 1 if breve else MOSTRADAS]
     if ofertas:
         lineas.append(t["mejores"])
         for i, o in enumerate(ofertas, 1):
@@ -286,10 +296,12 @@ def texto(r: Mapping[str, Any], nombre: str, idioma: str = "es") -> tuple[str, s
             lineas.append(linea)
     else:
         lineas.append(t["ninguna"])
-    if r.get("pvpc_cnmc") is not None:
+    if r.get("pvpc_cnmc") is not None and not breve:
         lineas.append(t["pvpc_cnmc"].format(x=_eur(r["pvpc_cnmc"], idioma)))
     if r.get("veredicto") and r["ofertas"]:
         lineas += ["", t[r["veredicto"]].format(x=_eur(abs(r["ofertas"][0]["ahorro_anual"]), idioma))]
+    if breve:
+        return t["titulo"].format(nombre=nombre), "\n".join(lineas)
     avisos = [a for a in r["avisos"] if a != AVISO_SIN_OFERTAS]
     if avisos:
         lineas.append("")
@@ -359,16 +371,35 @@ class Comparador:
         self.resultado = a_dict(comparativa, ahora)
         self.estado = ESTADO_OK
         await self._async_guardar()
-        titulo, cuerpo = texto(self.resultado, self.nombre, self.hass.config.language)
+        idioma = self.hass.config.language
+        titulo, cuerpo = texto(self.resultado, self.nombre, idioma)
         if notificar:
             persistent_notification.async_create(
                 self.hass, cuerpo, title=titulo, notification_id=f"{DOMAIN}_comparador_{self.subentry_id}"
             )
+        # El destino del servicio se usa siempre; el de las opciones del suministro, con sus filtros.
+        if not destino and self._enviar(self.resultado):
+            destino = self.facturacion.datos.get(CONF_COMPARADOR_DESTINO)
+            if self.facturacion.datos.get(CONF_COMPARADOR_FORMATO) == "breve":
+                titulo, cuerpo = texto(self.resultado, self.nombre, idioma, breve=True)
         if destino:
             from .notificacion import async_mandar, destino_telegram
 
-            await async_mandar(self.hass, destino, titulo, cuerpo, destino_telegram(self.hass, destino))
+            try:
+                await async_mandar(self.hass, destino, titulo, cuerpo, destino_telegram(self.hass, destino))
+            except HomeAssistantError as exc:
+                _LOGGER.warning("%s: no se pudo enviar la comparativa a %s (%s)", self.nombre, destino, exc)
         return self.resultado
+
+    def _enviar(self, r: Mapping[str, Any]) -> bool:
+        """Si la comparativa va al destino de las opciones: siempre, o solo si se ahorra lo pedido."""
+        d = self.facturacion.datos
+        if not d.get(CONF_COMPARADOR_DESTINO):
+            return False
+        if d.get(CONF_COMPARADOR_ENVIO, "siempre") != "si_ahorra":
+            return True
+        mejor = r["ofertas"][0]["ahorro_anual"] if r.get("ofertas") else None
+        return mejor is not None and mejor > float(d.get(CONF_COMPARADOR_UMBRAL) or 0)
 
     async def _async_calcular(self) -> Comparativa:
         if not self.codigo_postal:

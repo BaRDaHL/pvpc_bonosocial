@@ -344,6 +344,18 @@
         "laborables": "Against the 5 previous working days",
         "dia": "Against the day itself"
       }
+    },
+    "comparador_envio": {
+      "options": {
+        "siempre": "Always",
+        "si_ahorra": "Only if an offer saves money"
+      }
+    },
+    "comparador_formato": {
+      "options": {
+        "completo": "Full (like the notification)",
+        "breve": "Short (paid, best offer and verdict)"
+      }
     }
   },
   "issues": {
@@ -467,13 +479,19 @@
             "arrastre_inicial_kwh": "Accumulated discounted kWh (carry-over)",
             "codigo_postal": "Postal code (only to compare tariffs)",
             "comparar_mensual": "Compare tariffs every month",
-            "segunda_opinion_cnmc": "Check each bill with the CNMC"
+            "segunda_opinion_cnmc": "Check each bill with the CNMC",
+            "comparador_destino": "Send the tariff comparison to",
+            "comparador_envio": "When to send it",
+            "comparador_umbral_eur": "Minimum saving to send it (€/year)",
+            "comparador_formato": "Message format"
           },
           "data_description": {
             "arrastre_inicial_kwh": "The discounted kWh left over in the last 12 months that you have not used yet. If you do not know, leave 0: it is corrected when bills are reconciled.",
             "codigo_postal": "Optional. Only used to compare tariffs: the postal code, the contracted power and the yearly kWh per period are sent to the CNMC, nothing else.",
             "comparar_mensual": "On the 2nd of every month, compares your last 12 months with the CNMC offers and leaves a notification. Needs the postal code.",
-            "segunda_opinion_cnmc": "When you enter an actual bill, the integration asks the official CNMC simulator for the same bill (with the bill's meter kWh) and warns you if it does not match. Hourly consumption, power, bonus type and postcode are sent (no CUPS). Needs the postcode."
+            "segunda_opinion_cnmc": "When you enter an actual bill, the integration asks the official CNMC simulator for the same bill (with the bill's meter kWh) and warns you if it does not match. Hourly consumption, power, bonus type and postcode are sent (no CUPS). Needs the postcode.",
+            "comparador_destino": "Optional. A notify entity (a Telegram chat, your phone…). Besides the Home Assistant notification, the comparison (button or monthly) is sent there.",
+            "comparador_umbral_eur": "Only with “Only if an offer saves money”: the best offer must save more than this per year."
           }
         },
         "comprobacion": {
@@ -487,9 +505,9 @@
         },
         "factura_real": {
           "title": "Actual bill",
-          "description": "Upload the bill PDF to read its data automatically (only bills from Comercializadora Regulada, Gas & Power, by Naturgy). You can also leave it empty and type the data by hand in the next step.",
+          "description": "Upload the bill PDF to read its data automatically, or a **ZIP with several bills** to enter them all at once (only bills from Comercializadora Regulada, Gas & Power, Naturgy). You can also leave it empty and type the data in the next step.",
           "data": {
-            "pdf": "Bill PDF"
+            "pdf": "Bill PDF (or ZIP with several)"
           }
         },
         "factura_datos": {
@@ -519,6 +537,18 @@
           "data_description": {
             "vigente_desde": "The first day with the new contract (as stated by the supplier's letter or the bill)."
           }
+        },
+        "factura_lote": {
+          "title": "Bills in the ZIP",
+          "description": "{n} bills were read:\n\n{lista}{descartadas}\n\nPress Submit to enter them all. A bill that overlaps one already entered replaces it."
+        },
+        "factura_hecha": {
+          "title": "Bill entered",
+          "description": "Bill from {inicio} to {fin} entered. Add another one?",
+          "menu_options": {
+            "factura_real": "Add another bill",
+            "terminar": "Finish"
+          }
         }
       },
       "error": {
@@ -532,12 +562,14 @@
         "es_abono": "This is a credit note (corrective bill with a negative amount). Upload the bill that replaces it.",
         "periodo_no_valido": "The billing period must be between 1 and 62 days long.",
         "fecha_futura": "It cannot be a future date: make the change on the day it starts.",
-        "codigo_postal_invalido": "The postal code must have 5 digits"
+        "codigo_postal_invalido": "The postal code must have 5 digits",
+        "zip_sin_facturas": "The ZIP has no readable bill (only PDFs from Comercializadora Regulada, Gas & Power are read)."
       },
       "abort": {
         "reconfigure_successful": "Supply updated.",
         "factura_conciliada": "Bill from {inicio} to {fin} reconciled.",
-        "no_cargada": "The integration is not loaded. Enable it and try again."
+        "no_cargada": "The integration is not loaded. Enable it and try again.",
+        "lote_conciliado": "{n} bills entered."
       }
     },
     "resumen": {

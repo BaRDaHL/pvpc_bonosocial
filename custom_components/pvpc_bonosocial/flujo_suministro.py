@@ -9,7 +9,10 @@ Cada suministro necesita su propia fuente de consumo horario: un sensor de energ
 
 from __future__ import annotations
 
+import io
 import logging
+import zipfile
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -42,6 +45,10 @@ from .const import (
     CONF_BONO,
     CONF_CATEGORIA,
     CONF_CODIGO_POSTAL,
+    CONF_COMPARADOR_DESTINO,
+    CONF_COMPARADOR_ENVIO,
+    CONF_COMPARADOR_FORMATO,
+    CONF_COMPARADOR_UMBRAL,
     CONF_COMPARAR_MENSUAL,
     CONF_CONTRATOS_ANTERIORES,
     CONF_DIAS_EMISION,
@@ -57,6 +64,8 @@ from .const import (
     CONF_TIPO_FUENTE,
     DEFAULT_ALQUILER,
     DEFAULT_DIAS_EMISION,
+    ENVIOS_COMPARADOR,
+    FORMATOS_COMPARADOR,
     FRECUENCIAS_SHELLY,
     FUENTE_ESTADISTICA,
     FUENTE_SENSOR,
@@ -97,6 +106,8 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
         self._datos: dict[str, Any] = {}
         self._titulo: str = NOMBRE_POR_DEFECTO
         self._leida: DatosFactura | None = None
+        self._lote: Subida | None = None
+        self._hecha: tuple[date, date] | None = None
 
     # --- entradas -------------------------------------------------------------------
 
@@ -261,6 +272,10 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
                     CONF_COMPARAR_MENSUAL: bool(user_input.get(CONF_COMPARAR_MENSUAL))
                     and bool(codigo_postal),
                     CONF_SEGUNDA_OPINION: bool(user_input.get(CONF_SEGUNDA_OPINION)) and bool(codigo_postal),
+                    CONF_COMPARADOR_DESTINO: user_input.get(CONF_COMPARADOR_DESTINO) or None,
+                    CONF_COMPARADOR_ENVIO: user_input.get(CONF_COMPARADOR_ENVIO, "siempre"),
+                    CONF_COMPARADOR_UMBRAL: float(user_input.get(CONF_COMPARADOR_UMBRAL) or 0),
+                    CONF_COMPARADOR_FORMATO: user_input.get(CONF_COMPARADOR_FORMATO, "completo"),
                 }
             )
             self._datos.setdefault(CONF_IDS_HEREDADOS, {})
@@ -299,6 +314,23 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
                     CONF_COMPARAR_MENSUAL, default=bool(self._datos.get(CONF_COMPARAR_MENSUAL))
                 ): bool,
                 vol.Optional(CONF_SEGUNDA_OPINION, default=bool(self._datos.get(CONF_SEGUNDA_OPINION))): bool,
+                vol.Optional(
+                    CONF_COMPARADOR_DESTINO,
+                    description={"suggested_value": self._datos.get(CONF_COMPARADOR_DESTINO)},
+                ): EntitySelector(EntitySelectorConfig(domain="notify")),
+                vol.Optional(
+                    CONF_COMPARADOR_ENVIO, default=self._datos.get(CONF_COMPARADOR_ENVIO, "siempre")
+                ): _select(ENVIOS_COMPARADOR, CONF_COMPARADOR_ENVIO),
+                vol.Optional(
+                    CONF_COMPARADOR_UMBRAL, default=float(self._datos.get(CONF_COMPARADOR_UMBRAL) or 0)
+                ): NumberSelector(
+                    NumberSelectorConfig(
+                        min=0, max=5000, step=1, unit_of_measurement="€", mode=NumberSelectorMode.BOX
+                    )
+                ),
+                vol.Optional(
+                    CONF_COMPARADOR_FORMATO, default=self._datos.get(CONF_COMPARADOR_FORMATO, "completo")
+                ): _select(FORMATOS_COMPARADOR, CONF_COMPARADOR_FORMATO),
             }
         )
         return self.async_show_form(step_id="factura", data_schema=esquema, errors=errores)
@@ -315,25 +347,33 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
         if self._facturacion() is None:
             return self.async_abort(reason="no_cargada")
         errores: dict[str, str] = {}
+        self._leida = None
         if user_input is not None:
             archivo = user_input.get("pdf")
             if not archivo:
                 return await self.async_step_factura_datos()
             try:
-                leida = await self.hass.async_add_executor_job(_leer_subida, self.hass, archivo)
-            except FacturaNoReconocida as exc:
-                _LOGGER.info("PDF de factura no reconocido: %s", exc)
-                errores["pdf"] = "pdf_no_reconocido"
+                leidas = await self.hass.async_add_executor_job(_leer_subida, self.hass, archivo)
             except ValueError:
                 errores["pdf"] = "pdf_no_subido"
             else:
-                if leida.total < 0:
-                    errores["pdf"] = "es_abono"
-                else:
-                    self._leida = leida
+                if leidas.zip:
+                    if not leidas.buenas:
+                        errores["pdf"] = "zip_sin_facturas"
+                    else:
+                        self._lote = leidas
+                        return await self.async_step_factura_lote()
+                elif leidas.buenas:
+                    self._leida = leidas.buenas[0][1]
                     return await self.async_step_factura_datos()
+                else:
+                    errores["pdf"] = leidas.malas[0][1]
         esquema = vol.Schema(
-            {vol.Optional("pdf"): FileSelector(FileSelectorConfig(accept=".pdf,application/pdf"))}
+            {
+                vol.Optional("pdf"): FileSelector(
+                    FileSelectorConfig(accept=".pdf,.zip,application/pdf,application/zip")
+                )
+            }
         )
         return self.async_show_form(step_id="factura_real", data_schema=esquema, errors=errores)
 
@@ -360,10 +400,8 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
             except ValueError:
                 errores["base"] = "periodo_no_valido"
             else:
-                return self.async_abort(
-                    reason="factura_conciliada",
-                    description_placeholders={"inicio": inicio.isoformat(), "fin": fin.isoformat()},
-                )
+                self._hecha = (inicio, fin)
+                return await self.async_step_factura_hecha()
 
         sugerido = self._sugerencia_factura(facturacion)
         actual = {**sugerido, **(user_input or {})}
@@ -394,6 +432,67 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
             }
         )
         return self.async_show_form(step_id="factura_datos", data_schema=esquema, errors=errores)
+
+    async def async_step_factura_hecha(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        """Factura introducida: añadir otra sin salir, o terminar."""
+        inicio, fin = self._hecha
+        return self.async_show_menu(
+            step_id="factura_hecha",
+            menu_options=["factura_real", "terminar"],
+            description_placeholders={"inicio": _dma(inicio), "fin": _dma(fin)},
+        )
+
+    async def async_step_terminar(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        inicio, fin = self._hecha
+        return self.async_abort(
+            reason="factura_conciliada",
+            description_placeholders={"inicio": inicio.isoformat(), "fin": fin.isoformat()},
+        )
+
+    async def async_step_factura_lote(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        """Varias facturas de un ZIP: se revisa la lista y se introducen todas de una vez."""
+        facturacion = self._facturacion()
+        if facturacion is None:
+            return self.async_abort(reason="no_cargada")
+        lote = self._lote
+        buenas = sorted(lote.buenas, key=lambda x: x[1].inicio)
+        if user_input is not None:
+            hechas = 0
+            for nombre, f in buenas:
+                try:
+                    await facturacion.async_conciliar(
+                        inicio=f.inicio,
+                        fin=f.fin,
+                        emision=f.emision,
+                        kwh=dict(f.kwh),
+                        total=f.total,
+                        bonificados=f.bonificados,
+                    )
+                except ValueError:
+                    _LOGGER.warning("Factura %s del ZIP no válida (%s – %s)", nombre, f.inicio, f.fin)
+                else:
+                    hechas += 1
+            return self.async_abort(reason="lote_conciliado", description_placeholders={"n": str(hechas)})
+        lineas = [f"- {_dma(f.inicio)} – {_dma(f.fin)}: **{_euros_texto(f.total)}**" for _, f in buenas]
+        es = self.hass.config.language.split("-")[0] == "es"
+        motivos = MOTIVOS_ZIP["es" if es else "en"]
+        malas = [f"- {nombre}: {motivos.get(motivo, motivo)}" for nombre, motivo in lote.malas]
+        return self.async_show_form(
+            step_id="factura_lote",
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "n": str(len(buenas)),
+                "lista": "\n".join(lineas),
+                "descartadas": (
+                    "\n\n"
+                    + ("No se han podido leer:" if es else "Could not be read:")
+                    + "\n"
+                    + "\n".join(malas)
+                )
+                if malas
+                else "",
+            },
+        )
 
     def _sugerencia_factura(self, facturacion: Any) -> dict[str, Any]:
         leida = self._leida
@@ -442,9 +541,83 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
         return None
 
 
-def _leer_subida(hass: Any, archivo: str) -> DatosFactura:
-    """Lee el PDF subido con el selector de archivos (en el ejecutor: lee de disco)."""
+# Límites del ZIP de facturas (para no leer un ZIP enorme o malicioso).
+MAX_FACTURAS_ZIP = 60
+MAX_BYTES_PDF = 20 * 1024 * 1024
+MOTIVOS_ZIP = {
+    "es": {
+        "pdf_no_reconocido": "no se reconoce (solo facturas de la Comercializadora Regulada, Gas & Power)",
+        "es_abono": "es un abono (importe negativo)",
+        "demasiado_grande": "demasiado grande",
+        "sobran": f"hay más de {MAX_FACTURAS_ZIP} PDF en el ZIP",
+    },
+    "en": {
+        "pdf_no_reconocido": "not recognised (only bills from Comercializadora Regulada, Gas & Power)",
+        "es_abono": "it is a credit note (negative amount)",
+        "demasiado_grande": "too large",
+        "sobran": f"more than {MAX_FACTURAS_ZIP} PDFs in the ZIP",
+    },
+}
+
+
+@dataclass
+class Subida:
+    """Facturas leídas de lo subido: un PDF o un ZIP con varios."""
+
+    zip: bool
+    buenas: list[tuple[str, DatosFactura]] = field(default_factory=list)
+    malas: list[tuple[str, str]] = field(default_factory=list)  # (archivo, motivo)
+
+    def leer(self, nombre: str, contenido: bytes) -> None:
+        try:
+            factura = leer_factura(contenido)
+        except FacturaNoReconocida as exc:
+            _LOGGER.info("PDF de factura no reconocido (%s): %s", nombre, exc)
+            self.malas.append((nombre, "pdf_no_reconocido"))
+            return
+        if factura.total < 0:
+            self.malas.append((nombre, "es_abono"))
+        else:
+            self.buenas.append((nombre, factura))
+
+
+def _leer_subida(hass: Any, archivo: str) -> Subida:
+    """Lee el PDF (o el ZIP de PDF) subido con el selector de archivos, en el ejecutor."""
     from homeassistant.components.file_upload import process_uploaded_file
 
     with process_uploaded_file(hass, archivo) as ruta:
-        return leer_factura(Path(ruta).read_bytes())
+        contenido = Path(ruta).read_bytes()
+    if not contenido.startswith(b"PK"):
+        subida = Subida(zip=False)
+        subida.leer(Path(str(ruta)).name, contenido)
+        return subida
+    subida = Subida(zip=True)
+    try:
+        with zipfile.ZipFile(io.BytesIO(contenido)) as z:
+            pdfs = [
+                i
+                for i in z.infolist()
+                if not i.is_dir()
+                and i.filename.lower().endswith(".pdf")
+                and not Path(i.filename).name.startswith(".")
+                and "__MACOSX" not in i.filename
+            ]
+            for n, info in enumerate(pdfs):
+                nombre = Path(info.filename).name
+                if n >= MAX_FACTURAS_ZIP:
+                    subida.malas.append((nombre, "sobran"))
+                elif info.file_size > MAX_BYTES_PDF:
+                    subida.malas.append((nombre, "demasiado_grande"))
+                else:
+                    subida.leer(nombre, z.read(info))
+    except zipfile.BadZipFile as exc:
+        raise ValueError("ZIP no válido") from exc
+    return subida
+
+
+def _dma(d: date) -> str:
+    return f"{d:%d/%m/%Y}"
+
+
+def _euros_texto(x: Decimal) -> str:
+    return f"{x:.2f} €".replace(".", ",")

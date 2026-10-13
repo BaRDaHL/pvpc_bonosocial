@@ -344,6 +344,18 @@
         "laborables": "Respecto a los 5 laborables anteriores",
         "dia": "Respecto al propio día"
       }
+    },
+    "comparador_envio": {
+      "options": {
+        "siempre": "Siempre",
+        "si_ahorra": "Solo si hay una oferta que ahorre"
+      }
+    },
+    "comparador_formato": {
+      "options": {
+        "completo": "Completo (como la notificación)",
+        "breve": "Breve (lo pagado, la mejor oferta y el veredicto)"
+      }
     }
   },
   "issues": {
@@ -467,13 +479,19 @@
             "arrastre_inicial_kwh": "kWh con descuento acumulados (arrastre)",
             "codigo_postal": "Código postal (solo para comparar tarifas)",
             "comparar_mensual": "Comparar tarifas cada mes",
-            "segunda_opinion_cnmc": "Comprobar cada factura con la CNMC"
+            "segunda_opinion_cnmc": "Comprobar cada factura con la CNMC",
+            "comparador_destino": "Enviar la comparativa de tarifas a",
+            "comparador_envio": "Cuándo enviarla",
+            "comparador_umbral_eur": "Ahorro mínimo para enviarla (€/año)",
+            "comparador_formato": "Formato del mensaje"
           },
           "data_description": {
             "arrastre_inicial_kwh": "Los kWh bonificables que te sobraron en los últimos 12 meses y que aún no has gastado. Si no lo sabes, deja 0: se corregirá al conciliar las facturas.",
             "codigo_postal": "Opcional. Solo se usa al comparar tarifas: se envían a la CNMC el código postal, las potencias y los kWh anuales por periodo, nada más.",
             "comparar_mensual": "El día 2 de cada mes compara tus últimos 12 meses con las ofertas de la CNMC y deja una notificación. Necesita el código postal.",
-            "segunda_opinion_cnmc": "Al introducir una factura real, la integración pide la misma factura al simulador oficial de la CNMC (con los kWh del contador de la factura) y te avisa si no cuadra. Se envían el consumo hora a hora del periodo, las potencias, el tipo de bono y el código postal (sin CUPS). Necesita el código postal."
+            "segunda_opinion_cnmc": "Al introducir una factura real, la integración pide la misma factura al simulador oficial de la CNMC (con los kWh del contador de la factura) y te avisa si no cuadra. Se envían el consumo hora a hora del periodo, las potencias, el tipo de bono y el código postal (sin CUPS). Necesita el código postal.",
+            "comparador_destino": "Opcional. Una entidad notify (un chat de Telegram, el móvil…). Además de la notificación de Home Assistant, la comparativa (botón o mensual) se envía ahí.",
+            "comparador_umbral_eur": "Solo con «Solo si hay una oferta que ahorre»: la mejor oferta tiene que ahorrar más que esto al año."
           }
         },
         "comprobacion": {
@@ -487,9 +505,9 @@
         },
         "factura_real": {
           "title": "Factura real",
-          "description": "Sube el PDF de la factura para leer los datos automáticamente (solo facturas de la Comercializadora Regulada, Gas & Power, de Naturgy). También puedes dejarlo vacío y escribirlos a mano en el paso siguiente.",
+          "description": "Sube el PDF de la factura para leer los datos automáticamente, o un **ZIP con varias facturas** para introducirlas todas de una vez (solo facturas de la Comercializadora Regulada, Gas & Power, de Naturgy). También puedes dejarlo vacío y escribirlos a mano en el paso siguiente.",
           "data": {
-            "pdf": "PDF de la factura"
+            "pdf": "PDF de la factura (o ZIP con varias)"
           }
         },
         "factura_datos": {
@@ -519,6 +537,18 @@
           "data_description": {
             "vigente_desde": "El primer día con el contrato nuevo (lo pone la carta de la comercializadora o la factura)."
           }
+        },
+        "factura_lote": {
+          "title": "Facturas del ZIP",
+          "description": "Se han leído {n} facturas:\n\n{lista}{descartadas}\n\nPulsa Enviar para introducirlas todas. Si alguna se solapa con otra ya introducida, la sustituye."
+        },
+        "factura_hecha": {
+          "title": "Factura introducida",
+          "description": "Factura del {inicio} al {fin} introducida. ¿Quieres añadir otra?",
+          "menu_options": {
+            "factura_real": "Añadir otra factura",
+            "terminar": "Terminar"
+          }
         }
       },
       "error": {
@@ -532,12 +562,14 @@
         "es_abono": "Es un abono (factura rectificativa con importe negativo). Sube la factura que la sustituye.",
         "periodo_no_valido": "El periodo de la factura debe tener entre 1 y 62 días.",
         "fecha_futura": "No puede ser una fecha futura: haz el cambio el mismo día que empiece.",
-        "codigo_postal_invalido": "El código postal debe tener 5 cifras"
+        "codigo_postal_invalido": "El código postal debe tener 5 cifras",
+        "zip_sin_facturas": "El ZIP no tiene ninguna factura que se pueda leer (solo se leen los PDF de la Comercializadora Regulada, Gas & Power)."
       },
       "abort": {
         "reconfigure_successful": "Suministro actualizado.",
         "factura_conciliada": "Factura del {inicio} al {fin} conciliada.",
-        "no_cargada": "La integración no está cargada. Actívala y vuelve a intentarlo."
+        "no_cargada": "La integración no está cargada. Actívala y vuelve a intentarlo.",
+        "lote_conciliado": "{n} facturas introducidas."
       }
     },
     "resumen": {

@@ -47,9 +47,9 @@ Para cambiar algo después (potencia, bono, código postal…): rueda dentada **
 
 1. **Ajustes → Dispositivos y servicios → PVPC + Bono Social** → rueda dentada **⚙** del suministro → **Introducir factura real**.
 2. Sube el **PDF** de la factura: se leen solos el periodo, la emisión, los kWh de P1, P2 y P3, el total y los kWh bonificados (solo facturas de la Comercializadora Regulada, Gas & Power; con otras, a mano).
-3. Revisa y confirma.
+3. Revisa y confirma. Después puedes **añadir otra** sin salir, o terminar.
 
-Puedes subir también facturas antiguas, de una en una: afinan la calibración del medidor y llenan el gráfico de facturas.
+**Varias facturas de una vez:** mete los PDF en un **ZIP** y súbelo en el paso 2. Se leen todos, te enseña la lista (periodo e importe de cada una, y las que no se han podido leer) y con un solo clic entran todas. Las facturas antiguas afinan la calibración del medidor y llenan el gráfico de facturas (sustituyen a las calculadas con el consumo).
 
 ### Añadir la tarjeta de precios y factura
 
@@ -202,11 +202,12 @@ entity_injection: sensor.pvpc_bs_precio_excedentes   # opcional: precio de exced
 ventana: true                   # al pulsar el icono, ventana con la tarjeta completa
 grafica_facturas: true          # gráfica de las últimas facturas al pie (por defecto, no)
 facturas_meses: "6"             # cuántas: 3, 5, 6, 9 o 12
+titulo_grafica: PVPC            # título de la gráfica de precios ("" = sin título)
 titulo_facturas: Facturas       # "" = sin título
 color_facturas: "#4269d0"       # por defecto, el color de hoy
 facturas_importe: true          # importe encima de cada barra
 facturas_tendencia: false       # línea de tendencia
-estadistica_facturas: pvpc_bonosocial:facturas_casa   # opcional: se detecta sola (si hay varios suministros, el primero)
+estadistica_facturas: pvpc_bonosocial:facturas_casa   # solo YAML y no hace falta: sin ella se leen del sensor de factura en curso (con real/calculada)
 ```
 
 También valen las opciones de la tarjeta antigua `show_current`, `show_details`, `show_graph` y `show_only_today`.
@@ -273,6 +274,8 @@ Opcional (rueda **⚙** del suministro → **Cambiar datos del suministro**, en 
 ## Comparar tarifas
 
 ¿Te saldría más barata otra compañía? Con el botón **Comparar tarifas** de cada suministro (o el servicio `pvpc_bonosocial.comparar_tarifas`), la integración compara **lo que has pagado de verdad en los últimos 12 meses** (las facturas introducidas o, si faltan, las estimadas al cierre o las calculadas con el consumo) con las ofertas del [comparador oficial de la CNMC](https://comparador.cnmc.gob.es/) para tu código postal, tu potencia y **tu consumo real en punta, llano y valle** (no el perfil medio que usa el formulario de la web).
+
+En la rueda dentada ⚙ del suministro (paso «Factura») se puede elegir además **a dónde enviar la comparativa** (cualquier entidad `notify`: un chat de Telegram, el móvil…), **cuándo** (siempre, o solo si alguna oferta ahorra más de lo que indiques al año) y el **formato** (completo, como la notificación, o breve: lo pagado, la mejor oferta y el veredicto). Vale para el botón y para la comparativa mensual; la notificación de Home Assistant sale igual.
 
 - Necesita el **código postal** del suministro: **⚙ Reconfigurar → Cambiar datos del suministro**, en el último paso. Ahí también puedes activar una comparativa automática el día 2 de cada mes.
 - El resultado queda en el sensor `sensor.pvpc_bs_mejor_alternativa` (ahorro anual de la mejor oferta; en sus atributos, las 5 mejores con permanencia, servicios adicionales, vigencia y si son solo para nuevos clientes) y en una notificación con las 3 mejores. El servicio también puede mandarlo a Telegram o a cualquier notificación (`destino`).

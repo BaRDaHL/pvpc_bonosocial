@@ -46,7 +46,7 @@ def _credenciales(actual: dict[str, Any] | None = None) -> vol.Schema:
 
 
 def _titulo(suministro: dict[str, Any]) -> str:
-    return f"Datadis {str(suministro.get('cups', ''))[-6:]}".strip()
+    return f"Datadis {str(suministro.get('cups', ''))[-4:]}".strip()
 
 
 class DatadisSubentryFlow(ConfigSubentryFlow):

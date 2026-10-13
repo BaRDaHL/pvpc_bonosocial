@@ -46,6 +46,13 @@ CONF_ALQUILER = "alquiler_contador_eur_mes"
 CONF_ARRASTRE_INICIAL = "arrastre_inicial_kwh"
 CONF_CODIGO_POSTAL = "codigo_postal"  # solo para el comparador de tarifas (§8 bis)
 CONF_COMPARAR_MENSUAL = "comparar_mensual"
+# Envío de la comparativa de tarifas a una entidad `notify` (Telegram incluido), opcional.
+CONF_COMPARADOR_DESTINO = "comparador_destino"
+CONF_COMPARADOR_ENVIO = "comparador_envio"  # siempre | si_ahorra
+CONF_COMPARADOR_UMBRAL = "comparador_umbral_eur"  # € al año de ahorro mínimo (con si_ahorra)
+CONF_COMPARADOR_FORMATO = "comparador_formato"  # completo | breve
+ENVIOS_COMPARADOR = ["siempre", "si_ahorra"]
+FORMATOS_COMPARADOR = ["completo", "breve"]
 # Segunda opinión de cada factura cerrada con el simulador de la CNMC (envía la curva horaria)
 CONF_SEGUNDA_OPINION = "segunda_opinion_cnmc"
 # Contratos anteriores del suministro (cambios a mitad de periodo, F7): lista de

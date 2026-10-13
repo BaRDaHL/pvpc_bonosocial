@@ -1,0 +1,27 @@
+# Una release solo vale si su etiqueta (vX.Y.Z) coincide con la versión del manifest.json;
+# si no, HACS anuncia actualizaciones que no existen (o no anuncia las que sí).
+name: Versión
+
+on:
+  release:
+    types: [published]
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: La etiqueta coincide con el manifest.json
+        run: |
+          VERSION=$(jq -r .version custom_components/pvpc_bonosocial/manifest.json)
+          ETIQUETA="${GITHUB_REF#refs/tags/}"
+          if [ "v$VERSION" != "$ETIQUETA" ]; then
+            echo "::error::La etiqueta $ETIQUETA no coincide con la versión $VERSION del manifest.json"
+            exit 1
+          fi
+          echo "Etiqueta $ETIQUETA = manifest $VERSION"

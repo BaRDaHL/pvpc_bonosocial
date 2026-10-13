@@ -139,7 +139,7 @@ async def async_importar(hass: HomeAssistant, entry: ConfigEntry, origen_id: str
         # Si esta integración ya creó su propia copia (prefijo pvpc_bono_social_), sobra.
         propia = registro.async_get_entity_id(entidad.domain, DOMAIN, nuevo)
         if propia is not None:
-            registro.async_remove(propia)
+            registro.async_remove(_apartar(registro, propia))
         estado = hass.states.get(entidad.entity_id)
         if estado is not None and estado.state != STATE_UNKNOWN:
             hass.states.async_remove(entidad.entity_id)  # estado «unavailable» restaurado
@@ -165,6 +165,21 @@ async def async_importar(hass: HomeAssistant, entry: ConfigEntry, origen_id: str
     avisar_nombres(hass, renombres)
     _LOGGER.info("Importadas %d entidades de PVPC Next (%d renombradas)", movidas, len(renombres))
     return movidas
+
+
+def _apartar(registro: er.EntityRegistry, entity_id: str) -> str:
+    """Cambia el entity_id de la copia propia antes de borrarla y devuelve el nuevo.
+
+    El recorder no pasa el historial de PVPC Next a un entity_id que ya tiene historial
+    («the new entity_id is already in use»): la copia propia lleva el suyo (aunque sean
+    minutos) a otro nombre y deja libre el `sensor.pvpc_bs_*` para el de PVPC Next. El
+    recorder atiende los cambios de nombre en orden, así que este va antes que el de la
+    entidad importada.
+    """
+    dominio, objeto = entity_id.split(".", 1)
+    apartado = registro.async_generate_entity_id(dominio, f"{objeto}_sustituida")
+    registro.async_update_entity(entity_id, new_entity_id=apartado)
+    return apartado
 
 
 def clave_de_unique_id(unique_id: str) -> str | None:

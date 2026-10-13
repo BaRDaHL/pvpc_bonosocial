@@ -362,7 +362,7 @@
     },
     "falta_fecha_factura": {
       "title": "Falta la fecha de la última factura de «{suministro}»",
-      "description": "Para saber qué periodo se está facturando hace falta la fecha de fin de la última factura (la que aparece como «del X al Y»: es Y). Añádela en Ajustes → Dispositivos y servicios → PVPC + Bono Social → «{suministro}» → Reconfigurar."
+      "description": "Para saber qué periodo se está facturando hace falta la fecha de fin de la última factura (la que aparece como «del X al Y»: es Y). Añádela en Ajustes → Dispositivos y servicios → PVPC + Bono Social → rueda dentada ⚙ de «{suministro}» (Reconfigurar)."
     },
     "usar_estadistica_coste": {
       "title": "Usar el coste de PVPC + Bono Social en el panel de Energía («{suministro}»)",

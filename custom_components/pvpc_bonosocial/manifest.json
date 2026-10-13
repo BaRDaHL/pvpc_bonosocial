@@ -19,5 +19,5 @@
   "loggers": [
     "custom_components.pvpc_bonosocial.prices.aiopvpc"
   ],
-  "version": "1.0.0"
+  "version": "1.0.1"
 }

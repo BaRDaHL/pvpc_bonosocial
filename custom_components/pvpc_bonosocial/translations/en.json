@@ -362,7 +362,7 @@
     },
     "falta_fecha_factura": {
       "title": "Last bill date missing for «{suministro}»",
-      "description": "The end date of the last bill is needed to know which period is being billed (the bill shows «from X to Y»: it is Y). Add it in Settings → Devices & services → PVPC + Bono Social → «{suministro}» → Reconfigure."
+      "description": "The end date of the last bill is needed to know which period is being billed (the bill shows «from X to Y»: it is Y). Add it in Settings → Devices & services → PVPC + Bono Social → gear icon ⚙ of «{suministro}» (Reconfigure)."
     },
     "usar_estadistica_coste": {
       "title": "Use the PVPC + Bono Social cost in the Energy dashboard («{suministro}»)",

@@ -44,7 +44,7 @@ Si ya tienes PVPC Next, el asistente te ofrece **importarlo** (ver [Migración](
 - **Resumen por notificación** (*Añadir resumen por notificación*, uno por destino): ver [Resumen de precios por Telegram](#resumen-de-precios-por-telegram).
 - **Cuenta de Datadis** (*Añadir cuenta de Datadis*, opcional): ver [Datadis](#datadis).
 
-Si cambias de potencia, das de alta o de baja el bono o cambia tu unidad de convivencia, cámbialo en **Reconfigurar → Cambiar datos del suministro**: te pregunta desde qué día rige el contrato nuevo y los días anteriores del periodo se siguen calculando con el antiguo.
+Si cambias de potencia, das de alta o de baja el bono o cambia tu unidad de convivencia, cámbialo en **⚙ Reconfigurar → Cambiar datos del suministro**: te pregunta desde qué día rige el contrato nuevo y los días anteriores del periodo se siguen calculando con el antiguo.
 
 ## Entidades
 
@@ -81,9 +81,9 @@ Además, cada suministro escribe la estadística `pvpc_bonosocial:coste_<suminis
 
 La integración trae su propia tarjeta y la carga sola: no hay que instalar nada aparte ni añadir recursos. En un panel, **Añadir tarjeta → PVPC + Bono Social**. Muestra:
 
-- el precio actual con un icono € en verde, amarillo, naranja o rojo (o por periodo P1–P3);
-- el mínimo y el máximo de hoy y de mañana;
-- la gráfica de hoy y de mañana, con el color de cada hora (la misma regla que el resumen de Telegram) y, en los laborables, las horas punta y llano sombreadas;
+- el precio actual con un icono € en verde, amarillo, naranja o rojo (o por periodo P1–P3), sin título salvo que se ponga uno (`title`);
+- el mínimo y el máximo de hoy (azul) y de mañana (amarillo), con su hora, como la tarjeta `pvpc-hourly-pricing-card`;
+- la gráfica de hoy y de mañana en escalones por hora, con triángulos en el mínimo y el máximo, la hora actual marcada y, en los laborables, las horas punta y llano sombreadas. Los colores se pueden cambiar, o colorear cada hora de hoy por su precio (la misma regla que el resumen de Telegram);
 - la factura del periodo anterior (con la desviación si está conciliada) y la del periodo en curso: lo gastado y, entre paréntesis, la previsión. Puede ir bajo la gráfica, arriba (en pantallas estrechas pasa abajo sola) u oculta.
 
 Todo se configura en el editor visual. En YAML:
@@ -93,7 +93,14 @@ type: custom:pvpc-bono-social-card
 entity: sensor.pvpc_bs_precio   # opcional: se detecta sola
 factura: below_chart            # below_chart, header o hidden
 icon_color: price               # price o period
+colores: fijo                   # fijo (un color por día) o precio (hoy coloreado por precio)
+color_hoy: "#4269d0"               # leyenda, línea y triángulos de hoy (en el editor, selector de color)
+color_manana: "#f4bd4a"            # lo mismo para mañana
+bandas: true                    # punta y llano sombreados
+entity_injection: sensor.pvpc_bs_precio_excedentes   # opcional: precio de excedentes, en punteado
 ```
+
+También valen las opciones de la tarjeta antigua `show_current`, `show_details`, `show_graph` y `show_only_today`.
 
 Las tarjetas con `type: custom:pvpc-hourly-pricing-card` siguen funcionando. Si además tienes instalada esa tarjeta desde HACS, se usa la de HACS: desinstálala y cambia el `type` para usar la nueva.
 
@@ -109,7 +116,7 @@ Para probarlo o usarlo desde una automatización: servicio `pvpc_bonosocial.envi
 
 Cuando llega la factura, conviene introducirla: con ella la integración fija la fecha real del corte, recalibra el medidor (que nunca mide exactamente igual que el contador), corrige el saldo de kWh con descuento del bono social y reescribe el coste de ese periodo en el panel de Energía con el importe real. Cuantas más facturas introduzcas, más se afina la previsión.
 
-1. En **Ajustes → Dispositivos y servicios → PVPC + Bono Social**, pulsa los tres puntos del suministro y elige **Reconfigurar**.
+1. En **Ajustes → Dispositivos y servicios → PVPC + Bono Social**, pulsa la rueda dentada **⚙** del suministro (**Reconfigurar**).
 2. Elige **Introducir factura real** (la otra opción, **Cambiar datos del suministro**, es para la potencia, el bono, la fuente de consumo, etc.).
 3. **Sube el PDF de la factura** y la integración lee sola las fechas del periodo y de emisión, los kWh de P1, P2 y P3, el total y los kWh bonificados. En el paso siguiente solo tienes que revisarlos y confirmar. Si no tienes el PDF, deja el archivo vacío y escribe los datos a mano: el formulario propone las fechas del último periodo cerrado.
 
@@ -123,7 +130,7 @@ Una factura que se solapa con otra ya introducida (por ejemplo, una rectificativ
 
 ¿Te saldría más barata otra compañía? Con el botón **Comparar tarifas** de cada suministro (o el servicio `pvpc_bonosocial.comparar_tarifas`), la integración compara **lo que has pagado de verdad en los últimos 12 meses** (las facturas introducidas o, si faltan, las estimadas al cierre) con las ofertas del [comparador oficial de la CNMC](https://comparador.cnmc.gob.es/) para tu código postal, tu potencia y **tu consumo real en punta, llano y valle** (no el perfil medio que usa el formulario de la web).
 
-- Necesita el **código postal** del suministro: **Reconfigurar → Cambiar datos del suministro**, en el último paso. Ahí también puedes activar una comparativa automática el día 2 de cada mes.
+- Necesita el **código postal** del suministro: **⚙ Reconfigurar → Cambiar datos del suministro**, en el último paso. Ahí también puedes activar una comparativa automática el día 2 de cada mes.
 - El resultado queda en el sensor `sensor.pvpc_bs_mejor_alternativa` (ahorro anual de la mejor oferta; en sus atributos, las 5 mejores con permanencia, servicios adicionales, vigencia y si son solo para nuevos clientes) y en una notificación con las 3 mejores. El servicio también puede mandarlo a Telegram o a cualquier notificación (`destino`).
 - **Bono social**: solo existe con el PVPC de una comercializadora de referencia. **Si cambias a mercado libre, lo pierdes.** La comparativa te dice lo que pagaste con bono, lo que habrías pagado sin él y la mejor oferta libre; casi siempre gana el PVPC con bono.
 - **No es un censo del mercado**: la CNMC solo incluye las ofertas que le mandan las comercializadoras, y varias grandes no están. La comparativa te dice cuáles faltan. Para comparar a mano, también puedes usar el comparador de la OCU.
@@ -137,7 +144,7 @@ Opcional. Con tu usuario y contraseña de [datadis.es](https://datadis.es), la i
 
 - Antes de usar nada se comprueba: se descartan los días con horas repetidas, con horas que no existen ese día o idénticos a otro día (exports corruptos).
 - Si Datadis no da datos o no responde, no pasa nada: el sensor `sensor.pvpc_bs_estado_datadis` lo dice y se vuelve a intentar al día siguiente; cuando vuelva a dar datos, se rellena hacia atrás.
-- También puedes importar el CSV de consumo que se descarga en datadis.es: **Reconfigurar → Importar un CSV de datadis.es**.
+- También puedes importar el CSV de consumo que se descarga en datadis.es: **⚙ Reconfigurar → Importar un CSV de datadis.es**.
 - Datadis solo deja hacer la misma consulta una vez al día y a menudo va con uno o dos días de retraso: para la factura en tiempo real sigue siendo mejor un medidor.
 
 ## Migración
@@ -222,11 +229,11 @@ HACS → **Custom repositories** → `https://github.com/BaRDaHL/pvpc_bonosocial
 
 ### Card and Telegram summary
 
-The integration ships and loads its own card (**Add card → PVPC + Bono Social**): current price, today's and tomorrow's min/max, hourly chart with peak and standard hours shaded on working days, and the bill (previous and current). Cards with `type: custom:pvpc-hourly-pricing-card` keep working through an alias. Add a **price summary notification** to get a morning and an evening emoji chart of prices on Telegram (no chat ID to type) or any notify entity; service `pvpc_bonosocial.enviar_resumen` (`dry_run: true` returns the text).
+The integration ships and loads its own card (**Add card → PVPC + Bono Social**): current price, today's (blue) and tomorrow's (yellow) min/max, stepped hourly chart with min/max markers like `pvpc-hourly-pricing-card` (colours configurable, or today coloured by price) and peak/standard hours shaded on working days, and the bill (previous and current). Cards with `type: custom:pvpc-hourly-pricing-card` keep working through an alias. Add a **price summary notification** to get a morning and an evening emoji chart of prices on Telegram (no chat ID to type) or any notify entity; service `pvpc_bonosocial.enviar_resumen` (`dry_run: true` returns the text).
 
 ### Entering the actual bill
 
-When the bill arrives, open the supply's **Reconfigure** menu and choose **Enter actual bill**. Upload the bill PDF and the integration reads the billing and issue dates, the kWh in P1, P2 and P3, the total and the discounted kWh; you only have to check them. Without the PDF, type the data by hand. The bill sets the real meter reading date, recalibrates the meter, corrects the social bonus balance and rewrites that period's cost in the Energy dashboard. The PDF is read locally and deleted afterwards.
+When the bill arrives, open the supply's **Reconfigure** menu (gear icon ⚙) and choose **Enter actual bill**. Upload the bill PDF and the integration reads the billing and issue dates, the kWh in P1, P2 and P3, the total and the discounted kWh; you only have to check them. Without the PDF, type the data by hand. The bill sets the real meter reading date, recalibrates the meter, corrects the social bonus balance and rewrites that period's cost in the Energy dashboard. The PDF is read locally and deleted afterwards.
 
 **Automatic PDF reading only works with bills from Comercializadora Regulada, Gas & Power (Naturgy)**, the only supplier I have bills from to test it. To add another regulated supplier I need **at least 3 to 5 consecutive bills as PDF** (the original PDF, not a photo or scan; personal data can be covered). Do not post them in a public issue: open an issue naming the supplier and I will tell you how to send them privately.
 

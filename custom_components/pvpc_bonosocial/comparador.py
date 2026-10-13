@@ -374,7 +374,8 @@ class Comparador:
         if not self.codigo_postal:
             raise _Fallo(
                 ESTADO_SIN_CODIGO_POSTAL,
-                "Falta el código postal del suministro: añádelo en «Reconfigurar» para comparar tarifas.",
+                "Falta el código postal del suministro: añádelo con la rueda dentada ⚙ del suministro "
+                "(Reconfigurar) para comparar tarifas.",
             )
         ventana = ventana_12_meses(await self.facturacion.async_periodos_pagados())
         if ventana is None:

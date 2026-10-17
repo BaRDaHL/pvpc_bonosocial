@@ -114,7 +114,16 @@ Sabe **tu factura de la luz antes de que llegue**: precios horarios del PVPC *y*
 
 Las guías paso a paso están en la **[Wiki](https://github.com/BaRDaHL/pvpc_bonosocial/wiki/ES-Inicio)**: [instalación](https://github.com/BaRDaHL/pvpc_bonosocial/wiki/ES-Instalacion) · [suministro](https://github.com/BaRDaHL/pvpc_bonosocial/wiki/ES-Suministro) · [facturas reales](https://github.com/BaRDaHL/pvpc_bonosocial/wiki/ES-Facturas) · [tarjeta](https://github.com/BaRDaHL/pvpc_bonosocial/wiki/ES-Tarjeta) · [resumen por Telegram](https://github.com/BaRDaHL/pvpc_bonosocial/wiki/ES-Resumen-Telegram) · [panel de Energía](https://github.com/BaRDaHL/pvpc_bonosocial/wiki/ES-Panel-de-Energia) · [comparar tarifas](https://github.com/BaRDaHL/pvpc_bonosocial/wiki/ES-Comparar-tarifas) · [comprobación con la CNMC](https://github.com/BaRDaHL/pvpc_bonosocial/wiki/ES-Comprobacion-CNMC) · [Datadis](https://github.com/BaRDaHL/pvpc_bonosocial/wiki/ES-Datadis) · [migración](https://github.com/BaRDaHL/pvpc_bonosocial/wiki/ES-Migracion) · [entidades y servicios](https://github.com/BaRDaHL/pvpc_bonosocial/wiki/ES-Entidades-y-servicios) · [cómo se calcula](https://github.com/BaRDaHL/pvpc_bonosocial/wiki/ES-Como-se-calcula) · [preguntas frecuentes](https://github.com/BaRDaHL/pvpc_bonosocial/wiki/ES-Preguntas-frecuentes)
 
-La comparativa con otras integraciones está [arriba, en la parte en inglés](#compared-with-other-integrations).
+### Comparativa con otras integraciones
+
+| | Precios | Factura + bono social | Festivos | Extras |
+|---|---|---|---|---|
+| **PVPC + Bono Social** | ✅ | ✅ | Regla de la Circular 3/2020 + peajes de ESIOS | Tarjeta, resumen, comprobación y comparador de la CNMC |
+| Oficial `pvpc_hourly_pricing` | ✅ | ❌ | Tablas fijas | |
+| [PVPC Next](https://github.com/privatecoder/ha-pvpc-next) | ✅ | ❌ | Calculados | Base de la parte de precios de esta integración |
+| [Enchufado](https://github.com/Migux13/enchufado) | ✅ (token propio de ESIOS) | Factura simulada por la CNMC, sin bono social | — | Consumo de Datadis |
+
+<sub>Revisado en octubre de 2026 leyendo el código de cada integración.</sub>
 
 ### Se buscan voluntarios
 

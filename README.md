@@ -65,6 +65,7 @@ Step-by-step guides are in the **[Wiki](https://github.com/BaRDaHL/pvpc_bonosoci
 |---|---|---|---|---|
 | **PVPC + Bono Social** | ✅ | ✅ | Circular 3/2020 rule + ESIOS tolls | Card, summary, CNMC check and comparator |
 | Official `pvpc_hourly_pricing` | ✅ | ❌ | Fixed tables | |
+| [PVPC Next](https://github.com/privatecoder/ha-pvpc-next) | ✅ | ❌ | Computed | Base of the price layer here |
 | [Enchufado](https://github.com/Migux13/enchufado) | ✅ (own ESIOS token) | CNMC-simulated bill, no social bonus | — | Datadis consumption |
 
 <sub>Reviewed in October 2026 by reading each integration's code.</sub>

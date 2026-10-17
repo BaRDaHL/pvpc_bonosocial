@@ -9,6 +9,7 @@ import aiohttp
 import voluptuous as vol
 from homeassistant.config_entries import (
     SOURCE_REAUTH,
+    SOURCE_RECONFIGURE,
     ConfigEntry,
     ConfigFlow,
     ConfigSubentryFlow,
@@ -50,7 +51,6 @@ from .const import (
     LEGACY_ATTR_ENABLE_INJECTION_PRICE,
     LEGACY_ATTR_POWER,
     LEGACY_ATTR_POWER_P2_P3,
-    LEGACY_ATTR_POWER_P3,
     PRICE_MODES,
     SUBENTRY_DATADIS,
     SUBENTRY_RESUMEN,
@@ -68,6 +68,18 @@ from .importacion import CONF_COPIA, CONF_IMPORTAR, config_importada, entrada_a_
 from .prices.aiopvpc import DEFAULT_POWER_KW, PVPCData
 
 _MAIL_TO_LINK = "[consultasios@ree.es](mailto:consultasios@ree.es?subject=Personal%20token%20request)"
+
+
+async def _async_comprobar_token(hass, api: PVPCData | None, token: str) -> tuple[PVPCData, str | None]:
+    """Valida el token contra ESIOS. Devuelve la API (para reutilizarla) y la clave del error, si hay."""
+    api = api or PVPCData(session=async_get_clientsession(hass))
+    try:
+        if not await api.check_api_token(dt_util.utcnow(), token):
+            return api, "invalid_auth"
+    except (aiohttp.ClientError, TimeoutError):
+        # fallo transitorio: no se pudo llegar a la API, lo que no dice nada del token
+        return api, "cannot_connect"
+    return api, None
 
 
 def _available_price_modes(enable_private_api: bool, api_token: str | None) -> list[str]:
@@ -91,6 +103,7 @@ class PVPCOptionsFlowHandler(OptionsFlow):
     _next_period_in_update: str | None = None
     _next_power_period_in_update: str | None = None
     _api_token: str | None = None
+    _api: PVPCData | None = None
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
         """Manage the options."""
@@ -129,7 +142,8 @@ class PVPCOptionsFlowHandler(OptionsFlow):
             ATTR_SHOW_REFERENCE_PRICE,
             data.get(ATTR_SHOW_REFERENCE_PRICE, DEFAULT_SHOW_REFERENCE_PRICE),
         )
-        api_token = options.get(CONF_API_TOKEN, data.get(CONF_API_TOKEN))
+        # El token es una credencial: vive solo en entry.data (ver helpers.config_entrada).
+        api_token = data.get(CONF_API_TOKEN)
         enable_private_api = options.get(ATTR_ENABLE_PRIVATE_API)
         if enable_private_api is None:
             enable_private_api = options.get(LEGACY_ATTR_ENABLE_INJECTION_PRICE)
@@ -197,48 +211,59 @@ class PVPCOptionsFlowHandler(OptionsFlow):
             self._enable_private_api = user_input[ATTR_ENABLE_PRIVATE_API]
             self._show_reference_price = bool(show_reference_price)
             if self._enable_private_api:
-                self._api_token = options.get(CONF_API_TOKEN, data.get(CONF_API_TOKEN))
+                self._api_token = data.get(CONF_API_TOKEN)
                 if self._api_token:
                     return await self.async_step_price_mode()
-                return await self.async_step_api_token(user_input)
+                return await self.async_step_api_token()
             self._price_mode = DEFAULT_PRICE_MODE
-            return self.async_create_entry(
-                title="",
-                data={
-                    ATTR_POWER_P1: self._power_p1,
-                    ATTR_POWER_P3: self._power_p3,
-                    ATTR_BETTER_PRICE_TARGET: self._better_price_target,
-                    ATTR_NEXT_PRICE_IN_UPDATE: self._next_price_in_update,
-                    ATTR_NEXT_BEST_IN_UPDATE: self._next_best_in_update,
-                    ATTR_NEXT_PERIOD_IN_UPDATE: self._next_period_in_update,
-                    ATTR_NEXT_POWER_PERIOD_IN_UPDATE: (self._next_power_period_in_update),
-                    ATTR_ENABLE_PRIVATE_API: self._enable_private_api,
-                    ATTR_PRICE_MODE: self._price_mode,
-                    ATTR_SHOW_REFERENCE_PRICE: bool(self._show_reference_price),
-                    CONF_API_TOKEN: None,
-                },
-            )
+            return self._async_guardar()
 
         return self.async_show_form(step_id="init", data_schema=schema)
 
     async def async_step_api_token(self, user_input: dict[str, Any] | None = None):
-        """Handle optional API token step for extra sensors."""
-        api_token = user_input.get(CONF_API_TOKEN) if user_input else None
-        if user_input is not None and api_token:
-            self._api_token = api_token
-            return await self.async_step_price_mode()
+        """Pide el token (solo si la entrada no tiene ninguno) y lo valida contra ESIOS."""
+        errors: dict[str, str] = {}
+        if user_input is not None and (api_token := user_input.get(CONF_API_TOKEN)):
+            self._api, error = await _async_comprobar_token(self.hass, self._api, api_token)
+            if error is None:
+                self._api_token = api_token
+                return await self.async_step_price_mode()
+            errors["base"] = error
 
-        default_token = self._api_token or self.config_entry.options.get(
-            CONF_API_TOKEN, self.config_entry.data.get(CONF_API_TOKEN)
-        )
-
-        schema = vol.Schema({vol.Required(CONF_API_TOKEN, default=default_token): str})
-
+        schema = vol.Schema({vol.Required(CONF_API_TOKEN, default=self._api_token or ""): str})
         return self.async_show_form(
             step_id="api_token",
             data_schema=schema,
+            errors=errors,
             description_placeholders={"mail_to_link": _MAIL_TO_LINK},
         )
+
+    @callback
+    def _async_guardar(self):
+        """Guarda las preferencias en `options` y, si hay un token nuevo, la credencial en `data`.
+
+        Las dos cosas van en una sola llamada a async_update_entry para que el update listener
+        recargue la entrada una vez: cuando HA aplica después las opciones del create_entry ya
+        son las mismas, async_update_entry no detecta cambio y no vuelve a disparar el listener.
+        """
+        opciones = {
+            ATTR_POWER_P1: self._power_p1,
+            ATTR_POWER_P3: self._power_p3,
+            ATTR_BETTER_PRICE_TARGET: self._better_price_target,
+            ATTR_NEXT_PRICE_IN_UPDATE: self._next_price_in_update,
+            ATTR_NEXT_BEST_IN_UPDATE: self._next_best_in_update,
+            ATTR_NEXT_PERIOD_IN_UPDATE: self._next_period_in_update,
+            ATTR_NEXT_POWER_PERIOD_IN_UPDATE: self._next_power_period_in_update,
+            ATTR_ENABLE_PRIVATE_API: bool(self._enable_private_api),
+            ATTR_PRICE_MODE: self._price_mode,
+            ATTR_SHOW_REFERENCE_PRICE: bool(self._show_reference_price),
+        }
+        entry = self.config_entry
+        if self._enable_private_api and self._api_token and self._api_token != entry.data.get(CONF_API_TOKEN):
+            self.hass.config_entries.async_update_entry(
+                entry, data={**entry.data, CONF_API_TOKEN: self._api_token}, options=opciones
+            )
+        return self.async_create_entry(data=opciones)
 
     async def async_step_price_mode(self, user_input: dict[str, Any] | None = None):
         """Select price mode after private API credentials are available."""
@@ -283,22 +308,7 @@ class PVPCOptionsFlowHandler(OptionsFlow):
                 )
             self._price_mode = selected_mode
             self._show_reference_price = bool(user_input[ATTR_SHOW_REFERENCE_PRICE])
-            return self.async_create_entry(
-                title="",
-                data={
-                    ATTR_POWER_P1: self._power_p1,
-                    ATTR_POWER_P3: self._power_p3,
-                    ATTR_BETTER_PRICE_TARGET: self._better_price_target,
-                    ATTR_NEXT_PRICE_IN_UPDATE: self._next_price_in_update,
-                    ATTR_NEXT_BEST_IN_UPDATE: self._next_best_in_update,
-                    ATTR_NEXT_PERIOD_IN_UPDATE: self._next_period_in_update,
-                    ATTR_NEXT_POWER_PERIOD_IN_UPDATE: self._next_power_period_in_update,
-                    ATTR_ENABLE_PRIVATE_API: bool(self._enable_private_api),
-                    ATTR_PRICE_MODE: self._price_mode,
-                    ATTR_SHOW_REFERENCE_PRICE: bool(self._show_reference_price),
-                    CONF_API_TOKEN: self._api_token,
-                },
-            )
+            return self._async_guardar()
 
         return self.async_show_form(step_id="price_mode", data_schema=schema)
 
@@ -492,31 +502,31 @@ class TariffSelectorConfigFlow(ConfigFlow, domain=DOMAIN):
     async def _async_verify(self, step_id: str):
         """Verify API token if used."""
         errors: dict[str, str] = {}
-        auth_ok = True
-
         if self._api_token:
-            if not self._api:
-                self._api = PVPCData(session=async_get_clientsession(self.hass))
-            try:
-                auth_ok = await self._api.check_api_token(dt_util.utcnow(), self._api_token)
-            except (aiohttp.ClientError, TimeoutError):
-                # transient failure: the API could not be reached,
-                # which says nothing about the token being valid
-                errors["base"] = "cannot_connect"
-                return self.async_show_form(step_id=step_id, errors=errors)
+            self._api, error = await _async_comprobar_token(self.hass, self._api, self._api_token)
+            if error is not None:
+                errors["base"] = error
+                return self.async_show_form(step_id=step_id, data_schema=self._esquema_token(), errors=errors)
 
-        if not auth_ok:
-            errors["base"] = "invalid_auth"
-            return self.async_show_form(step_id=step_id, errors=errors)
-
-        if self.source == SOURCE_REAUTH:
-            entry = self._get_reauth_entry()
+        if self.source in (SOURCE_REAUTH, SOURCE_RECONFIGURE):
+            entry = (
+                self._get_reauth_entry() if self.source == SOURCE_REAUTH else self._get_reconfigure_entry()
+            )
+            # Solo cambia la credencial, y solo en `data`, que es de donde la lee la entrada. Las
+            # preferencias de `options` no se tocan; si una versión anterior dejó allí el token,
+            # se quita para que no queden dos copias distintas.
+            cambios: dict[str, Any] = {"data_updates": {CONF_API_TOKEN: self._api_token}}
+            if CONF_API_TOKEN in entry.options:
+                cambios["options"] = {k: v for k, v in entry.options.items() if k != CONF_API_TOKEN}
             if entry.update_listeners:
                 # Cargada: el update listener de la entrada recarga al cambiar los datos.
-                return self.async_update_and_abort(entry, data=self._build_entry_data())
-            return self.async_update_reload_and_abort(entry, data=self._build_entry_data())
+                return self.async_update_and_abort(entry, **cambios)
+            return self.async_update_reload_and_abort(entry, **cambios)
 
         return await self.async_step_price_mode()
+
+    def _esquema_token(self) -> vol.Schema:
+        return vol.Schema({vol.Required(CONF_API_TOKEN, default=self._api_token or ""): str})
 
     async def async_step_price_mode(self, user_input: dict[str, Any] | None = None):
         """Select price mode after private API credentials are available."""
@@ -579,39 +589,25 @@ class TariffSelectorConfigFlow(ConfigFlow, domain=DOMAIN):
         }
 
     async def async_step_reauth(self, entry_data: Mapping[str, Any]):
-        """Re-authentication step."""
+        """ESIOS ha rechazado el token (401): se pide otro. `entry_data` es entry.data, donde vive."""
         self._api_token = entry_data.get(CONF_API_TOKEN)
-        self._name = entry_data[CONF_NAME]
-        self._tariff = entry_data[ATTR_TARIFF]
-        self._power_p1 = entry_data.get(ATTR_POWER_P1, entry_data.get(LEGACY_ATTR_POWER))
-        self._power_p3 = entry_data.get(
-            ATTR_POWER_P3,
-            entry_data.get(LEGACY_ATTR_POWER_P2_P3, entry_data.get(LEGACY_ATTR_POWER_P3)),
-        )
-        self._better_price_target = normalize_better_price_target(entry_data.get(ATTR_BETTER_PRICE_TARGET))
-        self._price_mode = normalize_price_mode(entry_data.get(ATTR_PRICE_MODE, DEFAULT_PRICE_MODE))
-        self._show_reference_price = entry_data.get(ATTR_SHOW_REFERENCE_PRICE, DEFAULT_SHOW_REFERENCE_PRICE)
-        self._enable_private_api = entry_data.get(
-            ATTR_ENABLE_PRIVATE_API,
-            entry_data.get(
-                LEGACY_ATTR_ENABLE_INJECTION_PRICE,
-                self._api_token is not None or DEFAULT_ENABLE_PRIVATE_API,
-            ),
-        )
-        if self._power_p1 is None:
-            self._power_p1 = DEFAULT_POWER_KW
-        if self._power_p3 is None:
-            self._power_p3 = DEFAULT_POWER_KW
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(self, user_input: dict[str, Any] | None = None):
         """Confirm re-authentication."""
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_API_TOKEN, default=self._api_token): str,
-            }
-        )
         if user_input:
             self._api_token = user_input.get(CONF_API_TOKEN)
             return await self._async_verify("reauth_confirm")
-        return self.async_show_form(step_id="reauth_confirm", data_schema=schema)
+        return self.async_show_form(step_id="reauth_confirm", data_schema=self._esquema_token())
+
+    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None):
+        """Cambiar el token de ESIOS sin esperar a que lo rechace (Quality Scale: reconfiguration-flow)."""
+        if user_input:
+            self._api_token = user_input.get(CONF_API_TOKEN)
+            return await self._async_verify("reconfigure")
+        self._api_token = self._get_reconfigure_entry().data.get(CONF_API_TOKEN)
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=self._esquema_token(),
+            description_placeholders={"mail_to_link": _MAIL_TO_LINK},
+        )

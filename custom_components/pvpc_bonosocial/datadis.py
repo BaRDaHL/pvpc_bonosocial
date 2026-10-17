@@ -7,6 +7,9 @@ titular. Es **opcional**: si no da datos o los da mal, todo sigue funcionando co
   `password`; responde el token en texto) y `GET /api-private/api/get-supplies-v2` y
   `get-consumption-data-v2` con `Authorization: Bearer`. Fechas en `YYYY/MM`. Según la
   experiencia de otros clientes, una misma consulta solo una vez cada 24 h (429 si no).
+- La respuesta trae `distributorError` con los avisos de la distribuidora; se enseñan en el
+  detalle del error. Si un rango de varios meses llega vacío, se pide mes a mes (algunas
+  distribuidoras fallan el rango entero por un mes roto, según e-data).
 - Cada registro: `date` `YYYY/MM/DD`, `time` `HH:MM` con la **hora de fin** (`01:00`…`24:00`,
   `25:00` el día de 25 h), `consumptionKWh` y `obtainMethod` (`Real`/`Estimada`).
 - Comprobaciones antes de usar nada: horas duplicadas, horas fuera del día y días copiados de
@@ -96,14 +99,17 @@ async def async_suministros(session: aiohttp.ClientSession, token: str) -> list[
     return _lista(await _get(session, token, "get-supplies-v2", {}), "supplies")
 
 
-async def async_consumo(
-    session: aiohttp.ClientSession,
-    token: str,
-    suministro: Mapping[str, Any],
-    desde: date,
-    hasta: date,
-) -> list[dict]:
-    params = {
+@dataclass
+class Respuesta:
+    """Registros de una consulta de consumo y los avisos de la distribuidora (`distributorError`)."""
+
+    registros: list[dict] = field(default_factory=list)
+    errores: list[str] = field(default_factory=list)
+
+
+def params_consumo(suministro: Mapping[str, Any], desde: date, hasta: date) -> dict[str, Any]:
+    """Parámetros de la consulta: Datadis no deja repetir unos idénticos antes de 24 h."""
+    return {
         "cups": suministro["cups"],
         "distributorCode": suministro["distributorCode"],
         "startDate": desde.strftime("%Y/%m"),
@@ -111,7 +117,35 @@ async def async_consumo(
         "measurementType": 0,
         "pointType": suministro.get("pointType", 5),
     }
-    return _lista(await _get(session, token, "get-consumption-data-v2", params), "timeCurve")
+
+
+def _errores_distribuidora(respuesta: Any) -> list[str]:
+    if not isinstance(respuesta, dict):
+        return []
+    out = []
+    for e in respuesta.get("distributorError") or []:
+        if isinstance(e, dict):
+            texto = e.get("errorDescription") or e.get("errorCode")
+            if texto:
+                nombre = e.get("distributorName")
+                out.append(f"{nombre}: {texto}" if nombre else str(texto))
+        elif e:
+            out.append(str(e))
+    return out
+
+
+async def async_consumo(session: aiohttp.ClientSession, token: str, params: Mapping[str, Any]) -> Respuesta:
+    datos = await _get(session, token, "get-consumption-data-v2", params)
+    return Respuesta(_lista(datos, "timeCurve"), _errores_distribuidora(datos))
+
+
+def meses(desde: date, hasta: date) -> list[date]:
+    """Primer día de cada mes de `desde` a `hasta`, del más reciente al más antiguo."""
+    mes, primero, out = hasta.replace(day=1), desde.replace(day=1), []
+    while mes >= primero:
+        out.append(mes)
+        mes = (mes - timedelta(days=1)).replace(day=1)
+    return out
 
 
 # --- curva horaria ----------------------------------------------------------------------

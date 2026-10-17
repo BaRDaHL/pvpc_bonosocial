@@ -44,6 +44,7 @@ from .const import (
     SUBENTRY_RESUMEN,
 )
 from .flujo_resumen import POR_DEFECTO
+from .helpers import ahora_precios
 from .prices.aiopvpc.const import REFERENCE_TZ
 from .prices.aiopvpc.pvpc_tariff import _price_period_key
 from .prices.festivos import es_festivo_p3
@@ -144,7 +145,7 @@ def texto(
     historico: HistoricoPrecios | None = getattr(coordinador, "historico", None)
     if historico is None:
         raise HomeAssistantError("Todavía no hay histórico de precios")
-    ahora = dt_util.now(REFERENCE_TZ)
+    ahora = ahora_precios(hass.config.time_zone)
     hoy = dia_precios(historico, ahora.date())
     if not manana:
         opciones = _opciones(datos, markdown, hass.config.language, historico, [hoy])

@@ -214,6 +214,49 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
             # Se fija al crear el suministro: renombrarlo no cambia su estadística.
             self._estado["estadistica_id"] = id_estadistica(self.subentrada.title)
             self._store.async_delay_save(lambda: self._estado, 5)
+        self._aplicar_fin_ultima_factura()
+
+    def _aplicar_fin_ultima_factura(self) -> None:
+        """Si el usuario ha cambiado «fin de la última factura» al reconfigurar, el periodo en curso
+        pasa a empezar ese día, también hacia atrás.
+
+        `corte_actual` (lo que rige tras el primer cierre o la primera factura) manda sobre el dato
+        de la subentrada, así que antes un cambio se guardaba y se ignoraba. Ahora se recuerda qué
+        fecha de la subentrada se aplicó (`fin_aplicado`) y, si cambia, se aplica: se descartan los
+        periodos *estimados* que acaban después y el corte manual que ya no cabe. Las facturas
+        reales no se tocan (el formulario no deja poner una fecha anterior a la última).
+        """
+        fin = self.datos.get(CONF_FIN_ULTIMA_FACTURA)
+        if "fin_aplicado" not in self._estado:  # Store de antes de este cambio: nada que aplicar
+            self._estado["fin_aplicado"] = fin
+            self._store.async_delay_save(lambda: self._estado, 5)
+            return
+        if fin == self._estado["fin_aplicado"]:
+            return
+        self._estado["fin_aplicado"] = fin
+        if fin:  # vaciar el campo no borra el periodo en curso
+            nuevo = date.fromisoformat(fin)
+            reales = [date.fromisoformat(c["fin"]) for c in self.cerradas if c.get("estado") == "conciliada"]
+            if reales and max(reales) > nuevo:
+                _LOGGER.warning(
+                    "%s: el fin de la última factura (%s) es anterior a una factura real (%s); se usa esta",
+                    self.subentrada.title,
+                    nuevo,
+                    max(reales),
+                )
+                nuevo = max(reales)
+            self._estado["corte_actual"] = nuevo.isoformat()
+            self._estado["cerradas"] = [
+                c
+                for c in self.cerradas
+                if c.get("estado") == "conciliada" or date.fromisoformat(c["fin"]) <= nuevo
+            ]
+            manual = self._estado.get("corte_manual")
+            if manual and not nuevo < date.fromisoformat(manual) <= nuevo + timedelta(days=62):
+                self._estado.pop("corte_manual")
+            self._estado.pop("calculadas_revisadas", None)  # rellenar los huecos que queden antes
+            self._escrito = None
+        self._store.async_delay_save(lambda: self._estado, 5)
 
     # --- Shelly (opción C) -----------------------------------------------------------
 
@@ -306,24 +349,36 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         que la diferencia es de la factura, no del medidor. El resultado se guarda en el periodo
         («cnmc» o «cnmc_error»), sale en `sensor.*_comprobacion_factura` y, si no cuadra, en
         Reparaciones (un aviso por factura, que se puede ignorar).
+
+        Si a la curva le faltan horas del periodo y la diferencia supera la tolerancia, el estado
+        es «incompleta» (sin aviso), y la comprobación diaria la repite cuando haya más horas.
         """
         c = self.ultima_conciliada()
-        if not self.usa_segunda_opinion or c is None or (c.get("cnmc") and not forzar):
+        if not self.usa_segunda_opinion or c is None:
             return c.get("cnmc") if c else None
+        previa = c.get("cnmc")
+        if previa and not forzar and previa.get("estado") != "incompleta":
+            return previa
         inicio, fin = date.fromisoformat(c["inicio"]), date.fromisoformat(c["fin"])
         desde, hasta = periodo_curva(inicio, fin, REFERENCE_TZ)
         desde, hasta = desde.astimezone(UTC), hasta.astimezone(UTC)
+        horas_periodo = int((hasta - desde).total_seconds()) // 3600
         consumo = await async_kwh_horarios(self.hass, self.datos[CONF_FUENTE], desde, hasta)
         consumo, _ = self._corregir_con_shelly(consumo, desde, hasta)
         horas = self._ajustar_al_contador(
             {t: v for t, v in consumo.items() if desde <= t < hasta}, c.get("kwh") or {}
         )
+        if previa and not forzar and len(horas) <= previa.get("horas", 0):
+            # Comprobada con la curva incompleta y sin horas nuevas desde entonces: repetirla
+            # daría lo mismo. Se reintenta sola (a las 04:10) cuando llegan las que faltaban.
+            return previa
         contrato, _ = contratos_del_periodo(self.datos, inicio, fin)
         try:
             simulacion = await async_simular(
                 async_get_clientsession(self.hass),
                 horas=horas,
                 inicio=inicio,
+                fin=fin,
                 potencia_p1_kw=contrato.potencia_p1_kw,
                 potencia_p2_kw=contrato.potencia_p2_kw,
                 codigo_postal=self.datos[CONF_CODIGO_POSTAL],
@@ -342,6 +397,10 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         con_arrastre = (c.get("bonificados") or 0) > (c.get("prorrata") or 0)
         if abs(diferencia) <= TOLERANCIA_CNMC:
             estado = "correcta"
+        elif len(horas) < horas_periodo:
+            # Faltan horas de la curva: la energía cuadra (se ajusta al contador por periodo),
+            # pero repartida en menos horas y a otros precios. No es un «no cuadra» de la factura.
+            estado = "incompleta"
         else:
             estado = "arrastre" if con_arrastre else "no_cuadra"
         c["cnmc"] = {
@@ -350,7 +409,7 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
             "estado": estado,
             "fecha": dt_util.utcnow().isoformat(),
             "horas": len(horas),
-            "horas_periodo": int((hasta - desde).total_seconds()) // 3600,
+            "horas_periodo": horas_periodo,
         }
         c.pop("cnmc_error", None)
         self._store.async_delay_save(lambda: self._estado, 5)
@@ -400,8 +459,13 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
     def estadistica_id(self) -> str:
         return self._estado.get("estadistica_id") or id_estadistica(self.subentrada.title)
 
-    async def async_borrar(self) -> None:
-        await self._store.async_remove()
+    async def async_guardar_ya(self) -> None:
+        """Al descargar la entrada, escribe lo que async_delay_save tenía pendiente.
+
+        Si no, una recarga en esos 5 s arrancaría con el disco atrasado, y el guardado
+        pendiente de una subentrada ya borrada volvería a crear su fichero tras limpiarlo.
+        """
+        await self._store.async_save(self._estado)
 
     # --- periodo --------------------------------------------------------------------
 

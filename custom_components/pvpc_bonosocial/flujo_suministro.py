@@ -39,6 +39,7 @@ from homeassistant.helpers.selector import (
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    ATTR_TARIFF,
     CAMPOS_CONTRATO,
     CONF_ALQUILER,
     CONF_ARRASTRE_INICIAL,
@@ -73,6 +74,7 @@ from .const import (
 )
 from .engine import LIMITES_ANUALES_KWH, Bono
 from .factura_pdf import DatosFactura, FacturaNoReconocida, leer_factura
+from .helpers import TERRITORIO_PENINSULA, config_entrada, territorio
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -112,6 +114,11 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
     # --- entradas -------------------------------------------------------------------
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        entry = self._get_entry()
+        lugar = territorio(config_entrada(entry)[ATTR_TARIFF], self.hass.config.time_zone)
+        if lugar != TERRITORIO_PENINSULA:
+            # La factura solo está hecha para la Península y Baleares (helpers.territorio).
+            return self.async_abort(reason=f"no_soportado_{lugar}")
         return await self._paso_datos("user", user_input)
 
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
@@ -260,6 +267,8 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
             codigo_postal = (user_input.get(CONF_CODIGO_POSTAL) or "").strip()
             if codigo_postal and not (len(codigo_postal) == 5 and codigo_postal.isdigit()):
                 errores[CONF_CODIGO_POSTAL] = "codigo_postal_invalido"
+            if error := self._validar_fin_ultima_factura(user_input.get(CONF_FIN_ULTIMA_FACTURA)):
+                errores[CONF_FIN_ULTIMA_FACTURA] = error
         if user_input is not None and not errores:
             fin = user_input.get(CONF_FIN_ULTIMA_FACTURA)
             self._datos.update(
@@ -280,11 +289,22 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
             )
             self._datos.setdefault(CONF_IDS_HEREDADOS, {})
             if self._reconfigurando:
-                return self.async_update_and_abort(
-                    self._get_entry(),
-                    self._get_reconfigure_subentry(),
-                    title=self._titulo,
-                    data=self._datos,
+                inicio_antes = self._inicio_periodo_actual()
+                nuevo = self._datos.get(CONF_FIN_ULTIMA_FACTURA)
+                if not nuevo or nuevo == inicio_antes:
+                    return self.async_update_and_abort(
+                        self._get_entry(),
+                        self._get_reconfigure_subentry(),
+                        title=self._titulo,
+                        data=self._datos,
+                    )
+                # Cambia el inicio del periodo en curso: se rehace al recargar y se dice desde cuándo.
+                self.hass.config_entries.async_update_subentry(
+                    self._get_entry(), self._get_reconfigure_subentry(), title=self._titulo, data=self._datos
+                )
+                return self.async_abort(
+                    reason="periodo_cambiado",
+                    description_placeholders={"inicio": _dma(date.fromisoformat(nuevo))},
                 )
             return self.async_create_entry(title=self._titulo, data=self._datos)
 
@@ -292,7 +312,7 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
             {
                 vol.Optional(
                     CONF_FIN_ULTIMA_FACTURA,
-                    description={"suggested_value": self._datos.get(CONF_FIN_ULTIMA_FACTURA)},
+                    description={"suggested_value": self._inicio_periodo_actual()},
                 ): DateSelector(),
                 vol.Required(
                     CONF_DIAS_EMISION, default=self._datos.get(CONF_DIAS_EMISION, DEFAULT_DIAS_EMISION)
@@ -339,8 +359,28 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
 
     def _facturacion(self) -> Any:
         """Coordinador de facturación del suministro (None si la integración no está cargada)."""
+        if not self._reconfigurando:
+            return None
         datos = getattr(self._get_entry(), "runtime_data", None)
         return getattr(datos, "suministros", {}).get(self._reconfigure_subentry_id)
+
+    def _inicio_periodo_actual(self) -> str | None:
+        """La fecha que de verdad rige: el inicio del periodo en curso (avanza con cada cierre o
+        factura), no la que se tecleó en el alta."""
+        facturacion = self._facturacion()
+        if facturacion is not None and facturacion.inicio_periodo is not None:
+            return facturacion.inicio_periodo.isoformat()
+        return self._datos.get(CONF_FIN_ULTIMA_FACTURA)
+
+    def _validar_fin_ultima_factura(self, fin: str | None) -> str | None:
+        """No puede ser anterior al fin de una factura real ya introducida (esa manda)."""
+        if not fin:
+            return None
+        facturacion = self._facturacion()
+        conciliada = facturacion.ultima_conciliada() if facturacion is not None else None
+        if conciliada is not None and date.fromisoformat(fin) < date.fromisoformat(conciliada["fin"]):
+            return "antes_de_factura_real"
+        return None
 
     async def async_step_factura_real(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         """Subir el PDF de la factura (opcional) para rellenar el formulario."""

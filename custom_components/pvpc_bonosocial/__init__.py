@@ -7,8 +7,8 @@ from homeassistant.const import CONF_API_TOKEN, CONF_NAME, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_track_time_change
-from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.util import dt as dt_util
 
@@ -44,8 +44,9 @@ from .const import (
 )
 from .cuenta_datadis import CuentaDatadis
 from .facturacion import FacturacionSuministro
-from .helpers import get_enabled_sensor_keys
+from .helpers import TERRITORIO_PENINSULA, config_entrada, get_enabled_sensor_keys, territorio
 from .importacion import CONF_IMPORTAR, async_importar, async_revisar_pvpc_next
+from .limpieza import async_olvidar_entrada, async_reconciliar
 from .migracion import async_migrar_v02
 from .notificacion import programar as programar_resumenes
 from .prices.aiopvpc.const import KEY_ADJUSTMENT
@@ -59,6 +60,8 @@ _LOGGER = logging.getLogger(__name__)
 _DEPENDENCY_LOGGERS: tuple[str, ...] = ("custom_components.pvpc_bonosocial.prices.aiopvpc",)
 
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.DATE, Platform.BUTTON]
+ISSUE_TERRITORIO = "facturacion_no_soportada"
+NOMBRES_TERRITORIO = {"canarias": "Canarias", "ceuta_melilla": "Ceuta y Melilla"}
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
@@ -90,8 +93,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: PVPCConfigEntry) -> bool
         hass.config_entries.async_update_entry(
             entry, data={k: v for k, v in entry.data.items() if k != CONF_IMPORTAR}
         )
+    # Stores y avisos de las subentradas borradas (HA no avisa al borrarlas; la entrada se recarga).
+    await async_reconciliar(hass, entry)
     entity_registry = er.async_get(hass)
-    config = {**entry.data, **entry.options}
+    config = config_entrada(entry)
     api_token = config.get(CONF_API_TOKEN)
     enable_private_api = config.get(ATTR_ENABLE_PRIVATE_API)
     if enable_private_api is None:
@@ -179,11 +184,14 @@ async def _async_preparar_suministros(
     """Un coordinador de facturación por suministro; un fallo de uno no impide arrancar."""
     coordinator.suministros = {}
     coordinator.comparadores = {}
+    if not _facturacion_soportada(hass, entry):
+        return
     for subentry_id, sub in entry.subentries.items():
         if sub.subentry_type != SUBENTRY_SUMINISTRO or coordinator.historico is None:
             continue
         facturacion = FacturacionSuministro(hass, entry, sub, coordinator.historico)
         await facturacion.async_cargar()
+        entry.async_on_unload(facturacion.async_guardar_ya)
         await facturacion.async_refresh()
         coordinator.suministros[subentry_id] = facturacion
         comparador = Comparador(hass, entry, facturacion)
@@ -194,6 +202,32 @@ async def _async_preparar_suministros(
             _programar_shelly(hass, entry, facturacion)
         if facturacion.usa_segunda_opinion:
             _programar_segunda_opinion(hass, entry, facturacion)
+
+
+def _facturacion_soportada(hass: HomeAssistant, entry: PVPCConfigEntry) -> bool:
+    """La factura solo se calcula en la Península y Baleares (helpers.territorio).
+
+    En Canarias, Ceuta y Melilla los suministros que ya existan no se cargan (sus entidades
+    quedan no disponibles) y se avisa en Reparaciones: es mejor no dar factura que darla mal.
+    Los precios siguen funcionando.
+    """
+    issue_id = f"{ISSUE_TERRITORIO}_{entry.entry_id}"
+    lugar = territorio(config_entrada(entry)[ATTR_TARIFF], hass.config.time_zone)
+    con_suministros = any(s.subentry_type == SUBENTRY_SUMINISTRO for s in entry.subentries.values())
+    if lugar == TERRITORIO_PENINSULA or not con_suministros:
+        ir.async_delete_issue(hass, DOMAIN, issue_id)
+        return lugar == TERRITORIO_PENINSULA
+    _LOGGER.warning("La factura no se calcula fuera de la Península y Baleares (%s)", lugar)
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        issue_id,
+        is_fixable=False,
+        severity=ir.IssueSeverity.WARNING,
+        translation_key=ISSUE_TERRITORIO,
+        translation_placeholders={"territorio": NOMBRES_TERRITORIO[lugar]},
+    )
+    return False
 
 
 async def _async_preparar_datadis(
@@ -207,6 +241,7 @@ async def _async_preparar_datadis(
             continue
         cuenta = CuentaDatadis(hass, entry, sub)
         await cuenta.async_cargar()
+        entry.async_on_unload(cuenta.async_guardar_ya)
         cuenta.async_set_updated_data(cuenta.resumen())
         coordinator.datadis[subentry_id] = cuenta
         entry.async_create_background_task(hass, cuenta.async_refresh(), f"{DOMAIN} Datadis {sub.title}")
@@ -297,10 +332,7 @@ async def async_remove_entry(hass: HomeAssistant, entry: PVPCConfigEntry) -> Non
             await async_quitar_tarjeta(hass)
         except Exception:
             _LOGGER.exception("No se pudo quitar el recurso de la tarjeta")
-    for subentry_id in entry.subentries:
-        await Store(hass, 1, f"{DOMAIN}.suministro_{subentry_id}").async_remove()
-        await Store(hass, 1, f"{DOMAIN}.datadis_{subentry_id}").async_remove()
-        await Store(hass, 1, f"{DOMAIN}.comparador_{subentry_id}").async_remove()
+    await async_olvidar_entrada(hass, entry)
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: PVPCConfigEntry) -> bool:
@@ -309,4 +341,24 @@ async def async_migrate_entry(hass: HomeAssistant, entry: PVPCConfigEntry) -> bo
         return False  # vuelta atrás desde una versión más nueva
     if entry.version == 1:
         return await async_migrar_v02(hass, entry)
+    if entry.version == ENTRY_VERSION and entry.minor_version < 2:
+        _migrar_token_a_data(hass, entry)
     return True
+
+
+def _migrar_token_a_data(hass: HomeAssistant, entry: PVPCConfigEntry) -> None:
+    """2.1 → 2.2: el token de ESIOS pasa de `options` a `data`, su único sitio desde la 2.2.
+
+    Hasta la 2.1 las opciones guardaban una copia del token que tapaba la de `data`, y la
+    reautenticación solo actualizaba `data`: la entrada seguía usando el token rechazado. Se
+    conserva el token que de verdad se estaba usando (el de `options`, si existía). Un `None`
+    en `options` solo significaba «API privada desactivada», y eso ya lo dice
+    ATTR_ENABLE_PRIVATE_API, así que en ese caso se mantiene el de `data`.
+    """
+    data = dict(entry.data)
+    options = dict(entry.options)
+    if CONF_API_TOKEN in options:
+        token = options.pop(CONF_API_TOKEN)
+        if token:
+            data[CONF_API_TOKEN] = token
+    hass.config_entries.async_update_entry(entry, data=data, options=options, minor_version=2)

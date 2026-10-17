@@ -3,7 +3,8 @@
     "abort": {
       "already_configured": "This integration is already configured.",
       "reauth_successful": "Re-authentication successful.",
-      "sin_pvpc_next": "There is no PVPC Next entry with entities any more."
+      "sin_pvpc_next": "There is no PVPC Next entry with entities any more.",
+      "reconfigure_successful": "Token updated."
     },
     "error": {
       "invalid_auth": "Invalid authentication.",
@@ -62,10 +63,22 @@
         "data": {
           "copia_seguridad": "I have made a Home Assistant backup"
         }
+      },
+      "reconfigure": {
+        "title": "ESIOS API token",
+        "description": "Change your personal ESIOS token. It is checked before being saved. If you do not have one, you can request it at {mail_to_link}.",
+        "data": {
+          "api_token": "API Token"
+        }
       }
     }
   },
   "options": {
+    "error": {
+      "invalid_auth": "Invalid authentication.",
+      "cannot_connect": "Failed to connect: the ESIOS API could not be reached.",
+      "indexed_requires_private_api": "Indexed mode requires private API and a valid API token."
+    },
     "step": {
       "api_token": {
         "data": {
@@ -266,6 +279,7 @@
           "correcta": "Correct",
           "no_cuadra": "Does not match",
           "arrastre": "Not comparable (bonus carry-over)",
+          "incompleta": "Not comparable (hourly consumption missing)",
           "sin_comprobar": "Not checked",
           "cnmc_no_responde": "CNMC not responding",
           "desactivada": "Disabled"
@@ -422,6 +436,10 @@
     "factura_no_cuadra": {
       "title": "The «{suministro}» bill from {inicio} to {fin} does not match the CNMC",
       "description": "Bill: €{factura}. The official CNMC simulator, with the same meter kWh, your contracted power and social bonus, computes €{cnmc} (€{diferencia} difference). Check the bill with your retailer. If you already did, ignore this notice: it will not appear again for this bill."
+    },
+    "facturacion_no_soportada": {
+      "title": "The bill is not calculated in {territorio}",
+      "description": "The bill (current period, forecast, today's cost, tariff comparison and CNMC check) is only built for the Peninsula and the Balearic Islands: it uses Madrid time, its periods and VAT. In {territorio} it would be wrong, so supplies are not loaded and their entities are unavailable. PVPC prices keep working.\n\nIf you do not need the supplies, delete them in Settings → Devices & services → PVPC + Bono Social. If you are actually in the Peninsula or the Balearic Islands, check the selected tariff and Home Assistant's time zone."
     }
   },
   "config_subentries": {
@@ -500,7 +518,8 @@
             "comparar_mensual": "On the 2nd of every month, compares your last 12 months with the CNMC offers and leaves a notification. Needs the postal code.",
             "segunda_opinion_cnmc": "When you enter an actual bill, the integration asks the official CNMC simulator for the same bill (with the bill's meter kWh) and warns you if it does not match. Hourly consumption, power, bonus type and postcode are sent (no CUPS). Needs the postcode.",
             "comparador_destino": "Optional. A notify entity (a Telegram chat, your phone…). Besides the Home Assistant notification, the comparison (button or monthly) is sent there.",
-            "comparador_umbral_eur": "Only with “Only if an offer saves money”: the best offer must save more than this per year."
+            "comparador_umbral_eur": "Only with “Only if an offer saves money”: the best offer must save more than this per year.",
+            "fin_ultima_factura": "End of the last bill: it is the start of the current period. When reconfiguring, the one in force is suggested; if you change it, the current period starts on that day (also backwards) and the later estimated periods are recalculated."
           }
         },
         "comprobacion": {
@@ -572,13 +591,17 @@
         "periodo_no_valido": "The billing period must be between 1 and 62 days long.",
         "fecha_futura": "It cannot be a future date: make the change on the day it starts.",
         "codigo_postal_invalido": "The postal code must have 5 digits",
-        "zip_sin_facturas": "The ZIP has no readable bill (only PDFs from Comercializadora Regulada, Gas & Power are read)."
+        "zip_sin_facturas": "The ZIP has no readable bill (only PDFs from Comercializadora Regulada, Gas & Power are read).",
+        "antes_de_factura_real": "There is already a real bill ending after that date: the current period cannot start before that bill ends."
       },
       "abort": {
         "reconfigure_successful": "Supply updated.",
+        "periodo_cambiado": "Supply updated. The current billing period now starts on {inicio}; it is recalculated from that day.",
         "factura_conciliada": "Bill from {inicio} to {fin} reconciled.",
         "no_cargada": "The integration is not loaded. Enable it and try again.",
-        "lote_conciliado": "{n} bills entered."
+        "lote_conciliado": "{n} bills entered.",
+        "no_soportado_canarias": "The bill is only calculated for the Peninsula and the Balearic Islands. In the Canary Islands (Home Assistant time zone Atlantic/Canary) Canary time and IGIC apply, which the integration does not handle. PVPC prices do work.",
+        "no_soportado_ceuta_melilla": "The bill is only calculated for the Peninsula and the Balearic Islands. Ceuta and Melilla have other periods and IPSI, which the integration does not handle. PVPC prices do work."
       }
     },
     "resumen": {

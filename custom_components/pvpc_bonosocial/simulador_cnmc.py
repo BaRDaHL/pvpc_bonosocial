@@ -27,7 +27,7 @@ import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -81,16 +81,28 @@ class SimulacionCnmc:
         }
 
 
+def hora_del_dia(t: datetime, zona) -> tuple[date, int]:
+    """Día local de la hora `t` y su número en ese día, contado desde la medianoche local.
+
+    Es el formato de las curvas de las distribuidoras y de Datadis: horas 1…24, 1…23 el día del
+    cambio a verano y 1…25 el del cambio a invierno. `local.hour + 1` no lo cumple esos días:
+    da 1, 2, 4… (falta la 3) y 1, 2, 3, 3… (la 3 repetida).
+    """
+    dia = t.astimezone(zona).date()
+    medianoche = datetime.combine(dia, time(0), zona)
+    return dia, int((t - medianoche).total_seconds()) // 3600 + 1
+
+
 def curva_csv(horas: Mapping[datetime, Decimal], zona) -> str:
-    """CSV de la curva horaria (hora local 1–24, kWh con coma), con el CUPS de ejemplo."""
+    """CSV de la curva horaria (hora 1–23/24/25 del día local, kWh con coma), con el CUPS de ejemplo."""
     lineas = ["CUPS;Fecha;Hora;Consumo;Metodo_obtencion\r\n"]
     resto = Decimal(0)  # redondeo a Wh arrastrado, para que el total no pierda kWh
     for t in sorted(horas):
-        local = t.astimezone(zona)
+        dia, hora = hora_del_dia(t, zona)
         valor = (Decimal(horas[t]) + resto).quantize(Decimal("0.001"))
         resto += Decimal(horas[t]) - valor
         kwh = f"{max(valor, Decimal(0)):.3f}".replace(".", ",")
-        lineas.append(f"{CUPS_EJEMPLO};{local:%d/%m/%Y};{local.hour + 1};{kwh};R\r\n")
+        lineas.append(f"{CUPS_EJEMPLO};{dia:%d/%m/%Y};{hora};{kwh};R\r\n")
     return "".join(lineas)
 
 
@@ -167,6 +179,7 @@ async def async_simular(
     *,
     horas: Mapping[datetime, Decimal],
     inicio: date,
+    fin: date,
     potencia_p1_kw: Decimal,
     potencia_p2_kw: Decimal,
     codigo_postal: str,
@@ -174,13 +187,17 @@ async def async_simular(
     categoria: str | None,
     zona,
 ) -> SimulacionCnmc:
-    """Factura de la CNMC con la curva `horas` (UTC → kWh) del día siguiente a `inicio` en adelante.
+    """Factura de la CNMC del periodo de la factura (`inicio`, `fin`) con la curva `horas` (UTC → kWh).
 
-    Cualquier fallo es `CnmcNoResponde`.
+    `fin` es el de la factura, no la última hora con consumo: si a la curva le faltan los
+    últimos días (Datadis va con retraso, HA estuvo parado…), la CNMC tiene que seguir
+    cobrando los términos fijos de todos los días facturados. Cualquier fallo es `CnmcNoResponde`.
     """
     if len(horas) <= 24:
         raise CnmcNoResponde("Hace falta más de un día de consumo")
-    fin = max(horas).astimezone(zona).date()
+    desde, hasta = periodo_curva(inicio, fin, zona)
+    if min(horas) < desde or max(horas) >= hasta:
+        raise CnmcNoResponde("La curva se sale del periodo de la factura")
     archivo = base64.b64encode(curva_csv(horas, zona).encode()).decode()
     try:
         async with session.post(

@@ -1,6 +1,7 @@
 """Cuenta de Datadis (subentrada «Datadis», F7): descarga diaria y estadística de energía.
 
-Una vez al día (Datadis no deja repetir la misma consulta antes de 24 h) se descarga la curva
+Una vez al día (Datadis no deja repetir la misma consulta antes de 24 h: se pide cada 24 h 10 min y un
+registro común, que sobrevive a recrear la subentrada, impide repetir una idéntica) se descarga la curva
 horaria desde unos días antes del último con datos y se escribe en la estadística externa
 `pvpc_bonosocial:energia_datadis_<nombre>` (kWh, con `sum`). Esa estadística se puede elegir
 como fuente de consumo de un suministro («estadística externa») o usar como referencia. Si
@@ -10,6 +11,7 @@ cuando vuelva, se rellena hacia atrás. También se pueden importar los CSV de d
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from collections.abc import Iterable, Mapping
 from datetime import date, datetime, timedelta
@@ -24,16 +26,28 @@ from homeassistant.util import dt as dt_util
 from homeassistant.util import slugify
 
 from .const import CONF_DATADIS_CLAVE, CONF_DATADIS_SUMINISTRO, CONF_DATADIS_USUARIO, DOMAIN
-from .datadis import CredencialesInvalidas, Curva, DatadisNoResponde, async_consumo, async_login, curva
+from .datadis import (
+    CredencialesInvalidas,
+    Curva,
+    DatadisNoResponde,
+    Respuesta,
+    async_consumo,
+    async_login,
+    curva,
+    meses,
+    params_consumo,
+)
 from .estadistica import async_reescribir_periodo, metadatos_energia
 from .prices.aiopvpc.const import REFERENCE_TZ
 
 _LOGGER = logging.getLogger(__name__)
 STORE_VERSION = 1
-INTERVALO = timedelta(hours=1)  # comprueba cada hora si toca; consulta como mucho una vez al día
-ENTRE_CONSULTAS = timedelta(hours=23)
+INTERVALO = timedelta(minutes=10)  # comprueba a menudo si toca (solo mira la hora); consulta una vez al día
+ENTRE_CONSULTAS = timedelta(hours=24, minutes=10)  # Datadis exige 24 h entre consultas idénticas
 TRAS_FALLO = timedelta(hours=3)
-TRAS_LIMITE = timedelta(hours=24)
+TRAS_LIMITE = timedelta(hours=24, minutes=10)
+MISMA_CONSULTA = timedelta(hours=24)
+ENTRE_MES_A_MES = timedelta(days=7)  # rango vacío: mes a mes como mucho una vez por semana
 DIAS_SOLAPE = 7  # se vuelve a pedir la última semana por si Datadis la corrige
 DIAS_PRIMERA_VEZ = 395  # 13 meses: el arrastre del bono mira 12
 DIAS_SIN_DATOS = 7  # más días sin datos que esto: estado «sin datos recientes»
@@ -44,12 +58,64 @@ def id_estadistica_energia(nombre: str) -> str:
     return f"{DOMAIN}:energia_datadis_{slugify(nombre) or 'datadis'}"
 
 
+class ConsultaRepetida(Exception):
+    """La misma consulta se hizo hace menos de 24 h: Datadis respondería 429."""
+
+    def __init__(self, cuando: datetime) -> None:
+        super().__init__(cuando.isoformat())
+        self.cuando = cuando
+
+
+class RegistroConsultas:
+    """Cuándo se hizo cada consulta de consumo, común a todas las cuentas de Datadis.
+
+    Vive fuera de la subentrada para que recrearla (o cambiar su nombre) no la deje repetir una
+    consulta del mismo usuario y CUPS antes de 24 h. Se guarda solo un resumen (hash) de
+    usuario y parámetros, sin el CUPS ni el NIF en claro.
+    """
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._store: Store[dict[str, str]] = Store(hass, STORE_VERSION, f"{DOMAIN}.datadis_consultas")
+        self._hechas: dict[str, str] | None = None
+
+    @staticmethod
+    def clave(usuario: str, params: Mapping[str, Any]) -> str:
+        texto = usuario + "|" + "|".join(f"{k}={params[k]}" for k in sorted(params))
+        return hashlib.sha256(texto.encode()).hexdigest()[:32]
+
+    async def async_libre(self, clave: str, ahora: datetime) -> datetime | None:
+        """None si se puede consultar ya; si no, cuándo."""
+        if self._hechas is None:
+            self._hechas = await self._store.async_load() or {}
+        hecha = self._hechas.get(clave)
+        if hecha and ahora < (libre := datetime.fromisoformat(hecha) + MISMA_CONSULTA):
+            return libre
+        return None
+
+    def apuntar(self, clave: str, ahora: datetime) -> None:
+        assert self._hechas is not None
+        limite = ahora - 2 * MISMA_CONSULTA
+        self._hechas = {k: v for k, v in self._hechas.items() if datetime.fromisoformat(v) >= limite} | {
+            clave: ahora.isoformat()
+        }
+        self._store.async_delay_save(lambda: self._hechas or {}, 5)
+
+
+def registro_consultas(hass: HomeAssistant) -> RegistroConsultas:
+    return hass.data.setdefault(f"{DOMAIN}_datadis_consultas", RegistroConsultas(hass))
+
+
 class CuentaDatadis(DataUpdateCoordinator[dict[str, Any]]):
     """Consulta diaria a Datadis de un suministro."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry, subentrada: ConfigSubentry) -> None:
         super().__init__(
-            hass, _LOGGER, config_entry=entry, name=f"{DOMAIN} {subentrada.title}", update_interval=INTERVALO
+            hass,
+            _LOGGER,
+            config_entry=entry,
+            name=f"{DOMAIN} {subentrada.title}",
+            update_interval=INTERVALO,
+            always_update=False,  # cada 10 min sin cambios no reescribe el sensor
         )
         self.subentrada = subentrada
         self._store: Store[dict[str, Any]] = Store(
@@ -68,8 +134,9 @@ class CuentaDatadis(DataUpdateCoordinator[dict[str, Any]]):
     async def async_cargar(self) -> None:
         self._estado = await self._store.async_load() or {}
 
-    async def async_borrar(self) -> None:
-        await self._store.async_remove()
+    async def async_guardar_ya(self) -> None:
+        """Al descargar la entrada, escribe lo que async_delay_save tenía pendiente."""
+        await self._store.async_save(self._estado)
 
     # --- estado -----------------------------------------------------------------------
 
@@ -121,7 +188,11 @@ class CuentaDatadis(DataUpdateCoordinator[dict[str, Any]]):
         session = async_get_clientsession(self.hass)
         try:
             token = await async_login(session, datos[CONF_DATADIS_USUARIO], datos[CONF_DATADIS_CLAVE])
-            registros = await async_consumo(session, token, datos[CONF_DATADIS_SUMINISTRO], desde, hoy)
+            respuesta = await self._async_pedir(session, token, desde, hoy, ahora)
+            if not respuesta.registros and self._toca_mes_a_mes(desde, hoy, ahora):
+                respuesta = await self._async_mes_a_mes(session, token, desde, hoy, ahora)
+        except ConsultaRepetida as exc:  # se hizo hace menos de 24 h (p. ej. al recrear la cuenta)
+            self._estado["proxima_consulta"] = (exc.cuando + timedelta(minutes=5)).isoformat()
         except CredencialesInvalidas as exc:
             self._fallo("credenciales", str(exc), ahora + TRAS_LIMITE)
         except DatadisNoResponde as exc:
@@ -132,18 +203,62 @@ class CuentaDatadis(DataUpdateCoordinator[dict[str, Any]]):
                 ultima_consulta=ahora.isoformat(),
                 proxima_consulta=(ahora + ENTRE_CONSULTAS).isoformat(),
                 error=None,
-                detalle_error=None,
+                detalle_error="; ".join(dict.fromkeys(respuesta.errores))[:300] or None,
             )
-            await self._async_guardar_curva(curva(registros))
+            await self._async_guardar_curva(curva(respuesta.registros))
         self._store.async_delay_save(lambda: self._estado, 5)
         return self.resumen()
+
+    async def _async_pedir(
+        self, session: Any, token: str, desde: date, hasta: date, ahora: datetime
+    ) -> Respuesta:
+        """Una consulta de consumo, si no se hizo la misma en las últimas 24 h."""
+        params = params_consumo(self.subentrada.data[CONF_DATADIS_SUMINISTRO], desde, hasta)
+        registro = registro_consultas(self.hass)
+        clave = registro.clave(self.subentrada.data[CONF_DATADIS_USUARIO], params)
+        if libre := await registro.async_libre(clave, ahora):
+            raise ConsultaRepetida(libre)
+        try:
+            respuesta = await async_consumo(session, token, params)
+        except DatadisNoResponde as exc:
+            if "HTTP" in str(exc):  # llegó a Datadis: cuenta como consulta hecha
+                registro.apuntar(clave, ahora)
+            raise
+        registro.apuntar(clave, ahora)
+        return respuesta
+
+    def _toca_mes_a_mes(self, desde: date, hasta: date, ahora: datetime) -> bool:
+        if desde.replace(day=1) == hasta.replace(day=1):
+            return False
+        previo = self._estado.get("mes_a_mes")
+        return not previo or ahora >= datetime.fromisoformat(previo) + ENTRE_MES_A_MES
+
+    async def _async_mes_a_mes(
+        self, session: Any, token: str, desde: date, hasta: date, ahora: datetime
+    ) -> Respuesta:
+        """El rango llegó vacío: se pide cada mes por separado (son consultas distintas)."""
+        self._estado["mes_a_mes"] = ahora.isoformat()
+        total = Respuesta()
+        for mes in meses(desde, hasta):
+            try:
+                parte = await self._async_pedir(session, token, mes, mes, ahora)
+            except ConsultaRepetida:
+                continue
+            except DatadisNoResponde:
+                if total.registros:
+                    break  # se guarda lo que haya llegado; el resto, otro día
+                raise
+            total.registros.extend(parte.registros)
+            total.errores.extend(parte.errores)
+        return total
 
     def _fallo(self, error: str, detalle: str, proxima: datetime) -> None:
         _LOGGER.info("%s: Datadis no disponible (%s)", self.subentrada.title, detalle)
         self._estado.update(error=error, detalle_error=detalle, proxima_consulta=proxima.isoformat())
 
     async def async_forzar(self) -> None:
-        """Consulta ya, aunque no hayan pasado 24 h (tras cambiar las credenciales)."""
+        """Consulta ya, aunque no toque (tras cambiar las credenciales); nunca repite una
+        consulta idéntica de hace menos de 24 h."""
         self._estado.pop("proxima_consulta", None)
         await self.async_refresh()
 

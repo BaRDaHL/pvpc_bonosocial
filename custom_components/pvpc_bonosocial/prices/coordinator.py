@@ -31,6 +31,7 @@ from ..const import (
     normalize_price_mode,
 )
 from ..engine import Tarifas
+from ..helpers import config_entrada
 from .aiopvpc import DEFAULT_POWER_KW, BadApiTokenAuthError, EsiosApiData, PVPCData
 from .aiopvpc.const import KEY_PVPC, REFERENCE_TZ, SENSOR_KEY_TO_DATAID, TARIFFS, normalize_tariff
 from .aiopvpc.pvpc_tariff import _price_period_key
@@ -70,7 +71,7 @@ class ElecPricesDataUpdateCoordinator(  # pylint: disable=too-few-public-methods
         use_private_api: bool,
     ) -> None:
         """Initialize."""
-        config = {**entry.data, **entry.options}
+        config = config_entrada(entry)
 
         power_p1 = config.get(ATTR_POWER_P1, config.get(LEGACY_ATTR_POWER))
         power_p3 = config.get(

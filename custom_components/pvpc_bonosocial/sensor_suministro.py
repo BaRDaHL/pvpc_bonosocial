@@ -155,7 +155,15 @@ class ComprobacionFactura(_Base):
 
     clave = "comprobacion_factura"
     _attr_device_class = SensorDeviceClass.ENUM
-    _attr_options = ["correcta", "no_cuadra", "arrastre", "sin_comprobar", "cnmc_no_responde", "desactivada"]  # noqa: RUF012
+    _attr_options = [  # noqa: RUF012
+        "correcta",
+        "no_cuadra",
+        "arrastre",
+        "incompleta",
+        "sin_comprobar",
+        "cnmc_no_responde",
+        "desactivada",
+    ]
 
     @property
     def available(self) -> bool:
@@ -185,6 +193,8 @@ class ComprobacionFactura(_Base):
                 "desglose_cnmc": cnmc.get("desglose"),
                 "kwh_contador": c.get("kwh"),
                 "comprobada": cnmc.get("fecha"),
+                "horas_curva": cnmc.get("horas"),
+                "horas_periodo": cnmc.get("horas_periodo"),
             }
         elif c.get("cnmc_error"):
             out["error"] = c["cnmc_error"]

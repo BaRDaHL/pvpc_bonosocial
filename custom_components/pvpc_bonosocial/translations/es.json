@@ -3,7 +3,8 @@
     "abort": {
       "already_configured": "Esta integración ya está configurada.",
       "reauth_successful": "Reautenticación completada.",
-      "sin_pvpc_next": "Ya no hay ninguna entrada de PVPC Next con entidades."
+      "sin_pvpc_next": "Ya no hay ninguna entrada de PVPC Next con entidades.",
+      "reconfigure_successful": "Token actualizado."
     },
     "error": {
       "invalid_auth": "Autenticación inválida.",
@@ -62,10 +63,22 @@
         "data": {
           "copia_seguridad": "He hecho una copia de seguridad de Home Assistant"
         }
+      },
+      "reconfigure": {
+        "title": "Token de la API de ESIOS",
+        "description": "Cambia el token personal de ESIOS. Se comprueba antes de guardarlo. Si no tienes uno, puedes pedirlo en {mail_to_link}.",
+        "data": {
+          "api_token": "API Token"
+        }
       }
     }
   },
   "options": {
+    "error": {
+      "invalid_auth": "Autenticación inválida.",
+      "cannot_connect": "Error de conexión: no se ha podido acceder a la API de ESIOS.",
+      "indexed_requires_private_api": "El modo indexado requiere API privada y un token válido."
+    },
     "step": {
       "api_token": {
         "data": {
@@ -266,6 +279,7 @@
           "correcta": "Correcta",
           "no_cuadra": "No cuadra",
           "arrastre": "No comparable (arrastre del bono)",
+          "incompleta": "No comparable (faltan horas de consumo)",
           "sin_comprobar": "Sin comprobar",
           "cnmc_no_responde": "La CNMC no responde",
           "desactivada": "Desactivada"
@@ -422,6 +436,10 @@
     "factura_no_cuadra": {
       "title": "La factura de «{suministro}» del {inicio} al {fin} no cuadra con la CNMC",
       "description": "Factura: {factura} €. El simulador oficial de la CNMC, con los mismos kWh del contador, tu potencia y tu bono, calcula {cnmc} € ({diferencia} € de diferencia). Revisa la factura con tu comercializadora. Si ya lo has revisado, ignora este aviso: no volverá a salir para esta factura."
+    },
+    "facturacion_no_soportada": {
+      "title": "La factura no se calcula en {territorio}",
+      "description": "La factura (periodo en curso, previsión, coste de hoy, comparador y comprobación con la CNMC) solo está hecha para la Península y Baleares: usa la hora de Madrid, sus periodos y el IVA. En {territorio} saldría mal, así que los suministros no se cargan y sus entidades quedan no disponibles. Los precios del PVPC siguen funcionando.\n\nSi los suministros no te sirven, bórralos en Ajustes → Dispositivos y servicios → PVPC + Bono Social. Si en realidad estás en la Península o Baleares, revisa la tarifa elegida y la zona horaria de Home Assistant."
     }
   },
   "config_subentries": {
@@ -500,7 +518,8 @@
             "comparar_mensual": "El día 2 de cada mes compara tus últimos 12 meses con las ofertas de la CNMC y deja una notificación. Necesita el código postal.",
             "segunda_opinion_cnmc": "Al introducir una factura real, la integración pide la misma factura al simulador oficial de la CNMC (con los kWh del contador de la factura) y te avisa si no cuadra. Se envían el consumo hora a hora del periodo, las potencias, el tipo de bono y el código postal (sin CUPS). Necesita el código postal.",
             "comparador_destino": "Opcional. Una entidad notify (un chat de Telegram, el móvil…). Además de la notificación de Home Assistant, la comparativa (botón o mensual) se envía ahí.",
-            "comparador_umbral_eur": "Solo con «Solo si hay una oferta que ahorre»: la mejor oferta tiene que ahorrar más que esto al año."
+            "comparador_umbral_eur": "Solo con «Solo si hay una oferta que ahorre»: la mejor oferta tiene que ahorrar más que esto al año.",
+            "fin_ultima_factura": "Fin de la última factura: es el inicio del periodo en curso. Al reconfigurar se propone el que rige ahora; si lo cambias, el periodo en curso pasa a empezar ese día (también hacia atrás) y se recalculan los periodos estimados posteriores."
           }
         },
         "comprobacion": {
@@ -572,13 +591,17 @@
         "periodo_no_valido": "El periodo de la factura debe tener entre 1 y 62 días.",
         "fecha_futura": "No puede ser una fecha futura: haz el cambio el mismo día que empiece.",
         "codigo_postal_invalido": "El código postal debe tener 5 cifras",
-        "zip_sin_facturas": "El ZIP no tiene ninguna factura que se pueda leer (solo se leen los PDF de la Comercializadora Regulada, Gas & Power)."
+        "zip_sin_facturas": "El ZIP no tiene ninguna factura que se pueda leer (solo se leen los PDF de la Comercializadora Regulada, Gas & Power).",
+        "antes_de_factura_real": "Ya hay una factura real que acaba después de esa fecha: el periodo en curso no puede empezar antes del fin de esa factura."
       },
       "abort": {
         "reconfigure_successful": "Suministro actualizado.",
+        "periodo_cambiado": "Suministro actualizado. El periodo en curso empieza ahora el {inicio} y se recalcula desde ese día.",
         "factura_conciliada": "Factura del {inicio} al {fin} conciliada.",
         "no_cargada": "La integración no está cargada. Actívala y vuelve a intentarlo.",
-        "lote_conciliado": "{n} facturas introducidas."
+        "lote_conciliado": "{n} facturas introducidas.",
+        "no_soportado_canarias": "La factura solo se calcula para la Península y Baleares. En Canarias (zona horaria de Home Assistant Atlantic/Canary) rigen la hora canaria y el IGIC, y la integración no los tiene en cuenta. Los precios del PVPC sí funcionan.",
+        "no_soportado_ceuta_melilla": "La factura solo se calcula para la Península y Baleares. En Ceuta y Melilla rigen otros periodos y el IPSI, y la integración no los tiene en cuenta. Los precios del PVPC sí funcionan."
       }
     },
     "resumen": {

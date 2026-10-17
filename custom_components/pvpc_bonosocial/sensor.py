@@ -48,7 +48,7 @@ from .const import (
     UPDATE_FREQUENCY_OPTIONS,
     normalize_better_price_target,
 )
-from .helpers import make_sensor_unique_id
+from .helpers import ahora_precios, config_entrada, make_sensor_unique_id
 from .notificacion import codigos_de_color, periodos_de
 from .prices.aiopvpc.const import (
     KEY_ADJUSTMENT,
@@ -57,7 +57,6 @@ from .prices.aiopvpc.const import (
     KEY_MAG,
     KEY_OMIE,
     KEY_PVPC,
-    REFERENCE_TZ,
     SENSOR_KEY_TO_DATAID,
     TARIFFS,
 )
@@ -182,7 +181,7 @@ def _get_update_frequency(coordinator: ElecPricesDataUpdateCoordinator, sensor_k
     option_key = UPDATE_FREQUENCY_BY_SENSOR.get(sensor_key)
     if not option_key:
         return DEFAULT_UPDATE_FREQUENCY
-    config = {**coordinator.config_entry.data, **coordinator.config_entry.options}
+    config = config_entrada(coordinator.config_entry)
     return _normalize_update_frequency(config.get(option_key))
 
 
@@ -854,7 +853,7 @@ async def async_setup_entry(
             entry.entry_id,
         )
     entry_unique_id = entry.unique_id or entry.entry_id
-    config = {**entry.data, **entry.options}
+    config = config_entrada(entry)
     api_token = config.get(CONF_API_TOKEN)
     enable_private_api = config.get(ATTR_ENABLE_PRIVATE_API)
     if enable_private_api is None:
@@ -1005,7 +1004,7 @@ class ElecPriceSensor(CoordinatorEntity[ElecPricesDataUpdateCoordinator], Sensor
             ),
             "laborables",
         )
-        hoy = dt_util.now(REFERENCE_TZ).date()
+        hoy = ahora_precios(self.hass.config.time_zone).date()
         out = {}
         for sufijo, dia in (("hoy", hoy), ("manana", hoy + timedelta(days=1))):
             codigos = codigos_de_color(historico, dia, regla)

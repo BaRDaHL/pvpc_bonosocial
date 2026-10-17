@@ -8,7 +8,7 @@ DOMAIN = "pvpc_bonosocial"
 # Versión de la entrada principal. La 1 es la de la v0.2 (se migra en migracion.py). No
 # tiene nada que ver con las versiones 1-7 de PVPC Next, que viven en su propio dominio.
 ENTRY_VERSION = 2
-ENTRY_MINOR_VERSION = 1
+ENTRY_MINOR_VERSION = 2  # 2.2: el token de ESIOS vive solo en entry.data
 
 # Subentradas «Suministro» (DISENO §2.1)
 SUBENTRY_SUMINISTRO = "suministro"

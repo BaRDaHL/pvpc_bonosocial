@@ -34,7 +34,7 @@ Know **your electricity bill before it arrives**: PVPC hourly prices *plus* the 
 - 📄 **Upload the PDF bill**: read locally, recalibrates the meter and the bonus balance.
 - 🔍 **CNMC second opinion** of every bill (optional), with a Repairs notice if it does not match.
 - 💶 **Compare tariffs** with the official CNMC comparator using what you *actually* paid and consumed.
-- 📱 **Daily price summary** on Telegram or any notification.
+- 📱 **Daily price summary** on Telegram (needs the [Telegram bot](https://www.home-assistant.io/integrations/telegram_bot/) integration set up in Home Assistant) or any notification.
 - 🃏 **Built-in card** with today's and tomorrow's prices and the bill.
 - 🔌 **Datadis** official readings (optional).
 - 🔒 **Private**: runs locally; minimal anonymous data to the CNMC, only if you enable it.
@@ -91,7 +91,7 @@ Sabe **tu factura de la luz antes de que llegue**: precios horarios del PVPC *y*
 - 📄 **Sube el PDF de la factura**: se lee en local, recalibra el medidor y el saldo del bono.
 - 🔍 **Segunda opinión de la CNMC** de cada factura (opcional), con aviso en Reparaciones si no cuadra.
 - 💶 **Compara tarifas** con el comparador oficial de la CNMC usando lo que *de verdad* pagaste y consumiste.
-- 📱 **Resumen diario de precios** por Telegram o cualquier notificación.
+- 📱 **Resumen diario de precios** por Telegram (necesita la integración [Telegram bot](https://www.home-assistant.io/integrations/telegram_bot/) configurada en Home Assistant) o cualquier notificación.
 - 🃏 **Tarjeta propia** con los precios de hoy y mañana y la factura.
 - 🔌 **Datadis**: lecturas oficiales del contador (opcional).
 - 🔒 **Privada**: funciona en local; a la CNMC van datos mínimos y anónimos, solo si lo activas.

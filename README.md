@@ -29,7 +29,7 @@ Know **your electricity bill before it arrives**: PVPC hourly prices *plus* the 
 
 - 🎯 **Accurate to the cent**: reproduces **21/21 real bills**; with a meter, **€0.45** average error per bill.
 - 💡 **Full social bonus**: discount, yearly kWh limit, 12-month carry-over of unused kWh.
-- ⚡ **Hourly prices today and tomorrow**: everything PVPC Next does, and it **imports PVPC Next with its history**.
+- ⚡ **Hourly prices today and tomorrow**: periods, price levels, cheapest hours, min/max/average and optional ESIOS private API.
 - 📊 **Real cost in the Energy dashboard**, with taxes and fixed charges, corrected when the bill arrives.
 - 📄 **Upload the PDF bill**: read locally, recalibrates the meter and the bonus balance.
 - 🔍 **CNMC second opinion** of every bill (optional), with a Repairs notice if it does not match.
@@ -52,7 +52,7 @@ Know **your electricity bill before it arrives**: PVPC hourly prices *plus* the 
 
 1. **HACS → ⋮ → Custom repositories** → `https://github.com/BaRDaHL/pvpc_bonosocial` as **Integration** (or use the button above).
 2. Download **PVPC + Bono Social** and restart Home Assistant.
-3. **Settings → Devices & services → Add integration → PVPC + Bono Social.** Coming from PVPC Next? The wizard offers to import it with its history.
+3. **Settings → Devices & services → Add integration → PVPC + Bono Social.**
 4. **Add supply** for your contract to get the bill, then add the **PVPC + Bono Social** card to a dashboard.
 
 ### Documentation
@@ -65,7 +65,6 @@ Step-by-step guides are in the **[Wiki](https://github.com/BaRDaHL/pvpc_bonosoci
 |---|---|---|---|---|
 | **PVPC + Bono Social** | ✅ | ✅ | Circular 3/2020 rule + ESIOS tolls | Card, summary, CNMC check and comparator |
 | Official `pvpc_hourly_pricing` | ✅ | ❌ | Fixed tables | |
-| [PVPC Next](https://github.com/privatecoder/ha-pvpc-next) | ✅ | ❌ | Computed | Base of the price layer here |
 | [Enchufado](https://github.com/Migux13/enchufado) | ✅ (own ESIOS token) | CNMC-simulated bill, no social bonus | — | Datadis consumption |
 
 <sub>Reviewed in October 2026 by reading each integration's code.</sub>
@@ -86,7 +85,7 @@ Sabe **tu factura de la luz antes de que llegue**: precios horarios del PVPC *y*
 
 - 🎯 **Exacta al céntimo**: reproduce **21 de 21 facturas reales**; con un medidor, **0,45 €** de error medio por factura.
 - 💡 **Bono social completo**: descuento, límite anual de kWh y arrastre de los kWh no gastados en 12 meses.
-- ⚡ **Precios por horas de hoy y mañana**: todo lo de PVPC Next, y **lo importa con su historial**.
+- ⚡ **Precios por horas de hoy y mañana**: periodos, niveles de precio, horas más baratas, mínimo, máximo y media, y API privada de ESIOS opcional.
 - 📊 **Coste real en el panel de Energía**, con impuestos y fijos, corregido al llegar la factura.
 - 📄 **Sube el PDF de la factura**: se lee en local, recalibra el medidor y el saldo del bono.
 - 🔍 **Segunda opinión de la CNMC** de cada factura (opcional), con aviso en Reparaciones si no cuadra.
@@ -107,7 +106,7 @@ Sabe **tu factura de la luz antes de que llegue**: precios horarios del PVPC *y*
 
 1. **HACS → ⋮ → Repositorios personalizados** → `https://github.com/BaRDaHL/pvpc_bonosocial` como **Integración** (o el botón de arriba).
 2. Descarga **PVPC + Bono Social** y reinicia Home Assistant.
-3. **Ajustes → Dispositivos y servicios → Añadir integración → PVPC + Bono Social.** ¿Vienes de PVPC Next? El asistente te ofrece importarlo con su historial.
+3. **Ajustes → Dispositivos y servicios → Añadir integración → PVPC + Bono Social.**
 4. **Añadir suministro** con tu contrato para tener la factura, y pon la tarjeta **PVPC + Bono Social** en un panel.
 
 ### Documentación

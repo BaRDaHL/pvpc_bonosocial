@@ -177,13 +177,26 @@ async def async_reescribir_periodo(
     )
     existentes = {datetime.fromtimestamp(f["start"], UTC): f for f in filas.get(statistic_id, [])}
     suma_previa = await async_suma_previa(hass, statistic_id, horas[0])
-    antes = existentes.get(ultima, {}).get("sum")
+    # sum que tenían las horas posteriores como base: el de la última hora existente del periodo
+    # (o el previo si el periodo no tenía ninguna, p. ej. datos importados de antes)
+    antes = suma_previa
+    for t, f in sorted(existentes.items()):
+        if t <= ultima and f.get("sum") is not None:
+            antes = Decimal(str(f["sum"]))
+    # Las horas del periodo que no se reescriben (huecos, p. ej. días que Datadis rechazó) conservan
+    # su valor, pero su `sum` se rehace: si no, la suma bajaría al llegar a ellas.
+    huecos = {
+        t: Decimal(str(f.get("state") or 0))
+        for t, f in existentes.items()
+        if horas[0] <= t <= ultima and t not in coste_horas and f.get("sum") is not None
+    }
     nuevas = []
     suma = suma_previa
-    for t in horas:
-        suma += coste_horas[t]
-        nuevas.append({"start": t, "state": float(coste_horas[t]), "sum": float(suma)})
-    delta = suma - Decimal(str(antes)) if antes is not None else Decimal(0)
+    for t in sorted({*horas, *huecos}):
+        valor = coste_horas[t] if t in coste_horas else huecos[t]
+        suma += valor
+        nuevas.append({"start": t, "state": float(valor), "sum": float(suma)})
+    delta = suma - antes
     for t, f in sorted(existentes.items()):
         if t > ultima and f.get("sum") is not None:
             nuevas.append(

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from ..festivos import es_festivo_p3
 
@@ -63,10 +63,16 @@ def _with_published(
 def _walk_until_change(
     key_fn: PeriodKeyFn, local_ts: datetime, zone_ceuta_melilla: bool
 ) -> tuple[str, str, timedelta]:
-    """Advance one hour at a time until the period key changes."""
+    """Advance one hour at a time until the period key changes.
+
+    The hours are real ones (counted in UTC), so `delta` is right on the 23- and 25-hour days.
+    """
     current_period = key_fn(local_ts, zone_ceuta_melilla)
+    utc_ts = local_ts.astimezone(UTC)
     delta = timedelta(hours=1)
-    while (next_period := key_fn(local_ts + delta, zone_ceuta_melilla)) == current_period:
+    while (
+        next_period := key_fn((utc_ts + delta).astimezone(local_ts.tzinfo), zone_ceuta_melilla)
+    ) == current_period:
         delta += timedelta(hours=1)
     return current_period, next_period, delta
 

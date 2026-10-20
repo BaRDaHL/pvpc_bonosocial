@@ -32,6 +32,7 @@ from homeassistant.util import dt as dt_util
 from .cnmc import CnmcNoResponde
 from .comparativa import PeriodoPagado
 from .const import (
+    CONF_ALQUILER,
     CONF_ARRASTRE_INICIAL,
     CONF_BONO,
     CONF_CATEGORIA,
@@ -127,6 +128,7 @@ def suministro_de(datos: dict[str, Any]) -> Suministro:
         Decimal(str(datos[CONF_POTENCIA_P2])),
         bono,
         LIMITES_ANUALES_KWH[categoria] if bono is not Bono.NINGUNO and categoria else None,
+        Decimal(str(alquiler)) if (alquiler := datos.get(CONF_ALQUILER)) is not None else None,
     )
 
 
@@ -152,6 +154,10 @@ def contratos_del_periodo(
         if primer_dia <= hasta < fin
     }
     return vigente(primer_dia), cambios
+
+
+class FacturaFutura(ValueError):
+    """Factura real con la fecha de fin después de hoy."""
 
 
 @dataclass
@@ -700,6 +706,17 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         anteriores = self.datos.get(CONF_CONTRATOS_ANTERIORES) or []
         return bool(self._limite_anual()) or any(c.get(CONF_BONO, "ninguno") != "ninguno" for c in anteriores)
 
+    @property
+    def con_bono_hoy(self) -> bool:
+        """El contrato vigente tiene bono social."""
+        return bool(self._limite_anual())
+
+    def _con_bono_al_final(self, inicio: date, fin: date) -> bool:
+        """El contrato del último día del periodo tiene bono."""
+        inicial, cambios = contratos_del_periodo(self.datos, inicio, fin)
+        final = cambios[max(cambios)] if cambios else inicial
+        return bool(final.limite_anual_kwh)
+
     def _prorrata(self, inicio: date, fin: date) -> int:
         inicial, cambios = contratos_del_periodo(self.datos, inicio, fin)
         limites = {d: s.limite_anual_kwh for d, s in cambios.items()}
@@ -770,6 +787,7 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
                     kwh={p: Decimal(v) for p, v in (c.get("kwh") or {}).items()},
                     conciliada=c.get("estado") == "conciliada",
                     total_sin_bono=sin_bono,
+                    con_bono=self._con_bono_al_final(inicio, fin),
                 )
             )
         return out
@@ -799,6 +817,10 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         """Factura real de un periodo: corte real, calibración, arrastre y estadística de coste."""
         if fin <= inicio or (fin - inicio).days > 62:
             raise ValueError("El periodo de la factura debe tener entre 1 y 62 días")
+        if fin > dt_util.now(REFERENCE_TZ).date():
+            # Una factura real acaba en una lectura ya hecha; con un fin futuro el periodo en curso
+            # saltaría a ese día y no habría forma de deshacerlo desde la interfaz.
+            raise FacturaFutura("La factura no puede acabar después de hoy")
         desde = _inicio_local(inicio + timedelta(days=1)).astimezone(UTC)
         hasta = _inicio_local(fin + timedelta(days=1)).astimezone(UTC)
         consumo = await async_kwh_horarios(self.hass, self.datos[CONF_FUENTE], desde, hasta)
@@ -845,9 +867,10 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         self._escrito = None
         await self.async_request_refresh()
         if self.usa_segunda_opinion:
-            # Comprobación de la factura recién introducida con el simulador de la CNMC
-            self.hass.async_create_background_task(
-                self.async_comprobar_factura(forzar=True), f"{DOMAIN} comprobación CNMC"
+            # Comprobación de la factura recién introducida con el simulador de la CNMC; ligada a
+            # la entrada para que se cancele en la recarga que sigue a la conciliación.
+            self.config_entry.async_create_background_task(
+                self.hass, self.async_comprobar_factura(forzar=True), f"{DOMAIN} comprobación CNMC"
             )
 
     async def _async_reescribir_periodo(

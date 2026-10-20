@@ -101,7 +101,8 @@
     "iva": {
       "unidad": "fraccion",
       "valores": [
-        {"desde": "2026-03-22", "hasta": "2026-05-31", "valor": "0.10", "condicion": {"potencia_kw_menor_que": "10"}, "fuente": "RDL 7/2026 art. 42.a (potencia inferior a 10 kW)"},
+        {"desde": "2026-03-22", "hasta": "2026-04-29", "valor": "0.10", "condicion": {"potencia_kw_menor_que": "10"}, "fuente": "RDL 7/2026 art. 42.a (potencia inferior a 10 kW)"},
+        {"desde": "2026-04-30", "hasta": "2026-05-31", "valor": "0.10", "condicion": {"potencia_kw_hasta": "10"}, "fuente": "RDL 7/2026 art. 42.a según RDL 10/2026 disp. final 2.ª (BOE-A-2026-9286, en vigor el 30-abr): inferior o igual a 10 kW"},
         {"desde": "2026-03-22", "hasta": "2026-05-31", "valor": "0.10", "condicion": {"bono": ["severo", "severo_exclusion"]}, "fuente": "RDL 7/2026 art. 42.a (vulnerable severo)"},
         {"desde": "2021-06-26", "hasta": null, "valor": "0.21", "fuente": "Ley 37/1992"}
       ]

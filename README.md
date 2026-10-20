@@ -15,8 +15,8 @@
 </p>
 
 <p align="center">
-<img src="https://raw.githubusercontent.com/wiki/BaRDaHL/pvpc_bonosocial/images/card.jpg" width="380" alt="Card / Tarjeta">
-<img src="https://raw.githubusercontent.com/wiki/BaRDaHL/pvpc_bonosocial/images/telegram-summary.jpg" width="330" alt="Telegram summary / Resumen por Telegram">
+<img src="https://raw.githubusercontent.com/wiki/BaRDaHL/pvpc_bonosocial/images/card.png" width="380" alt="Card / Tarjeta">
+<img src="https://raw.githubusercontent.com/wiki/BaRDaHL/pvpc_bonosocial/images/telegram-summary.png" width="330" alt="Telegram summary / Resumen por Telegram">
 </p>
 
 ---

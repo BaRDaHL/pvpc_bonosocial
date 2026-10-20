@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -147,7 +147,8 @@ def _format_time_to_next_period(
         zone_ceuta_melilla=coordinator.api.tariff != TARIFFS[0],
         published=coordinator.api.published_period,
     )
-    next_period_start = hour_start + delta
+    # En UTC: el día del cambio de hora, la resta en hora de pared se come o suma una hora.
+    next_period_start = hour_start.astimezone(UTC) + delta
     delta_seconds = int((next_period_start - now_local).total_seconds())
     return _format_time_delta(coordinator, "pvpc_next_period_in", delta_seconds)
 
@@ -166,7 +167,8 @@ def _format_time_to_next_power_period(
         zone_ceuta_melilla=coordinator.api.tariff != TARIFFS[0],
         published=coordinator.api.published_period,
     )
-    next_period_start = hour_start + delta
+    # En UTC: el día del cambio de hora, la resta en hora de pared se come o suma una hora.
+    next_period_start = hour_start.astimezone(UTC) + delta
     delta_seconds = int((next_period_start - now_local).total_seconds())
     return _format_time_delta(coordinator, "pvpc_next_power_period_in", delta_seconds)
 

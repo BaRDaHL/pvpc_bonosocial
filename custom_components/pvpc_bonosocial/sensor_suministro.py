@@ -227,7 +227,10 @@ class PrecioReal(_Base):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_suggested_display_precision = 4
     _unrecorded_attributes = frozenset(
-        {f"price_{h:02d}h" for h in range(24)} | {f"price_next_day_{h:02d}h" for h in range(24)}
+        f"{clave}{d}"
+        for h in range(24)
+        for clave in (f"price_{h:02d}h", f"price_next_day_{h:02d}h")
+        for d in ("", "_d")
     )
 
     @property
@@ -240,12 +243,16 @@ class PrecioReal(_Base):
     def extra_state_attributes(self) -> dict[str, Any]:
         hoy = dt_util.now(REFERENCE_TZ).date()
         out: dict[str, Any] = {}
-        for t, precio in self.d.precio_real.items():
+        for t, precio in sorted(self.d.precio_real.items()):
             local = t.astimezone(REFERENCE_TZ)
             if local.date() == hoy:
-                out.setdefault(f"price_{local.hour:02d}h", round(float(precio), 5))
+                clave = f"price_{local.hour:02d}h"
             elif (local.date() - hoy).days == 1:
-                out.setdefault(f"price_next_day_{local.hour:02d}h", round(float(precio), 5))
+                clave = f"price_next_day_{local.hour:02d}h"
+            else:
+                continue
+            # La hora repetida (la segunda 02 h del día de 25 h) lleva «_d», como en aiopvpc.
+            out[f"{clave}_d" if clave in out else clave] = round(float(precio), 5)
         return out
 
 

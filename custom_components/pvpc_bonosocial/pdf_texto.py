@@ -16,7 +16,13 @@ from typing import Any
 # --- analizador mínimo de objetos PDF --------------------------------------------------
 
 _DELIM = b"()<>[]{}/%"
-_MAX_FLUJO = 20 * 1024 * 1024  # bytes descomprimidos por flujo: una factura no llega a 1 MB
+# Presupuesto por documento, para que un PDF de pocos KB no se convierta en GB de memoria o en
+# minutos de CPU (referencias repetidas al mismo flujo, formularios que se llaman en abanico,
+# tablas ToUnicode enormes). Una factura real usa menos de 1 MB y unas pocas decenas de formularios.
+_MAX_FLUJO = 8 * 1024 * 1024  # bytes descomprimidos por flujo
+_MAX_TOTAL = 16 * 1024 * 1024  # bytes de contenido leídos en todo el documento (cada uso cuenta)
+_MAX_FORMULARIOS = 500  # formularios (XObject Form) dibujados en todo el documento
+_MAX_GLIFOS = 70_000  # entradas de las tablas ToUnicode de una fuente
 _ESPACIO = b" \t\r\n\x0c\x00"
 
 
@@ -48,6 +54,8 @@ class _Lector:
     def objeto(self) -> Any:
         self._saltar()
         d = self.d
+        if self.i >= len(d):  # PDF truncado: sin esto, los bucles de << >> y [ ] no terminan
+            raise ValueError("PDF truncado")
         c = d[self.i : self.i + 1]
         if c == b"<" and d[self.i + 1 : self.i + 2] == b"<":
             self.i += 2
@@ -86,6 +94,9 @@ class _Lector:
         while j < len(d) and d[j : j + 1] not in _ESPACIO and d[j : j + 1] not in _DELIM:
             j += 1
         palabra = d[self.i : j]
+        if not palabra:  # delimitador suelto («)», «]», «>», «{»…): se salta para avanzar siempre
+            self.i += 1
+            return None
         self.i = j
         if re.fullmatch(rb"[+-]?\d+", palabra):
             # ¿«n g R»?
@@ -106,6 +117,8 @@ class _Lector:
         while self.i < len(d):
             c = d[self.i]
             if c == 0x5C:  # \
+                if self.i + 1 >= len(d):
+                    break
                 n = d[self.i + 1]
                 escapes = {0x6E: 10, 0x72: 13, 0x74: 9, 0x62: 8, 0x66: 12}
                 if n in escapes:
@@ -133,10 +146,17 @@ class _Lector:
         return bytes(out)
 
 
+class PdfDemasiadoComplejo(ValueError):
+    """El PDF pasa del presupuesto de lectura (no es una factura normal)."""
+
+
 class Documento:
     def __init__(self, datos: bytes) -> None:
         self.datos = datos
         self._objetos: dict[int, tuple[Any, bytes | None]] = {}
+        self._descomprimidos: dict[int, bytes] = {}
+        self._leidos = 0  # bytes de flujo entregados (presupuesto _MAX_TOTAL)
+        self.formularios = 0  # formularios dibujados (presupuesto _MAX_FORMULARIOS)
         for m in re.finditer(rb"(\d+)\s+(\d+)\s+obj\b", datos):
             n = int(m.group(1))
             lector = _Lector(datos)
@@ -171,6 +191,15 @@ class Documento:
         n = x[0] if isinstance(x, Ref) else None
         if n is None or n not in self._objetos:
             return b""
+        if n not in self._descomprimidos:
+            self._descomprimidos[n] = self._descomprimir(n)
+        datos = self._descomprimidos[n]
+        self._leidos += len(datos)
+        if self._leidos > _MAX_TOTAL:
+            raise PdfDemasiadoComplejo("Demasiado contenido descomprimido")
+        return datos
+
+    def _descomprimir(self, n: int) -> bytes:
         valor, crudo = self._objetos[n]
         if crudo is None:
             return b""
@@ -321,7 +350,7 @@ def _cmap(texto: bytes) -> tuple[dict[int, str], int]:
                     tabla[ini + k] = bytes.fromhex(u.decode()).decode("utf-16-be", "replace")
             else:
                 base = bytes.fromhex(resto[1:-1].decode()).decode("utf-16-be", "replace")
-                for k in range(fin - ini + 1):
+                for k in range(max(0, min(fin - ini + 1, _MAX_GLIFOS - len(tabla)))):
                     tabla[ini + k] = base[:-1] + chr(ord(base[-1]) + k)
     return tabla, ancho
 
@@ -366,9 +395,9 @@ class _Fuente:
 
 # --- contenido -----------------------------------------------------------------------
 
-_TOKEN = re.compile(
-    rb"\((?:\\.|[^\\)])*\)|<[0-9A-Fa-f\s]*>|\[|\]|/[^\s/\[\]()<>]+|[-+]?\d*\.?\d+|[A-Za-z'\"*]+|<<|>>"
-)
+# Las cadenas «( … )» no van en la expresión: con un «(» sin cerrar, buscarlas desde cada posición
+# es cuadrático. Se reconoce el «(» y la cadena la lee `_Lector._literal`, que avanza siempre.
+_TOKEN = re.compile(rb"\(|<[0-9A-Fa-f\s]*>|\[|\]|/[^\s/\[\]()<>]+|[-+]?\d*\.?\d+|[A-Za-z'\"*]+|<<|>>")
 
 
 def _contenido(doc: Documento, datos: bytes, recursos: Any, lineas: list[str], profundidad: int = 0) -> None:
@@ -397,8 +426,11 @@ def _contenido(doc: Documento, datos: bytes, recursos: Any, lineas: list[str], p
             fin = datos.find(b"EI", i)
             i = fin + 2 if fin >= 0 else len(datos)
             continue
-        if tok[:1] == b"(":
-            pila.append(_Lector(tok).objeto())
+        if tok == b"(":
+            lector = _Lector(datos)
+            lector.i = m.start()
+            pila.append(lector._literal())
+            i = lector.i
         elif tok[:1] == b"<" and tok[:2] != b"<<":
             pila.append(bytes.fromhex(re.sub(rb"\s", b"", tok[1:-1]).decode() or ""))
         elif tok == b"[":
@@ -446,6 +478,9 @@ def _contenido(doc: Documento, datos: bytes, recursos: Any, lineas: list[str], p
                 xo = xobjetos.get(str(pila[-1]))
                 dic = doc.resolver(xo)
                 if isinstance(dic, dict) and dic.get("Subtype") == "Form":
+                    doc.formularios += 1
+                    if doc.formularios > _MAX_FORMULARIOS:
+                        raise PdfDemasiadoComplejo("Demasiados formularios")
                     cortar()
                     _contenido(doc, doc.flujo(xo), dic.get("Resources", recursos), lineas, profundidad + 1)
             pila.clear()

@@ -53,6 +53,8 @@ class PeriodoPagado:
     kwh: dict[str, Decimal]
     conciliada: bool
     total_sin_bono: Decimal | None = None  # el mismo periodo en el PVPC sin bono
+    # Con bono al final del periodo, según el contrato (None: no se sabe, se deduce de la estimación)
+    con_bono: bool | None = None
 
     @property
     def dias(self) -> int:
@@ -70,6 +72,7 @@ class Ventana:
     kwh: dict[str, Decimal]
     conciliadas: int
     estimadas: int
+    bono: bool | None = None  # el periodo más reciente tiene bono según su contrato
 
     @property
     def factor_anual(self) -> Decimal:
@@ -91,6 +94,11 @@ class Ventana:
 
     @property
     def con_bono(self) -> bool:
+        # Por el contrato más reciente, no por la estimación: un periodo sin curva horaria deja
+        # `pagado_sin_bono` en None y no por eso se puede callar que el bono se pierde; y quien
+        # ya no lo tiene no lo pierde aunque lo tuviera antes.
+        if self.bono is not None:
+            return self.bono
         return self.pagado_sin_bono is not None and self.pagado_sin_bono > self.pagado
 
 
@@ -154,6 +162,7 @@ def ventana_12_meses(periodos: Sequence[PeriodoPagado]) -> Ventana | None:
         kwh=kwh,
         conciliadas=sum(1 for p in elegidos if p.conciliada),
         estimadas=sum(1 for p in elegidos if not p.conciliada),
+        bono=elegidos[-1].con_bono,
     )
 
 

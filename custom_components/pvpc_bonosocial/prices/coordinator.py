@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from datetime import date, datetime, timedelta
 
 from homeassistant.config_entries import ConfigEntry
@@ -31,7 +32,7 @@ from ..const import (
     normalize_price_mode,
 )
 from ..engine import Tarifas
-from ..helpers import config_entrada
+from ..helpers import ZONA_CANARIAS, config_entrada
 from .aiopvpc import DEFAULT_POWER_KW, BadApiTokenAuthError, EsiosApiData, PVPCData
 from .aiopvpc.const import KEY_PVPC, REFERENCE_TZ, SENSOR_KEY_TO_DATAID, TARIFFS, normalize_tariff
 from .aiopvpc.pvpc_tariff import _price_period_key
@@ -50,6 +51,18 @@ MAX_HORAS_EN_AVISO = 6
 def zona_de_tarifa(tariff: str) -> str:
     """Zona del archivo 70: PCB (Península, Baleares, Canarias) o CYM (Ceuta y Melilla)."""
     return "PCB" if normalize_tariff(tariff) == TARIFFS[0] else "CYM"
+
+
+def _en_hora_de_precios(publicado: Callable[[datetime], str | None]) -> Callable[[datetime], str | None]:
+    """El periodo publicado a la hora «h» local: en Canarias, la hora «h» del archivo 70 es la
+    canaria y el histórico la guarda con la de Madrid (como `helpers.ahora_precios`)."""
+
+    def periodo(local: datetime) -> str | None:
+        if getattr(local.tzinfo, "key", None) == ZONA_CANARIAS:
+            local = local.replace(tzinfo=REFERENCE_TZ, fold=local.fold)
+        return publicado(local)
+
+    return periodo
 
 
 class ElecPricesDataUpdateCoordinator(  # pylint: disable=too-few-public-methods
@@ -196,7 +209,7 @@ class ElecPricesDataUpdateCoordinator(  # pylint: disable=too-few-public-methods
         historico = HistoricoPrecios(self.hass, zona_de_tarifa(self.api.tariff), tarifas)
         await historico.async_cargar()
         self.historico = historico
-        self.api.published_period = historico.periodo_publicado
+        self.api.published_period = _en_hora_de_precios(historico.periodo_publicado)
         entry = self.config_entry
         entry.async_on_unload(
             async_track_time_interval(self.hass, self._async_tick_historico, INTERVALO_HISTORICO)

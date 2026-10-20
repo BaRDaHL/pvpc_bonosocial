@@ -18,6 +18,7 @@ import contextlib
 import logging
 import re
 from collections.abc import Mapping
+from dataclasses import replace
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
@@ -167,8 +168,8 @@ TEXTOS = {
         "mejores": "Mejores ofertas de mercado libre (CNMC, primer año, con tu consumo real):",
         "oferta": "{i}. {comercializadora}, «{oferta}»: {importe}{segundo} → {ahorro}",
         "segundo": " (2.º año {importe})",
-        "ahorra": "ahorras {x} al año",
-        "cuesta": "pagas {x} más al año",
+        "ahorra": "ahorras {x} al año.",
+        "cuesta": "pagas {x} más al año.",
         "permanencia": " Permanencia (penalización ~{x}).",
         "servicios": " Con servicios adicionales.",
         "nuevos": " Solo nuevos clientes.",
@@ -203,8 +204,8 @@ TEXTOS = {
         "mejores": "Best free-market offers (CNMC, first year, with your real consumption):",
         "oferta": "{i}. {comercializadora}, “{oferta}”: {importe}{segundo} → {ahorro}",
         "segundo": " (2nd year {importe})",
-        "ahorra": "you save {x} per year",
-        "cuesta": "you pay {x} more per year",
+        "ahorra": "you save {x} per year.",
+        "cuesta": "you pay {x} more per year.",
         "permanencia": " Minimum stay (penalty ~{x}).",
         "servicios": " With additional services.",
         "nuevos": " New customers only.",
@@ -414,6 +415,9 @@ class Comparador:
                 ESTADO_SIN_DATOS,
                 "Aún no hay ningún periodo de factura cerrado: hace falta al menos uno para comparar.",
             )
+        # Lo que se pierde al cambiar es el bono de hoy: el contrato vigente manda sobre el de los
+        # periodos ya cerrados (alta o baja del bono en el periodo en curso).
+        ventana = replace(ventana, bono=self.facturacion.con_bono_hoy)
         d = self.facturacion.datos
         consulta = ConsultaCnmc(
             self.codigo_postal,

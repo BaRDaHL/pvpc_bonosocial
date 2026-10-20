@@ -59,6 +59,8 @@ class Suministro:
     potencia_p2_kw: Decimal
     bono: Bono = Bono.NINGUNO
     limite_anual_kwh: int | None = None
+    # €/mes que cobra la distribuidora por el contador; sin él, el valor regulado de la tabla.
+    alquiler_contador_eur_mes: Decimal | None = None
 
     def __post_init__(self) -> None:
         if self.bono is not Bono.NINGUNO and self.limite_anual_kwh is None:
@@ -308,8 +310,10 @@ def calcular_factura(
     # Alquiler del contador: una línea por precio diario distinto (mensual · 12 / días del año,
     # a 6 decimales). Dos años de 365 días comparten precio y van en la misma línea.
     dias_por_precio: dict[Decimal, int] = {}
-    for t in tramos:
-        mensual = tarifas.valor("alquiler_contador", t.primer_dia)
+    for t, contrato in zip(tramos, contratos, strict=True):
+        mensual = contrato.alquiler_contador_eur_mes
+        if mensual is None:
+            mensual = tarifas.valor("alquiler_contador", t.primer_dia)
         diario = (mensual * 12 / dias_anio(t.anio)).quantize(SEIS_DECIMALES)
         dias_por_precio[diario] = dias_por_precio.get(diario, 0) + t.dias
     alquiler = [euros(dias * diario) for diario, dias in dias_por_precio.items()]

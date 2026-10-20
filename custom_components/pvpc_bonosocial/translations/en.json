@@ -517,7 +517,7 @@
             "codigo_postal": "Optional. Only used to compare tariffs: the postal code, the contracted power and the yearly kWh per period are sent to the CNMC, nothing else.",
             "comparar_mensual": "On the 2nd of every month, compares your last 12 months with the CNMC offers and leaves a notification. Needs the postal code.",
             "segunda_opinion_cnmc": "When you enter an actual bill, the integration asks the official CNMC simulator for the same bill (with the bill's meter kWh) and warns you if it does not match. Hourly consumption, power, bonus type and postcode are sent (no CUPS). Needs the postcode.",
-            "comparador_destino": "Optional. A notify entity (a Telegram chat, your phone…). Besides the Home Assistant notification, the comparison (button or monthly) is sent there.",
+            "comparador_destino": "Optional. A notify entity (a Telegram chat, your phone…). Telegram needs the Telegram bot integration set up in Home Assistant. Besides the Home Assistant notification, the comparison (button or monthly) is sent there.",
             "comparador_umbral_eur": "Only with “Only if an offer saves money”: the best offer must save more than this per year.",
             "fin_ultima_factura": "End of the last bill: it is the start of the current period. When reconfiguring, the one in force is suggested; if you change it, the current period starts on that day (also backwards) and the later estimated periods are recalculated."
           }
@@ -586,8 +586,10 @@
         "fuente_no_encontrada": "That entity does not exist or has no state yet.",
         "fuente_no_energia": "The sensor must be an energy sensor (kWh, Wh or MWh) with state_class total or total_increasing.",
         "pdf_no_reconocido": "The PDF is not recognised. Only bills from Comercializadora Regulada, Gas & Power (Naturgy) can be read; for others, leave the file empty and enter the data by hand.",
+        "demasiado_grande": "The file is too large: at most 4 MiB per PDF, and a ZIP of up to 50 MiB with 12 PDFs.",
         "pdf_no_subido": "The uploaded file could not be read. Upload it again.",
         "es_abono": "This is a credit note (corrective bill with a negative amount). Upload the bill that replaces it.",
+        "factura_futura": "The bill cannot end after today: check the end date.",
         "periodo_no_valido": "The billing period must be between 1 and 62 days long.",
         "fecha_futura": "It cannot be a future date: make the change on the day it starts.",
         "codigo_postal_invalido": "The postal code must have 5 digits",
@@ -599,7 +601,7 @@
         "periodo_cambiado": "Supply updated. The current billing period now starts on {inicio}; it is recalculated from that day.",
         "factura_conciliada": "Bill from {inicio} to {fin} reconciled.",
         "no_cargada": "The integration is not loaded. Enable it and try again.",
-        "lote_conciliado": "{n} bills entered.",
+        "lote_conciliado": "{n} bills entered.{fallidas}",
         "no_soportado_canarias": "The bill is only calculated for the Peninsula and the Balearic Islands. In the Canary Islands (Home Assistant time zone Atlantic/Canary) Canary time and IGIC apply, which the integration does not handle. PVPC prices do work.",
         "no_soportado_ceuta_melilla": "The bill is only calculated for the Peninsula and the Balearic Islands. Ceuta and Melilla have other periods and IPSI, which the integration does not handle. PVPC prices do work."
       }
@@ -632,7 +634,7 @@
             "resto_hoy": "At night, include the remaining hours of today"
           },
           "data_description": {
-            "destino": "Any notify entity. If it is a Telegram chat, the message is formatted (aligned columns) and you do not need to type the chat ID.",
+            "destino": "Any notify entity. For Telegram, set up the Telegram bot integration in Home Assistant first (it creates one notify entity per allowed chat); the message is then formatted (aligned columns) and you do not need to type the chat ID.",
             "manana_hora": "ESIOS publishes tomorrow's prices around 20:20. If they are not out yet, it retries every 10 minutes until 23:00.",
             "color_valle": "On weekends and holidays the whole day is off-peak: with \"working days\", its hours are coloured against the 5 previous working days.",
             "mostrar_periodo": "After the hour, P peak, S standard or O off-peak. On weekends and holidays the whole day is off-peak and it is not shown.",
@@ -661,7 +663,7 @@
             "resto_hoy": "At night, include the remaining hours of today"
           },
           "data_description": {
-            "destino": "Any notify entity. If it is a Telegram chat, the message is formatted (aligned columns) and you do not need to type the chat ID.",
+            "destino": "Any notify entity. For Telegram, set up the Telegram bot integration in Home Assistant first (it creates one notify entity per allowed chat); the message is then formatted (aligned columns) and you do not need to type the chat ID.",
             "manana_hora": "ESIOS publishes tomorrow's prices around 20:20. If they are not out yet, it retries every 10 minutes until 23:00.",
             "color_valle": "On weekends and holidays the whole day is off-peak: with \"working days\", its hours are coloured against the 5 previous working days.",
             "mostrar_periodo": "After the hour, P peak, S standard or O off-peak. On weekends and holidays the whole day is off-peak and it is not shown.",

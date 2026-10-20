@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import io
 import logging
+import os
 import zipfile
+import zlib
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
@@ -74,7 +76,9 @@ from .const import (
 )
 from .engine import LIMITES_ANUALES_KWH, Bono
 from .factura_pdf import DatosFactura, FacturaNoReconocida, leer_factura
+from .facturacion import FacturaFutura
 from .helpers import TERRITORIO_PENINSULA, config_entrada, territorio
+from .prices.aiopvpc.const import REFERENCE_TZ
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -398,6 +402,7 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
                 errores["pdf"] = "pdf_no_subido"
             else:
                 if leidas.zip:
+                    leidas.apartar_no_validas(dt_util.now(REFERENCE_TZ).date())
                     if not leidas.buenas:
                         errores["pdf"] = "zip_sin_facturas"
                     else:
@@ -437,6 +442,8 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
                     total=Decimal(str(user_input["total"])).quantize(Decimal("0.01")),
                     bonificados=int(bonificados) if bonificados is not None else None,
                 )
+            except FacturaFutura:
+                errores["fin"] = "factura_futura"
             except ValueError:
                 errores["base"] = "periodo_no_valido"
             else:
@@ -498,6 +505,7 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
         buenas = sorted(lote.buenas, key=lambda x: x[1].inicio)
         if user_input is not None:
             hechas = 0
+            fallidas: list[str] = []
             for nombre, f in buenas:
                 try:
                     await facturacion.async_conciliar(
@@ -510,9 +518,16 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
                     )
                 except ValueError:
                     _LOGGER.warning("Factura %s del ZIP no válida (%s – %s)", nombre, f.inicio, f.fin)
+                    fallidas.append(nombre)
                 else:
                     hechas += 1
-            return self.async_abort(reason="lote_conciliado", description_placeholders={"n": str(hechas)})
+            return self.async_abort(
+                reason="lote_conciliado",
+                description_placeholders={
+                    "n": str(hechas),
+                    "fallidas": f" ✗ {', '.join(fallidas)}" if fallidas else "",
+                },
+            )
         lineas = [f"- {_dma(f.inicio)} – {_dma(f.fin)}: **{_euros_texto(f.total)}**" for _, f in buenas]
         es = self.hass.config.language.split("-")[0] == "es"
         motivos = MOTIVOS_ZIP["es" if es else "en"]
@@ -524,10 +539,7 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
                 "n": str(len(buenas)),
                 "lista": "\n".join(lineas),
                 "descartadas": (
-                    "\n\n"
-                    + ("No se han podido leer:" if es else "Could not be read:")
-                    + "\n"
-                    + "\n".join(malas)
+                    "\n\n" + ("Se quedan fuera:" if es else "Left out:") + "\n" + "\n".join(malas)
                 )
                 if malas
                 else "",
@@ -581,21 +593,30 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
         return None
 
 
-# Límites del ZIP de facturas (para no leer un ZIP enorme o malicioso).
-MAX_FACTURAS_ZIP = 60
-MAX_BYTES_PDF = 20 * 1024 * 1024
+# Límites de lo subido (para no leer un ZIP enorme o malicioso). Una factura de la COR pesa ~1 MiB;
+# 12 PDF son un año entero. Dentro del ZIP se cuentan los bytes descomprimidos de verdad, no los
+# que declara el propio ZIP, así que lo leído nunca pasa de 12 × 4 MiB.
+MAX_FACTURAS_ZIP = 12
+MAX_BYTES_PDF = 4 * 1024 * 1024
+MAX_BYTES_ZIP = 50 * 1024 * 1024
 MOTIVOS_ZIP = {
     "es": {
         "pdf_no_reconocido": "no se reconoce (solo facturas de la Comercializadora Regulada, Gas & Power)",
         "es_abono": "es un abono (importe negativo)",
         "demasiado_grande": "demasiado grande",
         "sobran": f"hay más de {MAX_FACTURAS_ZIP} PDF en el ZIP",
+        "no_legible": "no se puede descomprimir (¿con contraseña o dañado?)",
+        "factura_futura": "acaba después de hoy (revisa las fechas de la factura)",
+        "periodo_no_valido": "el periodo no tiene entre 1 y 62 días",
     },
     "en": {
         "pdf_no_reconocido": "not recognised (only bills from Comercializadora Regulada, Gas & Power)",
         "es_abono": "it is a credit note (negative amount)",
         "demasiado_grande": "too large",
         "sobran": f"more than {MAX_FACTURAS_ZIP} PDFs in the ZIP",
+        "no_legible": "cannot be extracted (password-protected or damaged?)",
+        "factura_futura": "ends after today (check the bill dates)",
+        "periodo_no_valido": "the period is not between 1 and 62 days",
     },
 }
 
@@ -607,6 +628,19 @@ class Subida:
     zip: bool
     buenas: list[tuple[str, DatosFactura]] = field(default_factory=list)
     malas: list[tuple[str, str]] = field(default_factory=list)  # (archivo, motivo)
+
+    def apartar_no_validas(self, hoy: date) -> None:
+        """Aparta, con su motivo, las que el motor rechazaría al introducirlas (antes se
+        descartaban en silencio después de pulsar Enviar)."""
+        for nombre, f in list(self.buenas):
+            if f.fin > hoy:
+                motivo = "factura_futura"
+            elif f.fin <= f.inicio or (f.fin - f.inicio).days > 62:
+                motivo = "periodo_no_valido"
+            else:
+                continue
+            self.buenas.remove((nombre, f))
+            self.malas.append((nombre, motivo))
 
     def leer(self, nombre: str, contenido: bytes) -> None:
         try:
@@ -626,10 +660,16 @@ def _leer_subida(hass: Any, archivo: str) -> Subida:
     from homeassistant.components.file_upload import process_uploaded_file
 
     with process_uploaded_file(hass, archivo) as ruta:
-        contenido = Path(ruta).read_bytes()
-    if not contenido.startswith(b"PK"):
+        nombre = Path(ruta).name
+        with Path(ruta).open("rb") as f:
+            es_zip = f.read(2) == b"PK"
+            if os.fstat(f.fileno()).st_size > (MAX_BYTES_ZIP if es_zip else MAX_BYTES_PDF):
+                return Subida(zip=False, malas=[(nombre, "demasiado_grande")])
+            f.seek(0)
+            contenido = f.read()
+    if not es_zip:
         subida = Subida(zip=False)
-        subida.leer(Path(str(ruta)).name, contenido)
+        subida.leer(nombre, contenido)
         return subida
     subida = Subida(zip=True)
     try:
@@ -649,10 +689,33 @@ def _leer_subida(hass: Any, archivo: str) -> Subida:
                 elif info.file_size > MAX_BYTES_PDF:
                     subida.malas.append((nombre, "demasiado_grande"))
                 else:
-                    subida.leer(nombre, z.read(info))
+                    try:
+                        datos = _leer_miembro(z, info)
+                    except (
+                        zipfile.BadZipFile,
+                        RuntimeError,
+                        NotImplementedError,
+                        zlib.error,
+                        EOFError,
+                        OSError,
+                    ):
+                        # Con contraseña, dañado (CRC) o con una compresión que zipfile no conoce.
+                        subida.malas.append((nombre, "no_legible"))
+                        continue
+                    if datos is None:
+                        subida.malas.append((nombre, "demasiado_grande"))
+                    else:
+                        subida.leer(nombre, datos)
     except zipfile.BadZipFile as exc:
         raise ValueError("ZIP no válido") from exc
     return subida
+
+
+def _leer_miembro(z: zipfile.ZipFile, info: zipfile.ZipInfo) -> bytes | None:
+    """Descomprime un PDF del ZIP por bloques; None si pasa de MAX_BYTES_PDF (diga lo que diga el ZIP)."""
+    with z.open(info) as f:
+        datos = f.read(MAX_BYTES_PDF + 1)
+    return None if len(datos) > MAX_BYTES_PDF else datos
 
 
 def _dma(d: date) -> str:

@@ -110,6 +110,10 @@ def corte_siguiente(inicio: date) -> date:
     return date(anio, mes, min(inicio.day, calendar.monthrange(anio, mes)[1]))
 
 
+# Días que puede adelantarse la lectura real respecto al corte supuesto del periodo.
+MARGEN_LECTURA_DIAS = 7
+
+
 def corte_anterior(fin: date) -> date:
     """Inicio del periodo que acaba en `fin`: el mismo día del mes anterior (o el último de ese mes)."""
     anio, mes = (fin.year - 1, 12) if fin.month == 1 else (fin.year, fin.month - 1)
@@ -828,6 +832,9 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         horas = int((hasta - desde).total_seconds()) // 3600
 
         cerradas = self._estado.get("cerradas", [])
+        actual = self._inicio_periodo()
+        # El periodo que acababa donde empieza el actual (su fin era el corte supuesto).
+        ultima = next((c for c in cerradas if actual and c["fin"] == actual.isoformat()), None)
         previa = next((c for c in cerradas if c["fin"] == fin.isoformat()), None)
         # Una factura nueva sustituye a las que se solapan con ella (rectificativas incluidas).
         cerradas = [
@@ -835,6 +842,16 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
             for c in cerradas
             if date.fromisoformat(c["fin"]) <= inicio or date.fromisoformat(c["inicio"]) >= fin
         ]
+        # Si es la última factura y su lectura cae unos días antes del corte supuesto, la lectura
+        # real manda: si no, el actual seguiría empezando en el corte viejo y los días entre medias
+        # no serían de nadie. Una factura vieja, aunque roce el último periodo, no mueve el corte.
+        retrocede = (
+            actual is not None
+            and 0 < (actual - fin).days <= MARGEN_LECTURA_DIAS
+            and not any(c["inicio"] >= fin.isoformat() for c in cerradas)
+        )
+        if previa is None and retrocede and ultima not in cerradas:
+            previa = ultima  # su estimación es la que se compara con la factura
         cerradas.append(
             {
                 "inicio": inicio.isoformat(),
@@ -857,10 +874,11 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         self._estado["cerradas"] = cerradas[-MAX_CERRADAS:]
         # Si la factura se ha llevado por delante algún periodo calculado, se rellena el hueco.
         self._estado.pop("calculadas_revisadas", None)
-        actual = self._inicio_periodo()
-        if actual is None or fin > actual:
+        if actual is None or fin > actual or retrocede:
             self._estado["corte_actual"] = fin.isoformat()
-            if self._estado.get("corte_manual") and date.fromisoformat(self._estado["corte_manual"]) <= fin:
+            manual = self._estado.get("corte_manual")
+            # Al retroceder, el corte manual puede quedar más allá de lo que permite fijarlo a mano.
+            if manual and not fin < date.fromisoformat(manual) <= fin + timedelta(days=62):
                 self._estado.pop("corte_manual")
         await self._store.async_save(self._estado)
         await self._async_reescribir_periodo(desde, hasta, consumo, total)

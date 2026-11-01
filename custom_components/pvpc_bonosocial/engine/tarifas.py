@@ -48,6 +48,9 @@ class Vigencia:
     fuente: str
     provisional: bool = False
     condicion: Condicion | None = None
+    # Desde esta fecha el valor puede estar desfasado (norma anual aún sin incorporar). El motor
+    # lo sigue usando; la integración avisa en Reparaciones (`Tarifas.por_revisar`).
+    revisar_desde: date | None = None
 
     def cubre(self, dia: date) -> bool:
         return self.desde <= dia and (self.hasta is None or dia <= self.hasta)
@@ -94,6 +97,18 @@ class Tarifas:
     def valor(self, concepto: str, dia: date, **kwargs: Any) -> Decimal:
         return self.vigencia(concepto, dia, **kwargs).valor
 
+    def por_revisar(self, dia: date) -> dict[str, Vigencia]:
+        """Conceptos cuyo valor general vigente en `dia` ya pasó su fecha de revisión."""
+        out = {}
+        for concepto in self._conceptos:
+            try:
+                v = self.vigencia(concepto, dia)
+            except TarifaAusente:
+                continue
+            if v.revisar_desde is not None and dia >= v.revisar_desde:
+                out[concepto] = v
+        return out
+
     def cambios(self, concepto: str) -> list[date]:
         """Días en que empieza una vigencia del concepto."""
         return sorted({v.desde for v in self._conceptos[concepto]})
@@ -107,6 +122,7 @@ def _vigencia(v: Mapping[str, Any]) -> Vigencia:
         valor=Decimal(v["valor"]),
         fuente=v.get("fuente", ""),
         provisional=bool(v.get("provisional", False)),
+        revisar_desde=date.fromisoformat(v["revisar_desde"]) if v.get("revisar_desde") else None,
         condicion=Condicion(
             potencia_kw_menor_que=Decimal(cond["potencia_kw_menor_que"])
             if "potencia_kw_menor_que" in cond

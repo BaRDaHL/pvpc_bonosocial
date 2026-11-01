@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_API_TOKEN
@@ -37,7 +38,7 @@ from .aiopvpc import DEFAULT_POWER_KW, BadApiTokenAuthError, EsiosApiData, PVPCD
 from .aiopvpc.const import KEY_PVPC, REFERENCE_TZ, SENSOR_KEY_TO_DATAID, TARIFFS, normalize_tariff
 from .aiopvpc.pvpc_tariff import _price_period_key
 from .historico import HistoricoPrecios
-from .periodos import discrepancias, periodos_del_dia
+from .periodos import discrepancias, horas_sin_casar, periodos_del_dia
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -45,6 +46,9 @@ PVPCConfigEntry = ConfigEntry["ElecPricesDataUpdateCoordinator"]
 
 INTERVALO_HISTORICO = timedelta(minutes=30)
 ISSUE_PERIODOS = "periodos_discrepantes"
+ISSUE_PEAJES = "tabla_peajes_desfasada"
+ISSUE_TARIFAS = "tarifas_por_revisar"
+DIAS_AVISO_PEAJES = 7  # días publicados más recientes en los que se mira si la tabla casa
 MAX_HORAS_EN_AVISO = 6
 
 
@@ -210,6 +214,7 @@ class ElecPricesDataUpdateCoordinator(  # pylint: disable=too-few-public-methods
         await historico.async_cargar()
         self.historico = historico
         self.api.published_period = _en_hora_de_precios(historico.periodo_publicado)
+        self._vigilar_tarifas()
         entry = self.config_entry
         entry.async_on_unload(
             async_track_time_interval(self.hass, self._async_tick_historico, INTERVALO_HISTORICO)
@@ -219,7 +224,35 @@ class ElecPricesDataUpdateCoordinator(  # pylint: disable=too-few-public-methods
         )
 
     async def _async_tick_historico(self, _now: datetime) -> None:
+        self._vigilar_tarifas()
         await self.async_actualizar_historico()
+
+    def _vigilar_tarifas(self) -> None:
+        """Aviso si algún valor regulado de hoy pasó su fecha de revisión (`revisar_desde`): el
+        motor lo sigue usando, pero la tabla puede no tener aún los valores del año nuevo."""
+        if self.historico is None:
+            return
+        tarifas = self.historico.tarifas
+        por_revisar = tarifas.por_revisar(dt_util.now(REFERENCE_TZ).date())
+        if not por_revisar:
+            ir.async_delete_issue(self.hass, DOMAIN, ISSUE_TARIFAS)
+            return
+        desde = min(v.revisar_desde for v in por_revisar.values() if v.revisar_desde)
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            ISSUE_TARIFAS,
+            is_fixable=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key=ISSUE_TARIFAS,
+            translation_placeholders={
+                # Los valores son los del año que acaba el día antes de la revisión.
+                "anio": str((desde - timedelta(days=1)).year),
+                "desde": desde.isoformat(),
+                "version": tarifas.version,
+                "conceptos": ", ".join(por_revisar),
+            },
+        )
 
     async def async_actualizar_historico(self) -> None:
         historico = self.historico
@@ -242,30 +275,47 @@ class ElecPricesDataUpdateCoordinator(  # pylint: disable=too-few-public-methods
             self.api.process_state_and_attributes(self.data, KEY_PVPC, dt_util.utcnow())
             self.async_update_listeners()
 
-    def _vigilar_periodos(self, historico: HistoricoPrecios, dias: list[date]) -> None:
-        """Nivel 3 de DISENO §3.3: aviso si la regla y el TEU no coinciden en un día publicado."""
+    def _vigilar_periodos(self, historico: HistoricoPrecios, nuevos: list[date]) -> None:
+        """Nivel 3 de DISENO §3.3: aviso si la regla y el TEU no coinciden y si el TEU no casa con
+        la tabla de peajes (tabla desfasada).
+
+        Se mira todo el histórico guardado, no solo los días nuevos: el relleno trae días viejos
+        por tandas y una tanda que cuadra no debe borrar el aviso de otra que no. El de periodos
+        se borra cuando ningún día guardado discrepa; el de la tabla, cuando los últimos
+        `DIAS_AVISO_PEAJES` días publicados vuelven a casar (lo viejo no dice si la tabla de hoy
+        está al día).
+        """
         ceuta_melilla = self.api.tariff != TARIFFS[0]
 
         def _regla(inicio: datetime) -> str:
             return _price_period_key(inicio, ceuta_melilla)
 
         encontradas: list[tuple[datetime, str, str]] = []
-        for dia in sorted(dias):
+        sin_casar: list[tuple[datetime, Decimal]] = []
+        dias = historico.dias()
+        recientes, nuevos_ = set(dias[-DIAS_AVISO_PEAJES:]), set(nuevos)
+        for dia in dias:
             precios = historico.dia(dia)
             if precios is None:
                 continue
             periodos = periodos_del_dia(dia, precios.teu, historico.tarifas)
             inicios = [i.astimezone(REFERENCE_TZ) for i in precios.inicios_utc()]
-            encontradas += discrepancias(inicios, periodos, _regla)
+            del_dia = discrepancias(inicios, periodos, _regla)
+            if dia in nuevos_:
+                for inicio, regla, teu in del_dia:
+                    _LOGGER.warning(
+                        "Periodo de %s: la regla da %s y ESIOS aplicó %s; manda ESIOS",
+                        inicio.strftime("%Y-%m-%d %H:%M"),
+                        regla,
+                        teu,
+                    )
+            encontradas += del_dia
+            if dia in recientes:
+                sin_casar += horas_sin_casar(dia, inicios, precios.teu, historico.tarifas)
+        self._avisar_peajes(historico, sin_casar)
         if not encontradas:
+            ir.async_delete_issue(self.hass, DOMAIN, ISSUE_PERIODOS)
             return
-        for inicio, regla, teu in encontradas:
-            _LOGGER.warning(
-                "Periodo de %s: la regla da %s y ESIOS aplicó %s; manda ESIOS",
-                inicio.strftime("%Y-%m-%d %H:%M"),
-                regla,
-                teu,
-            )
         horas = ", ".join(
             f"{inicio:%Y-%m-%d %H:%M} ({regla} → {teu})"
             for inicio, regla, teu in encontradas[-MAX_HORAS_EN_AVISO:]
@@ -278,4 +328,34 @@ class ElecPricesDataUpdateCoordinator(  # pylint: disable=too-few-public-methods
             severity=ir.IssueSeverity.WARNING,
             translation_key=ISSUE_PERIODOS,
             translation_placeholders={"total": str(len(encontradas)), "horas": horas},
+        )
+
+    def _avisar_peajes(self, historico: HistoricoPrecios, sin_casar: list[tuple[datetime, Decimal]]) -> None:
+        """Aviso «tabla de peajes desfasada»: hay horas con TEU que no casan con ningún peaje."""
+        if not sin_casar:
+            ir.async_delete_issue(self.hass, DOMAIN, ISSUE_PEAJES)
+            return
+        _LOGGER.warning(
+            "%d horas con un TEU que no casa con la tabla de peajes %s (la primera, %s: %s €/MWh): "
+            "la tabla está desfasada",
+            len(sin_casar),
+            historico.tarifas.version,
+            sin_casar[0][0].strftime("%Y-%m-%d %H:%M"),
+            sin_casar[0][1],
+        )
+        horas = ", ".join(
+            f"{inicio:%Y-%m-%d %H:%M} ({teu} €/MWh)" for inicio, teu in sin_casar[-MAX_HORAS_EN_AVISO:]
+        )
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            ISSUE_PEAJES,
+            is_fixable=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key=ISSUE_PEAJES,
+            translation_placeholders={
+                "total": str(len(sin_casar)),
+                "version": historico.tarifas.version,
+                "horas": horas,
+            },
         )

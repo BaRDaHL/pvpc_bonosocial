@@ -35,6 +35,8 @@ from homeassistant.util import dt as dt_util
 
 from .cnmc import CnmcNoResponde, ConsultaCnmc, async_consultar
 from .comparativa import (
+    AVISO_BONO_NUEVO,
+    AVISO_BONO_PERDIDO,
     AVISO_COBERTURA,
     AVISO_ESTIMADAS,
     AVISO_EXTRAPOLADO,
@@ -99,8 +101,8 @@ def a_dict(c: Comparativa, ahora: datetime) -> dict[str, Any]:
         "kwh_anuales": dict(c.kwh_anuales),
         "pagado": float(v.pagado),
         "pagado_anual": float(v.pagado_anual),
-        "pagado_sin_bono": _f(v.pagado_sin_bono) if v.con_bono else None,
-        "pagado_sin_bono_anual": _f(v.pagado_sin_bono_anual) if v.con_bono else None,
+        "pagado_sin_bono": _f(v.pagado_sin_bono) if v.pagada_con_bono else None,
+        "pagado_sin_bono_anual": _f(v.pagado_sin_bono_anual) if v.pagada_con_bono else None,
         "pvpc_cnmc": _f(c.pvpc_cnmc),
         "ofertas": [
             {
@@ -177,6 +179,10 @@ TEXTOS = {
         "ninguna": "La CNMC no ha devuelto ninguna oferta de mercado libre para tu código postal.",
         AVISO_PIERDE_BONO: "⚠️ El bono social solo existe con el PVPC de una comercializadora de "
         "referencia: si cambias a mercado libre, lo pierdes. Compara con lo que pagas con bono.",
+        AVISO_BONO_PERDIDO: "⚠️ Ya no tienes bono social: las ofertas se comparan con lo que habrías "
+        "pagado sin bono en el PVPC ({sin_anual} en un año), que es lo que pagarás desde ahora.",
+        AVISO_BONO_NUEVO: "⚠️ Parte de lo pagado en estos 12 meses no lleva el bono social que tienes "
+        "ahora: con tu bono pagarás menos, así que el ahorro de las ofertas sale mayor de lo que es.",
         AVISO_COBERTURA: "⚠️ El comparador de la CNMC solo incluye las ofertas que le envían las "
         "comercializadoras; no están: {ausentes}. No es un censo completo del mercado.",
         AVISO_EXTRAPOLADO: "⚠️ Solo hay {dias} días de facturas: lo pagado y el consumo se han "
@@ -213,6 +219,10 @@ TEXTOS = {
         "ninguna": "The CNMC returned no free-market offers for your postal code.",
         AVISO_PIERDE_BONO: "⚠️ The social bonus only exists with the PVPC of a reference retailer: "
         "switching to the free market loses it. Compare with what you pay with the bonus.",
+        AVISO_BONO_PERDIDO: "⚠️ You no longer have the social bonus: offers are compared with what you "
+        "would have paid on PVPC without it ({sin_anual} per year), which is what you will pay from now on.",
+        AVISO_BONO_NUEVO: "⚠️ Part of what you paid in these 12 months does not include the social bonus "
+        "you have now: with it you will pay less, so the savings of the offers look bigger than they are.",
         AVISO_COBERTURA: "⚠️ The CNMC comparator only includes offers sent by retailers; missing: "
         "{ausentes}. It is not a complete census of the market.",
         AVISO_EXTRAPOLADO: "⚠️ Only {dias} days of bills: payments and consumption were extrapolated "
@@ -308,7 +318,11 @@ def texto(r: Mapping[str, Any], nombre: str, idioma: str = "es", *, breve: bool 
         lineas.append("")
     for aviso in avisos:
         lineas.append(
-            t[aviso].format(ausentes=", ".join(x.title() for x in r["grandes_ausentes"]), dias=p["dias"])
+            t[aviso].format(
+                ausentes=", ".join(x.title() for x in r["grandes_ausentes"]),
+                dias=p["dias"],
+                sin_anual=_eur(r.get("pagado_sin_bono_anual") or 0, idioma),
+            )
         )
     lineas += ["", t["impuestos"]]
     return t["titulo"].format(nombre=nombre), "\n".join(lineas)
@@ -416,7 +430,8 @@ class Comparador:
                 "Aún no hay ningún periodo de factura cerrado: hace falta al menos uno para comparar.",
             )
         # Lo que se pierde al cambiar es el bono de hoy: el contrato vigente manda sobre el de los
-        # periodos ya cerrados (alta o baja del bono en el periodo en curso).
+        # periodos ya cerrados (alta o baja del bono en el periodo en curso). Sin bono hoy, las
+        # ofertas se comparan con lo pagado sin bono (`comparativa.Ventana.referencia_anual`).
         ventana = replace(ventana, bono=self.facturacion.con_bono_hoy)
         d = self.facturacion.datos
         consulta = ConsultaCnmc(

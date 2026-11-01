@@ -13,7 +13,9 @@ from typing import Any
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.const import EntityCategory, UnitOfEnergy
+from homeassistant.core import callback
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
+from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 from homeassistant.util import slugify
@@ -68,6 +70,11 @@ class _Base(CoordinatorEntity[FacturacionSuministro], SensorEntity):
     @property
     def available(self) -> bool:
         return super().available and self.coordinator.data is not None and self.d.estimacion is not None
+
+    @callback
+    def _escribir(self, _ahora: datetime) -> None:
+        """Reescribe el estado (cambio de hora o de día) sin esperar al refresco."""
+        self.async_write_ha_state()
 
 
 class FacturaActual(_Base):
@@ -210,6 +217,11 @@ class CosteHoy(_Base):
     _attr_native_unit_of_measurement = EUR
     _attr_suggested_display_precision = 2
 
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        # A medianoche vuelve a 0 con su `last_reset` sin esperar al refresco (cada 15 min).
+        self.async_on_remove(async_track_time_change(self.hass, self._escribir, hour=0, minute=0, second=0))
+
     @property
     def native_value(self) -> float | None:
         return round(float(self.d.coste_hoy), 4)
@@ -232,6 +244,11 @@ class PrecioReal(_Base):
         for clave in (f"price_{h:02d}h", f"price_next_day_{h:02d}h")
         for d in ("", "_d")
     )
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        # El precio cambia a la hora en punto; el refresco (cada 15 min) no va alineado con ella.
+        self.async_on_remove(async_track_time_change(self.hass, self._escribir, minute=0, second=0))
 
     @property
     def native_value(self) -> float | None:

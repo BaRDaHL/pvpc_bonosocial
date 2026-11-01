@@ -38,8 +38,8 @@
         "description": "PVPC + Bono Social works without a token (public API). If you have a token, enable the checkbox below (private API), which also allows using indexed price mode and fetching injection price, day-ahead wholesale price (OMIE), and the regulated gas adjustment (MAG tax).",
         "data": {
           "name": "Sensor Name",
-          "power_p1": "P1 (punta) (kW)",
-          "power_p3": "P3 (llano) (kW)",
+          "power_p1": "P1 (peak) (kW)",
+          "power_p3": "P3 (off-peak) (kW)",
           "tariff": "Applicable tariff by geographic zone",
           "better_price_target": "Better Price Target",
           "next_price_in_update": "Next Price In update frequency",
@@ -90,8 +90,8 @@
       "init": {
         "description": "PVPC + Bono Social works without a token (public API). If you have a token, enable the checkbox below (private API), which also allows using indexed price mode and fetching injection price, day-ahead wholesale price (OMIE), and the regulated gas adjustment (MAG tax).",
         "data": {
-          "power_p1": "P1 (punta) (kW)",
-          "power_p3": "P3 (llano) (kW)",
+          "power_p1": "P1 (peak) (kW)",
+          "power_p3": "P3 (off-peak) (kW)",
           "better_price_target": "Better Price Target",
           "next_price_in_update": "Next Price In update frequency",
           "next_best_in_update": "Next Best In update frequency",
@@ -386,6 +386,14 @@
       "title": "ESIOS periods differ from the calendar",
       "description": "In {total} hours with published prices, the period ESIOS applied (from each hour's access toll) does not match the holiday calendar. The integration uses the ESIOS period. Latest hours: {horas}. If it keeps happening, please open an issue."
     },
+    "tabla_peajes_desfasada": {
+      "title": "Outdated access toll table: update the integration",
+      "description": "In {total} hours with published prices, the energy toll + charge applied by ESIOS does not match any value in the integration table (version {version}): tolls or charges have changed. Meanwhile, the bill is calculated with the old values and the period of those hours comes from the calendar. Update PVPC + Bono Social from HACS; if you already have the latest version, please open an issue. Latest hours: {horas}."
+    },
+    "tarifas_por_revisar": {
+      "title": "Regulated values of {anio} possibly outdated",
+      "description": "Since {desde}, some values used by the bill (access tolls, charges, social bonus financing or discount) may have changed by regulation, and the integration table (version {version}) does not include the new ones yet. Meanwhile, the bill is calculated with the last known values. Concepts: {conceptos}. Update PVPC + Bono Social from HACS; this notice disappears once the table is up to date."
+    },
     "importar_pvpc_next": {
       "title": "Import the PVPC Next entities",
       "fix_flow": {
@@ -417,6 +425,10 @@
     "falta_fecha_factura": {
       "title": "Last bill date missing for «{suministro}»",
       "description": "The end date of the last bill is needed to know which period is being billed (the bill shows «from X to Y»: it is Y). Add it in Settings → Devices & services → PVPC + Bono Social → gear icon ⚙ of «{suministro}» (Reconfigure)."
+    },
+    "dias_sin_factura": {
+      "title": "Days without a bill in “{suministro}”",
+      "description": "Between two billing periods of “{suministro}” there are days not covered by any bill: {huecos}. Those days are not counted in the tariff comparison or in the social bonus carry-over. If you have the real bill that covers them, enter it in Settings → Devices & services → PVPC + Bono Social → gear ⚙ of “{suministro}” (Reconfigure) → Real bill. This notice disappears when there are no gaps left."
     },
     "usar_estadistica_coste": {
       "title": "Use the PVPC + Bono Social cost in the Energy dashboard («{suministro}»)",
@@ -762,7 +774,7 @@
           "description": "P1 consumption on the bill."
         },
         "kwh_p2": {
-          "name": "kWh in P2 (flat)",
+          "name": "kWh in P2 (standard)",
           "description": "P2 consumption on the bill."
         },
         "kwh_p3": {

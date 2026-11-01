@@ -18,6 +18,7 @@ import logging
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
+from itertools import pairwise
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
@@ -99,6 +100,7 @@ MAX_CALCULADAS_POR_CICLO = 2
 DIAS_PRECIOS = 395  # algo menos que los que guarda el histórico de precios (400)
 MARGEN_POR_DEFECTO = Decimal(100)  # €/MWh (PCB − TEU) si aún no hay ningún precio
 ISSUE_SIN_FECHA = "falta_fecha_factura"
+ISSUE_HUECO = "dias_sin_factura"
 ISSUE_CNMC = "factura_no_cuadra"
 TOLERANCIA_CNMC = Decimal("0.10")  # € de diferencia que se dan por buenos (redondeos)
 ISSUE_SHELLY = "shelly_no_coincide"
@@ -511,6 +513,7 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         datos.anterior = self._anterior_de(inicio)
         await self._async_escribir_coste(datos)
         await self._async_calcular_anteriores(ahora)
+        self._avisar_huecos()
         await self._async_escribir_facturas()
         await async_revisar_panel(
             self.hass,
@@ -715,12 +718,6 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         """El contrato vigente tiene bono social."""
         return bool(self._limite_anual())
 
-    def _con_bono_al_final(self, inicio: date, fin: date) -> bool:
-        """El contrato del último día del periodo tiene bono."""
-        inicial, cambios = contratos_del_periodo(self.datos, inicio, fin)
-        final = cambios[max(cambios)] if cambios else inicial
-        return bool(final.limite_anual_kwh)
-
     def _prorrata(self, inicio: date, fin: date) -> int:
         inicial, cambios = contratos_del_periodo(self.datos, inicio, fin)
         limites = {d: s.limite_anual_kwh for d, s in cambios.items()}
@@ -791,7 +788,6 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
                     kwh={p: Decimal(v) for p, v in (c.get("kwh") or {}).items()},
                     conciliada=c.get("estado") == "conciliada",
                     total_sin_bono=sin_bono,
-                    con_bono=self._con_bono_al_final(inicio, fin),
                 )
             )
         return out
@@ -872,6 +868,7 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         )
         cerradas.sort(key=lambda c: c["fin"])
         self._estado["cerradas"] = cerradas[-MAX_CERRADAS:]
+        self._avisar_huecos()
         # Si la factura se ha llevado por delante algún periodo calculado, se rellena el hueco.
         self._estado.pop("calculadas_revisadas", None)
         if actual is None or fin > actual or retrocede:
@@ -928,6 +925,34 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
             severity=ir.IssueSeverity.WARNING,
             translation_key=ISSUE_SIN_FECHA,
             translation_placeholders={"suministro": self.subentrada.title},
+        )
+
+    def huecos(self) -> list[tuple[date, date]]:
+        """Días sin factura entre dos periodos cerrados consecutivos: (fin de uno, inicio del otro)."""
+        cerradas = self.cerradas
+        return [
+            (date.fromisoformat(a["fin"]), date.fromisoformat(b["inicio"]))
+            for a, b in pairwise(cerradas)
+            if a["fin"] < b["inicio"]
+        ]
+
+    def _avisar_huecos(self) -> None:
+        issue_id = f"{ISSUE_HUECO}_{self.subentrada.subentry_id}"
+        huecos = self.huecos()
+        if not huecos:
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+            return
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            issue_id,
+            is_fixable=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key=ISSUE_HUECO,
+            translation_placeholders={
+                "suministro": self.subentrada.title,
+                "huecos": ", ".join(f"{a.isoformat()} → {b.isoformat()}" for a, b in huecos),
+            },
         )
 
     async def _async_estimar(

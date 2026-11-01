@@ -39,7 +39,7 @@
         "data": {
           "name": "Nombre del sensor",
           "power_p1": "P1 (punta) (kW)",
-          "power_p3": "P3 (llano) (kW)",
+          "power_p3": "P3 (valle) (kW)",
           "tariff": "Tarifa aplicable por zona geográfica",
           "better_price_target": "Objetivo de mejor precio",
           "next_price_in_update": "Frecuencia de Next Price In",
@@ -91,7 +91,7 @@
         "description": "PVPC + Bono Social funciona sin token (API pública). Si tienes un token, activa la casilla de abajo (API privada), con la que también se puede usar el modo de precio indexado y obtener el precio de inyección, el precio mayorista day-ahead (OMIE) y el ajuste de gas regulado (MAG tax).",
         "data": {
           "power_p1": "P1 (punta) (kW)",
-          "power_p3": "P3 (llano) (kW)",
+          "power_p3": "P3 (valle) (kW)",
           "better_price_target": "Objetivo de mejor precio",
           "next_price_in_update": "Frecuencia de Next Price In",
           "next_best_in_update": "Frecuencia de Next Best In",
@@ -386,6 +386,14 @@
       "title": "Periodos de ESIOS distintos del calendario",
       "description": "En {total} horas con precio publicado, el periodo que aplicó ESIOS (según el peaje de cada hora) no coincide con el del calendario de festivos. La integración usa el de ESIOS. Últimas horas: {horas}. Si se repite, abre un issue."
     },
+    "tabla_peajes_desfasada": {
+      "title": "Tabla de peajes desfasada: actualiza la integración",
+      "description": "En {total} horas con precio publicado, el peaje + cargo de energía que aplicó ESIOS no coincide con ninguno de la tabla de la integración (versión {version}): los peajes o cargos han cambiado. Mientras tanto, la factura se calcula con los valores antiguos y el periodo de esas horas sale del calendario. Actualiza PVPC + Bono Social desde HACS; si ya tienes la última versión, abre un issue. Últimas horas: {horas}."
+    },
+    "tarifas_por_revisar": {
+      "title": "Valores regulados de {anio} posiblemente desfasados",
+      "description": "Desde el {desde} pueden haber cambiado por norma algunos valores que usa la factura (peajes, cargos, financiación o porcentaje del bono social) y la tabla de la integración (versión {version}) aún no trae los nuevos. Mientras tanto, la factura se calcula con los últimos conocidos. Conceptos: {conceptos}. Actualiza PVPC + Bono Social desde HACS; el aviso desaparece cuando la tabla esté al día."
+    },
     "importar_pvpc_next": {
       "title": "Importar las entidades de PVPC Next",
       "fix_flow": {
@@ -417,6 +425,10 @@
     "falta_fecha_factura": {
       "title": "Falta la fecha de la última factura de «{suministro}»",
       "description": "Para saber qué periodo se está facturando hace falta la fecha de fin de la última factura (la que aparece como «del X al Y»: es Y). Añádela en Ajustes → Dispositivos y servicios → PVPC + Bono Social → rueda dentada ⚙ de «{suministro}» (Reconfigurar)."
+    },
+    "dias_sin_factura": {
+      "title": "Días sin factura en «{suministro}»",
+      "description": "Entre dos periodos de factura de «{suministro}» quedan días que no cubre ninguna: {huecos}. Esos días no cuentan en la comparativa de tarifas ni en el arrastre del bono social. Si tienes la factura real que los cubre, introdúcela en Ajustes → Dispositivos y servicios → PVPC + Bono Social → rueda dentada ⚙ de «{suministro}» (Reconfigurar) → Factura real. El aviso desaparece cuando no quedan huecos."
     },
     "usar_estadistica_coste": {
       "title": "Usar el coste de PVPC + Bono Social en el panel de Energía («{suministro}»)",

@@ -5,8 +5,8 @@ Funciones puras (sin Home Assistant):
 1. `ventana_12_meses`: elige los periodos de factura más recientes que cubren un año
    (facturas conciliadas o estimadas al cierre) y suma lo pagado y los kWh por periodo.
 2. `consulta_anual`: los kWh por periodo llevados a 365 días, que se mandan a la CNMC.
-3. `comparar`: lo pagado (llevado a 365 días) frente a cada oferta, ordenadas por el importe
-   del primer año, con los avisos de bono social y de cobertura.
+3. `comparar`: lo pagado (llevado a 365 días; sin bono si hoy ya no se tiene) frente a cada
+   oferta, ordenadas por el importe del primer año, con los avisos de bono social y de cobertura.
 
 La CNMC calcula el importe de cada oferta con el consumo real por periodo que se le manda,
 con sus precios, impuestos y alquiler del contador vigentes. Lo pagado lleva los impuestos
@@ -31,6 +31,8 @@ CENTIMO = Decimal("0.01")
 
 # Avisos (claves de traducción y de atributos).
 AVISO_PIERDE_BONO = "pierde_bono"
+AVISO_BONO_PERDIDO = "bono_perdido"  # hoy sin bono y la ventana se pagó con él
+AVISO_BONO_NUEVO = "bono_nuevo"  # hoy con bono y parte de la ventana se pagó sin él
 AVISO_COBERTURA = "cobertura_incompleta"
 AVISO_EXTRAPOLADO = "datos_extrapolados"
 AVISO_ESTIMADAS = "facturas_estimadas"
@@ -53,8 +55,6 @@ class PeriodoPagado:
     kwh: dict[str, Decimal]
     conciliada: bool
     total_sin_bono: Decimal | None = None  # el mismo periodo en el PVPC sin bono
-    # Con bono al final del periodo, según el contrato (None: no se sabe, se deduce de la estimación)
-    con_bono: bool | None = None
 
     @property
     def dias(self) -> int:
@@ -72,7 +72,7 @@ class Ventana:
     kwh: dict[str, Decimal]
     conciliadas: int
     estimadas: int
-    bono: bool | None = None  # el periodo más reciente tiene bono según su contrato
+    bono: bool | None = None  # el contrato de hoy tiene bono (lo fija el comparador)
 
     @property
     def factor_anual(self) -> Decimal:
@@ -94,12 +94,30 @@ class Ventana:
 
     @property
     def con_bono(self) -> bool:
-        # Por el contrato más reciente, no por la estimación: un periodo sin curva horaria deja
+        # Por el contrato de hoy, no por la estimación: un periodo sin curva horaria deja
         # `pagado_sin_bono` en None y no por eso se puede callar que el bono se pierde; y quien
         # ya no lo tiene no lo pierde aunque lo tuviera antes.
         if self.bono is not None:
             return self.bono
+        return self.pagada_con_bono
+
+    @property
+    def pagada_con_bono(self) -> bool:
+        """Lo pagado en la ventana lleva bono (sale más barato que el PVPC sin bono)."""
         return self.pagado_sin_bono is not None and self.pagado_sin_bono > self.pagado
+
+    @property
+    def periodos_sin_bono(self) -> int:
+        """Periodos de la ventana que se pagaron sin bono (con estimación sin bono igual)."""
+        return sum(1 for p in self.periodos if p.total_sin_bono is not None and p.total_sin_bono <= p.total)
+
+    @property
+    def referencia_anual(self) -> Decimal:
+        """Con qué se comparan las ofertas: lo pagado o, si hoy ya no hay bono, lo que se habría
+        pagado sin él (es lo que se pagará desde ahora en el PVPC)."""
+        if not self.con_bono and self.pagada_con_bono:
+            return self.pagado_sin_bono_anual  # type: ignore[return-value]
+        return self.pagado_anual
 
 
 @dataclass(frozen=True)
@@ -162,7 +180,6 @@ def ventana_12_meses(periodos: Sequence[PeriodoPagado]) -> Ventana | None:
         kwh=kwh,
         conciliadas=sum(1 for p in elegidos if p.conciliada),
         estimadas=sum(1 for p in elegidos if not p.conciliada),
-        bono=elegidos[-1].con_bono,
     )
 
 
@@ -176,7 +193,7 @@ def consulta_anual(ventana: Ventana) -> dict[str, int]:
 
 
 def comparar(ventana: Ventana, ofertas: Sequence[OfertaCnmc]) -> Comparativa:
-    pagado = ventana.pagado_anual
+    pagado = ventana.referencia_anual
     libres = [o for o in ofertas if not o.es_pvpc]
     pvpc = next((o for o in ofertas if o.es_pvpc), None)
     alternativas = tuple(
@@ -187,6 +204,10 @@ def comparar(ventana: Ventana, ofertas: Sequence[OfertaCnmc]) -> Comparativa:
     avisos = []
     if ventana.con_bono:
         avisos.append(AVISO_PIERDE_BONO)
+        if ventana.periodos_sin_bono:
+            avisos.append(AVISO_BONO_NUEVO)
+    elif ventana.pagada_con_bono:
+        avisos.append(AVISO_BONO_PERDIDO)
     if ausentes:
         avisos.append(AVISO_COBERTURA)
     if not ventana.completa:

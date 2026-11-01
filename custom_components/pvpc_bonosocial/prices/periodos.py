@@ -16,7 +16,8 @@ from ..engine import TarifaAusente, Tarifas
 
 PERIODOS = ("P1", "P2", "P3")
 # El TEU viene redondeado a 0,01 €/MWh y la tabla tiene 6 decimales en €/kWh: la
-# diferencia legítima es ≤ 0,005 €/MWh. Más de 0,5 €/MWh indica una tabla desfasada.
+# diferencia legítima es ≤ 0,005 €/MWh. Más de 0,5 €/MWh indica una tabla desfasada
+# (`horas_sin_casar`).
 TOLERANCIA_MWH = Decimal("0.5")
 
 
@@ -42,6 +43,23 @@ def periodos_del_dia(dia: date, teu_mwh: Sequence[Decimal], tarifas: Tarifas) ->
     if tabla is None:
         return [None] * len(teu_mwh)
     return [periodo_por_teu(teu, tabla) for teu in teu_mwh]
+
+
+def horas_sin_casar(
+    dia: date, inicios_locales: Sequence[datetime], teu_mwh: Sequence[Decimal], tarifas: Tarifas
+) -> list[tuple[datetime, Decimal]]:
+    """Horas cuyo TEU no casa con ningún peaje aunque la tabla cubra el día: (inicio local, TEU).
+
+    Es la señal de que los peajes o cargos han cambiado y la tabla de la integración no.
+    """
+    tabla = peajes_mwh(dia, tarifas)
+    if tabla is None:
+        return []
+    return [
+        (inicio, teu)
+        for inicio, teu in zip(inicios_locales, teu_mwh, strict=True)
+        if periodo_por_teu(teu, tabla) is None
+    ]
 
 
 def discrepancias(

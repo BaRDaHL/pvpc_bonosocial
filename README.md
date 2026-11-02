@@ -78,6 +78,10 @@ I can only test with my own data (one supplier, a 1st-gen Shelly EM, a Datadis a
 
 ---
 
+### Card source
+
+The card shipped in `custom_components/pvpc_bonosocial/frontend/pvpc-bono-social-card.js` is a bundle built from [`frontend/src`](frontend/src) (Lit 3.2.1, pinned). To rebuild it: `cd frontend && npm ci && npm run build` (esbuild 0.24.2, versions fixed in `package-lock.json`).
+
 ## Español
 
 Sabe **tu factura de la luz antes de que llegue**: precios horarios del PVPC *y* la factura de la comercializadora de referencia (COR) rehecha línea a línea, con el **bono social**, los impuestos y los fijos.
@@ -124,6 +128,10 @@ Las guías paso a paso están en la **[Wiki](https://github.com/BaRDaHL/pvpc_bon
 | [Enchufado](https://github.com/Migux13/enchufado) | ✅ (token propio de ESIOS) | Factura simulada por la CNMC, sin bono social | — | Consumo de Datadis |
 
 <sub>Revisado en octubre de 2026 leyendo el código de cada integración.</sub>
+
+### Código fuente de la tarjeta
+
+La tarjeta que se instala (`custom_components/pvpc_bonosocial/frontend/pvpc-bono-social-card.js`) es un paquete generado a partir de [`frontend/src`](frontend/src) (Lit 3.2.1, versión fija). Para regenerarla: `cd frontend && npm ci && npm run build` (esbuild 0.24.2, versiones fijadas en `package-lock.json`).
 
 ### Se buscan voluntarios
 

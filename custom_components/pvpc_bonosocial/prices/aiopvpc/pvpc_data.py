@@ -15,7 +15,7 @@ import logging
 import random
 import zipfile
 from collections import deque
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, tzinfo
 from typing import Any
 
 import aiohttp
@@ -80,7 +80,7 @@ class PVPCData:
         *,
         session: aiohttp.ClientSession,
         tariff: str = TARIFFS[0],
-        local_timezone: str | zoneinfo.ZoneInfo = REFERENCE_TZ,
+        local_timezone: str | tzinfo = REFERENCE_TZ,
         power: float = DEFAULT_POWER_KW,
         power_valley: float = DEFAULT_POWER_KW,
         timeout: float = DEFAULT_TIMEOUT,
@@ -105,7 +105,11 @@ class PVPCData:
         random.shuffle(agents)
         self._user_agents = deque(agents)
 
-        self._local_timezone = zoneinfo.ZoneInfo(str(local_timezone))
+        # Una zona ya construida (la de HA, `dt_util.get_time_zone`) se usa tal cual: crearla
+        # desde su nombre puede leer la base de zonas del disco y bloquear el bucle de eventos.
+        self._local_timezone = (
+            local_timezone if isinstance(local_timezone, tzinfo) else zoneinfo.ZoneInfo(str(local_timezone))
+        )
         tariff = normalize_tariff(tariff)
         if tariff not in TARIFFS:
             raise ValueError(f"Unknown tariff: {tariff}")

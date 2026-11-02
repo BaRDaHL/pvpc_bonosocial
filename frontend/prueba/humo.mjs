@@ -1,0 +1,168 @@
+// Prueba de humo de la tarjeta (F7): la carga en Chromium con un HA simulado y comprueba que se
+// pinta sin errores en claro, oscuro, móvil e inglés, que no registra el nombre de la tarjeta
+// antigua y que solo se vuelve a dibujar cuando cambian sus entidades o empieza otra hora.
+// Uso: npm run humo (en frontend/; CHROMIUM=/ruta/al/chrome para usar otro navegador)
+import { createServer } from "node:http";
+import { readFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { chromium } from "playwright";
+
+const aqui = dirname(fileURLToPath(import.meta.url));
+const archivos = {
+  "/pagina.html": [join(aqui, "pagina.html"), "text/html"],
+  "/estados.json": [join(aqui, "estados.json"), "application/json"],
+  "/pvpc-bono-social-card.js": [
+    join(aqui, "..", "..", "custom_components", "pvpc_bonosocial", "frontend", "pvpc-bono-social-card.js"),
+    "text/javascript",
+  ],
+};
+const servidor = createServer(async (req, res) => {
+  const ruta = archivos[req.url.split("?")[0]];
+  if (req.url === "/favicon.ico") return res.writeHead(204).end();
+  if (!ruta) return res.writeHead(404).end();
+  res.writeHead(200, { "Content-Type": ruta[1] }).end(await readFile(ruta[0]));
+});
+await new Promise((r) => servidor.listen(0, "127.0.0.1", r));
+const base = `http://127.0.0.1:${servidor.address().port}/pagina.html`;
+
+const casos = [
+  { nombre: "claro", ancho: 500, q: "" , precio: "0,120", textos: ["PVPC", "Factura periodo en curso", "punta", "14:00 - 15:00", "Hora actual", "(12/08 - 13/09)", "Factura estimada (13/09 - 13/10): 98,20"] },
+  { nombre: "oscuro", ancho: 500, q: "oscuro=1", precio: "0,120", textos: ["20:00 - 21:00"] },
+  { nombre: "excedentes", ancho: 500, q: "config=" + encodeURIComponent('{"entity_injection":"sensor.pvpc_bs_precio_excedentes"}'), precio: "-0,00106", textos: [] },
+  { nombre: "colores_propios", ancho: 500, q: "config=" + encodeURIComponent('{"color_hoy":[255,0,0],"color_manana":"rgb(0, 255, 0)","entity_injection":"sensor.pvpc_bs_precio_excedentes"}'), precio: "0,120", textos: [], color: ["rgb(255, 0, 0)", "rgb(0, 255, 0)"] },
+  { nombre: "sin_prevision", ancho: 500, q: "config=" + encodeURIComponent('{"prevision":false}'), precio: "0,120", textos: ["Factura periodo en curso"], sin: ["Factura estimada"] },
+  { nombre: "sin_manana", ancho: 500, q: "sin_manana=1&config=" + encodeURIComponent('{"entity_injection":"sensor.pvpc_bs_precio_excedentes"}'), precio: "0,120", textos: [], sin: ["No disponible"], triangulos: 4 },
+  { nombre: "colores_precio", ancho: 500, q: "config=" + encodeURIComponent('{"colores":"precio"}'), precio: "0,120", textos: [], tramos: 24 },
+  { nombre: "movil", ancho: 340, q: "config=" + encodeURIComponent('{"factura":"header"}'), precio: "0,120", textos: ["45,10"] },
+  { nombre: "facturas", ancho: 500, q: "config=" + encodeURIComponent('{"grafica_facturas":true,"facturas_tendencia":true}'), precio: "0,120", textos: ["Facturas", "97,80 €", "156,90 €"], sin: ["88,40 €"], barras: 6, importes: 6, tendencia: 1 },
+  { nombre: "facturas_movil", ancho: 340, q: "config=" + encodeURIComponent('{"grafica_facturas":true,"facturas_meses":"12","titulo_facturas":"Mis facturas","facturas_importe":false}'), precio: "0,120", textos: ["Mis facturas"], barras: 8, importes: 0, tendencia: 0 },
+  { nombre: "facturas_calculadas", ancho: 500, q: "calculadas=1&config=" + encodeURIComponent('{"grafica_facturas":true,"facturas_meses":"9"}'), precio: "0,120", textos: ["Factura real", "Calculada con el consumo", "95,10 €"], barras: 8, calculadas: 3, importes: 8 },
+  { nombre: "ventana", ancho: 900, q: "config=" + encodeURIComponent('{"details":false,"graph":false,"factura":"hidden"}'), precio: "0,120", textos: [], ventana: true },
+  { nombre: "ventana_movil", ancho: 360, q: "calculadas=1&config=" + encodeURIComponent('{"graph":false}'), precio: "0,120", textos: [], ventana: true },
+  { nombre: "ingles", ancho: 500, q: "idioma=en", redibujo: true, precio: "0.120", textos: ["Current bill", "peak", "Current hour", "Estimated bill"] },
+  { nombre: "cambio_de_hora", ancho: 500, q: "", reloj: "2026-10-20T10:59:50+02:00", precio: "0,120", textos: [] },
+];
+const navegador = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
+const fallos = [];
+for (const c of casos) {
+  const pag = await navegador.newPage({
+    viewport: { width: c.ancho, height: 800 },
+    ...(c.reloj ? { timezoneId: "Europe/Madrid" } : {}),
+  });
+  const errores = [];
+  pag.on("pageerror", (e) => errores.push(e.message));
+  pag.on("console", (m) => m.type() === "error" && errores.push(m.text()));
+  if (c.reloj) await pag.clock.install({ time: new Date(c.reloj) });
+  await pag.goto(`${base}?${c.q}`);
+  await pag.waitForFunction(() => window.listo);
+  await pag.waitForTimeout(200);
+  if (c.ventana) {
+    await pag.locator("pvpc-bono-social-card button.abrir").click();
+    await pag.waitForTimeout(300);
+  }
+  const etiqueta = "pvpc-bono-social-card";
+  const info = await pag.evaluate((etiqueta) => {
+    const raiz = document.querySelector(etiqueta)?.shadowRoot;
+    return {
+      texto: raiz?.textContent.replace(/\s+/g, " ") ?? "",
+      marcas: raiz?.querySelectorAll("svg.marca").length ?? 0,
+      tramos: raiz?.querySelectorAll("line.tramo").length ?? 0,
+      triangulos: raiz?.querySelectorAll("svg.tri").length ?? 0,
+      // Colores de las series, de los triángulos (gráfica y detalle) y de las bolitas de la leyenda.
+      colores: [
+        ...[...(raiz?.querySelectorAll("path.serie") ?? [])].map((e) => e.getAttribute("stroke")),
+        ...[...(raiz?.querySelectorAll("svg.marca path, svg.tri path") ?? [])].map((e) => e.getAttribute("fill")),
+        ...[...(raiz?.querySelectorAll(".bolita") ?? [])].map((e) => e.style.background),
+      ],
+      barras: raiz?.querySelectorAll("rect.barra").length ?? 0,
+      ventana: (() => {
+        const d = raiz?.querySelector("dialog.ventana");
+        const dentro = d?.querySelector("pvpc-bono-social-card")?.shadowRoot;
+        return d?.open
+          ? {
+              barras: dentro?.querySelectorAll("rect.barra").length ?? 0,
+              grafica: !!dentro?.querySelector(".grafica svg"),
+              abrir: dentro?.querySelectorAll("button.abrir").length ?? 0,
+              ancho: d.getBoundingClientRect().width,
+            }
+          : null;
+      })(),
+      calculadas: raiz?.querySelectorAll("rect.barra.calculada").length ?? 0,
+      importes: raiz?.querySelectorAll("text.importe").length ?? 0,
+      tendencia: raiz?.querySelectorAll("line.tendencia").length ?? 0,
+      bandas: raiz?.querySelectorAll("rect.banda-punta, rect.banda-llano").length ?? 0,
+      ancho: document.documentElement.scrollWidth,
+    };
+  }, etiqueta);
+  const mal = [...errores];
+  if (c.redibujo) {
+    const r = await pag.evaluate(async () => {
+      const t = document.querySelector("pvpc-bono-social-card");
+      let dibujos = 0;
+      const render = t.render.bind(t);
+      t.render = () => (dibujos++, render());
+      const cambiar = async (id, estado) => {
+        t.hass = { ...t.hass, states: { ...t.hass.states, [id]: { ...(t.hass.states[id] ?? { attributes: {} }), state: estado } } };
+        await t.updateComplete;
+      };
+      await cambiar("light.otra_cosa_de_la_casa", "on");
+      const ajena = dibujos;
+      await cambiar("sensor.pvpc_bs_periodo", "P1");
+      return { ajena, propia: dibujos - ajena, alias: !!customElements.get("pvpc-hourly-pricing-card") };
+    });
+    if (r.ajena) mal.push(`se redibuja por una entidad ajena (${r.ajena})`);
+    if (r.propia !== 1) mal.push(`no se redibuja al cambiar su periodo (${r.propia})`);
+    if (r.alias) mal.push("registra pvpc-hourly-pricing-card");
+  }
+  if (c.reloj) {
+    // El precio nuevo llega con el reloj del navegador aún en la hora anterior (va por detrás del
+    // servidor): la franja «Hora actual» tiene que pasar sola a la hora siguiente.
+    const franja = () =>
+      pag.evaluate(() => document.querySelector("pvpc-bono-social-card").shadowRoot.querySelector("rect.ahora")?.getAttribute("x"));
+    const antes = await franja();
+    await pag.clock.runFor(new Date("2026-10-20T10:59:59.800+02:00") - (await pag.evaluate(() => Date.now())));
+    await pag.evaluate(async () => {
+      const t = document.querySelector("pvpc-bono-social-card");
+      const id = "sensor.pvpc_bs_precio";
+      t.hass = { ...t.hass, states: { ...t.hass.states, [id]: { ...t.hass.states[id] } } };
+      await t.updateComplete;
+    });
+    await pag.clock.runFor(2000);
+    const despues = await franja();
+    if (!antes || antes === despues) mal.push(`la hora actual no avanza al cambiar de hora (${antes} → ${despues})`);
+  }
+  if (!info.texto.includes(c.precio)) mal.push(`no sale el precio ${c.precio}`);
+  for (const t of c.textos) if (!info.texto.includes(t)) mal.push(`no sale «${t}»`);
+  if (!c.ventana && info.marcas < 4) mal.push(`la gráfica tiene ${info.marcas} triángulos de mínimo y máximo`);
+  for (const col of c.color ?? []) {
+    const n = info.colores.filter((x) => x === col).length;
+    // hoy y mañana: 2 líneas + 2 punteadas, 4 triángulos en la gráfica, 4 en el detalle y su bolita
+    if (n < 11) mal.push(`el color ${col} solo sale ${n} veces`);
+  }
+  for (const t of c.sin ?? []) if (info.texto.includes(t)) mal.push(`sale «${t}»`);
+  if (c.triangulos !== undefined && info.triangulos !== c.triangulos)
+    mal.push(`${info.triangulos} triángulos en el detalle (deberían ser ${c.triangulos})`);
+  if ((c.tramos ?? 0) > info.tramos) mal.push(`${info.tramos} horas coloreadas por precio`);
+  if (c.barras !== undefined && info.barras !== c.barras) mal.push(`${info.barras} barras de facturas (deberían ser ${c.barras})`);
+  if (c.ventana) {
+    const v = info.ventana;
+    if (!v) mal.push("no se abre la ventana");
+    else {
+      if (!v.grafica || v.barras !== 6) mal.push(`ventana incompleta (${JSON.stringify(v)})`);
+      if (v.abrir) mal.push("la tarjeta de la ventana abre otra ventana");
+      if (v.ancho > c.ancho) mal.push(`la ventana se sale (${v.ancho} px)`);
+    }
+  }
+  if (c.calculadas !== undefined && info.calculadas !== c.calculadas) mal.push(`${info.calculadas} barras calculadas`);
+  if (c.importes !== undefined && info.importes !== c.importes) mal.push(`${info.importes} importes sobre las barras`);
+  if (c.tendencia !== undefined && info.tendencia !== c.tendencia) mal.push(`${info.tendencia} líneas de tendencia`);
+  if (!c.ventana && info.bandas !== 16) mal.push(`${info.bandas} franjas de punta/llano (deberían ser 16)`);
+  if (info.ancho > c.ancho) mal.push(`se sale de la pantalla (${info.ancho} px)`);
+  console.log(`${mal.length ? "✗" : "✓"} ${c.nombre}${mal.length ? ": " + mal.join("; ") : ""}`);
+  fallos.push(...mal);
+  await pag.close();
+}
+await navegador.close();
+servidor.close();
+process.exit(fallos.length ? 1 : 0);

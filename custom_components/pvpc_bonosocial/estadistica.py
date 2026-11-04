@@ -18,7 +18,7 @@ from collections.abc import Awaitable, Mapping
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.util import slugify
 
@@ -63,6 +63,16 @@ def metadatos_energia(statistic_id: str, nombre: str) -> dict:
 
 # Lo más que se espera al recorder antes de leer una estadística recién escrita.
 ESPERA_RECORDER = 30
+# Clave en hass.data: hay escrituras de estadísticas encoladas desde la última espera.
+_PENDIENTE = f"{DOMAIN}_estadisticas_pendientes"
+
+
+def _encolar(hass: HomeAssistant, metadatos: dict, filas: list) -> None:
+    """`async_add_external_statistics` apuntando que hay escrituras pendientes de guardar."""
+    from homeassistant.components.recorder.statistics import async_add_external_statistics
+
+    hass.data[_PENDIENTE] = True
+    async_add_external_statistics(hass, metadatos, filas)
 
 
 async def async_esperar_recorder(hass: HomeAssistant) -> None:
@@ -80,9 +90,15 @@ async def async_esperar_recorder(hass: HomeAssistant) -> None:
     """
     from homeassistant.components.recorder import get_instance
 
-    instancia = get_instance(hass)
-    if hass.is_stopping or not instancia.is_alive():
+    # Solo hace falta esperar si esta integración ha encolado escrituras desde la última espera.
+    # Sin esto, al arrancar HA (el recorder aún no procesa la cola) cada lectura esperaba los
+    # 30 s enteros y el alta de la integración tardaba más de un minuto.
+    if not hass.data.get(_PENDIENTE) or hass.state is not CoreState.running:
         return
+    instancia = get_instance(hass)
+    if not instancia.is_alive():
+        return
+    hass.data[_PENDIENTE] = False
     try:
         from homeassistant.components.recorder.tasks import SynchronizeTask
 
@@ -138,7 +154,6 @@ async def async_copiar_pasado(
     """
     from homeassistant.components.recorder import get_instance
     from homeassistant.components.recorder.statistics import (
-        async_add_external_statistics,
         statistics_during_period,
     )
 
@@ -157,7 +172,7 @@ async def async_copiar_pasado(
         )
     if not nuevas:
         return None
-    async_add_external_statistics(hass, _metadatos(statistic_id, nombre), nuevas)
+    _encolar(hass, _metadatos(statistic_id, nombre), nuevas)
     return suma
 
 
@@ -174,7 +189,6 @@ async def async_escribir(
     """
     if not coste_horas or "recorder" not in hass.config.components:
         return 0
-    from homeassistant.components.recorder.statistics import async_add_external_statistics
 
     horas = sorted(coste_horas)
     copiado = None
@@ -186,7 +200,7 @@ async def async_escribir(
     for t in horas:
         suma += coste_horas[t]
         filas.append({"start": t, "state": float(coste_horas[t]), "sum": float(suma)})
-    async_add_external_statistics(hass, _metadatos(statistic_id, nombre), filas)
+    _encolar(hass, _metadatos(statistic_id, nombre), filas)
     return len(filas)
 
 
@@ -205,7 +219,6 @@ async def async_reescribir_periodo(
         return Decimal(0)
     from homeassistant.components.recorder import get_instance
     from homeassistant.components.recorder.statistics import (
-        async_add_external_statistics,
         statistics_during_period,
     )
 
@@ -243,7 +256,7 @@ async def async_reescribir_periodo(
             nuevas.append(
                 {"start": t, "state": f.get("state") or 0.0, "sum": float(Decimal(str(f["sum"])) + delta)}
             )
-    async_add_external_statistics(hass, metadatos or _metadatos(statistic_id, nombre), nuevas)
+    _encolar(hass, metadatos or _metadatos(statistic_id, nombre), nuevas)
     return delta
 
 
@@ -360,7 +373,6 @@ async def async_escribir_facturas(
     no se guardan, para que el gráfico conserve toda la evolución, salvo con `rehacer`: entonces
     se borra entera y se escribe de nuevo (un periodo sustituido por otro con otras fechas)."""
     from homeassistant.components.recorder.models import StatisticMeanType
-    from homeassistant.components.recorder.statistics import async_add_external_statistics
 
     filas = filas_facturas(cerradas, zona)
     if not filas:
@@ -378,4 +390,4 @@ async def async_escribir_facturas(
         from homeassistant.components.recorder import get_instance
 
         get_instance(hass).async_clear_statistics([metadatos["statistic_id"]])
-    async_add_external_statistics(hass, metadatos, filas)
+    _encolar(hass, metadatos, filas)

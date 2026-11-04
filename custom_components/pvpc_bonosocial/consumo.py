@@ -46,7 +46,11 @@ async def async_kwh_horarios(
         if cambio is None:
             continue
         inicio = datetime.fromtimestamp(fila["start"], UTC)
-        kwh = Decimal(str(cambio)).quantize(CUATRO_DECIMALES)
+        kwh = Decimal(str(cambio))
+        if not kwh.is_finite():
+            _LOGGER.debug("%s: consumo no finito a las %s (%s); se descarta", statistic_id, inicio, cambio)
+            continue
+        kwh = kwh.quantize(CUATRO_DECIMALES)
         if kwh < 0:
             _LOGGER.debug("%s: consumo negativo a las %s (%s kWh); se toma 0", statistic_id, inicio, kwh)
             kwh = Decimal(0)

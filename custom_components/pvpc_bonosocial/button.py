@@ -7,6 +7,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .comparador import Comparador
+from .const import SUBENTRY_SUMINISTRO
+from .helpers import primera_subentrada
 from .prices.coordinator import PVPCConfigEntry
 from .sensor_suministro import dispositivo, entity_id_suministro
 
@@ -32,6 +34,6 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: PVPCConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
     comparadores = getattr(entry.runtime_data, "comparadores", {})
-    primero = next(iter(comparadores), None)
+    primero = primera_subentrada(entry, SUBENTRY_SUMINISTRO)
     for subentry_id, comp in comparadores.items():
         async_add_entities([CompararTarifas(comp, subentry_id == primero)], config_subentry_id=subentry_id)

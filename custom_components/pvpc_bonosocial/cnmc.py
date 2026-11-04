@@ -181,7 +181,10 @@ def parametros(c: ConsultaCnmc) -> dict[str, str]:
 
 
 def _decimal(valor: Any) -> Decimal:
-    return Decimal(str(valor if valor is not None else 0)).quantize(Decimal("0.01"))
+    numero = Decimal(str(valor if valor is not None else 0))
+    if not numero.is_finite():  # NaN o Infinity: rompería la ordenación y las sumas
+        raise ValueError(f"Importe no finito: {valor!r}")
+    return numero.quantize(Decimal("0.01"))
 
 
 def parsear(datos: Mapping[str, Any]) -> list[OfertaCnmc]:
@@ -212,7 +215,8 @@ def parsear(datos: Mapping[str, Any]) -> list[OfertaCnmc]:
                     solo_nuevos_clientes="nuevos clientes" in (validez or "").lower(),
                 )
             )
-        except (KeyError, TypeError, ValueError, ArithmeticError) as exc:
+        except (KeyError, TypeError, ValueError, ArithmeticError, AttributeError) as exc:
+            # AttributeError: la oferta no es un objeto JSON.
             _LOGGER.debug("Oferta de la CNMC descartada (%s): %s", exc, o)
     return sorted(ofertas, key=lambda x: (x.importe_primer_anio, x.id))
 
@@ -243,4 +247,9 @@ async def async_consultar(session: aiohttp.ClientSession, consulta: ConsultaCnmc
         raise CnmcNoResponde("La respuesta no es JSON") from exc
     if not isinstance(datos, dict):
         raise CnmcNoResponde("Formato inesperado")
-    return parsear(datos)
+    try:
+        return parsear(datos)
+    except CnmcNoResponde:
+        raise
+    except Exception as exc:  # la API no está documentada: cualquier forma rara es «no responde»
+        raise CnmcNoResponde(f"Formato inesperado ({type(exc).__name__})") from exc

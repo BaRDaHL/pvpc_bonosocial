@@ -70,6 +70,16 @@ def get_enabled_sensor_keys(
     return sensor_keys
 
 
+def primera_subentrada(entry: ConfigEntry, tipo: str) -> str | None:
+    """Id de la primera subentrada de ese tipo, en el orden de la entrada (el de creación).
+
+    Su entidad lleva el entity_id sin el nombre del suministro. Se calcula sobre las subentradas y
+    no sobre las que han cargado: si la primera falla al arrancar, otra nueva no debe quedarse su
+    entity_id (chocarían cuando la primera vuelva a cargar).
+    """
+    return next((sid for sid, sub in entry.subentries.items() if sub.subentry_type == tipo), None)
+
+
 def make_sensor_unique_id(config_entry_id: str | None, sensor_key: str) -> str:
     """Generate unique_id for each sensor kind and config entry."""
     assert sensor_key in ALL_SENSORS or sensor_key in {KEY_INDEXED, _KEY_REFERENCE_PVPC}

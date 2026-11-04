@@ -152,7 +152,10 @@ def parametros(
 
 
 def _decimal(valor: Any) -> Decimal:
-    return Decimal(str(valor)).quantize(Decimal("0.01"))
+    numero = Decimal(str(valor))
+    if not numero.is_finite():  # NaN o Infinity no pueden ser el total de una factura
+        raise ValueError(f"Importe no finito: {valor!r}")
+    return numero.quantize(Decimal("0.01"))
 
 
 def parsear(datos: Mapping[str, Any]) -> SimulacionCnmc:
@@ -171,6 +174,8 @@ def parsear(datos: Mapping[str, Any]) -> SimulacionCnmc:
     kwh = {
         f"P{i}": Decimal(str(datos[f"consumo{i}"])) for i in (1, 2, 3) if datos.get(f"consumo{i}") is not None
     }
+    if not all(v.is_finite() for v in kwh.values()):
+        raise ValueError("kWh no finitos")
     return SimulacionCnmc(total, desglose, kwh)
 
 
@@ -236,7 +241,12 @@ async def async_simular(
         raise CnmcNoResponde("La respuesta no es JSON") from exc
     if not isinstance(datos, dict):
         raise CnmcNoResponde("Formato inesperado")
-    return parsear(datos)
+    try:
+        return parsear(datos)
+    except CnmcNoResponde:
+        raise
+    except Exception as exc:  # la API no está documentada: cualquier forma rara es «no responde»
+        raise CnmcNoResponde(f"Formato inesperado ({type(exc).__name__})") from exc
 
 
 def periodo_curva(inicio: date, fin: date, zona) -> tuple[datetime, datetime]:

@@ -12,8 +12,9 @@ Repairs (`usar_estadistica_coste`): nunca automáticamente.
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from collections.abc import Mapping
+from collections.abc import Awaitable, Mapping
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -60,10 +61,48 @@ def metadatos_energia(statistic_id: str, nombre: str) -> dict:
     }
 
 
+# Lo más que se espera al recorder antes de leer una estadística recién escrita.
+ESPERA_RECORDER = 30
+
+
+async def async_esperar_recorder(hass: HomeAssistant) -> None:
+    """Espera a que el recorder guarde lo que tiene en cola antes de leer de la BD.
+
+    `async_add_external_statistics` solo encola la importación: si justo después se lee el `sum`
+    de la BD (p. ej. al cerrar un periodo y escribir el siguiente, o al reescribir uno cerrado y
+    después el periodo en curso) se lee el de antes y la suma da un salto en el panel de Energía.
+
+    Se encola una sincronización detrás de lo pendiente: el recorder procesa la cola en orden y la
+    resuelve tras confirmar (commit) lo anterior. `Recorder.async_block_till_done` no basta: si la
+    importación ya ha salido de la cola pero aún se está guardando, la cola está vacía y vuelve sin
+    esperar. Con el recorder parado o atascado no se bloquea la actualización: tras
+    `ESPERA_RECORDER` s se lee lo que haya.
+    """
+    from homeassistant.components.recorder import get_instance
+
+    instancia = get_instance(hass)
+    if hass.is_stopping or not instancia.is_alive():
+        return
+    try:
+        from homeassistant.components.recorder.tasks import SynchronizeTask
+
+        futuro: asyncio.Future[None] = hass.loop.create_future()
+        instancia.queue_task(SynchronizeTask(futuro))
+        espera: Awaitable[None] = futuro
+    except Exception:  # API interna del recorder: si cambia, lo público
+        espera = instancia.async_block_till_done()
+    try:
+        async with asyncio.timeout(ESPERA_RECORDER):
+            await espera
+    except TimeoutError:
+        _LOGGER.warning("El recorder no ha guardado la cola en %d s; se lee lo que haya", ESPERA_RECORDER)
+
+
 async def async_hay_datos(hass: HomeAssistant, statistic_id: str) -> bool:
     from homeassistant.components.recorder import get_instance
     from homeassistant.components.recorder.statistics import get_last_statistics
 
+    await async_esperar_recorder(hass)
     filas = await get_instance(hass).async_add_executor_job(
         get_last_statistics, hass, 1, statistic_id, False, {"sum"}
     )
@@ -75,6 +114,7 @@ async def async_suma_previa(hass: HomeAssistant, statistic_id: str, antes_de: da
     from homeassistant.components.recorder import get_instance
     from homeassistant.components.recorder.statistics import statistics_during_period
 
+    await async_esperar_recorder(hass)
     filas = await get_instance(hass).async_add_executor_job(
         statistics_during_period,
         hass,
@@ -172,6 +212,7 @@ async def async_reescribir_periodo(
     horas = sorted(coste_horas)
     ultima = horas[-1]
     # sum al final del periodo antes de reescribirlo
+    await async_esperar_recorder(hass)
     filas = await get_instance(hass).async_add_executor_job(
         statistics_during_period, hass, horas[0], None, {statistic_id}, "hour", None, {"sum", "state"}
     )

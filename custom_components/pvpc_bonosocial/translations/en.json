@@ -452,6 +452,14 @@
     "facturacion_no_soportada": {
       "title": "The bill is not calculated in {territorio}",
       "description": "The bill (current period, forecast, today's cost, tariff comparison and CNMC check) is only built for the Peninsula and the Balearic Islands: it uses Madrid time, its periods and VAT. In {territorio} it would be wrong, so supplies are not loaded and their entities are unavailable. PVPC prices keep working.\n\nIf you do not need the supplies, delete them in Settings → Devices & services → PVPC + Bono Social. If you are actually in the Peninsula or the Balearic Islands, check the selected tariff and Home Assistant's time zone."
+    },
+    "subentrada_no_cargada": {
+      "title": "«{nombre}» could not be loaded",
+      "description": "On startup, «{nombre}» failed ({error}) and its entities are unavailable. Prices and the other supplies keep working. It is retried on every reload of the integration; if it happens again, check the Home Assistant log or reconfigure «{nombre}». This notice disappears as soon as it loads correctly."
+    },
+    "periodo_cerrado_incompleto": {
+      "title": "Closed period with hours without consumption in «{suministro}»",
+      "description": "When these periods were closed, the consumption of some hours was missing (for example, Datadis had not published it yet) and those hours were counted as 0 kWh: {periodos}. {horas} hours in total. The period is recalculated automatically as soon as the consumption arrives, and this notice disappears. If it does not arrive within {dias} days, it is left as it is: enter the real bill for the period to correct it."
     }
   },
   "config_subentries": {

@@ -10,11 +10,15 @@ repositorio): no se descarga nada. No hay que añadir el recurso a mano:
   veces en «Error de configuración» (13-oct-2026).
 - En modo YAML no se pueden tocar los recursos: se sigue usando `add_extra_js_url`.
 
-Al eliminar la integración se quita el recurso.
+Al eliminar la integración se quita el recurso. Si se vuelve a añadir sin reiniciar HA, el alta
+de la entrada lo crea otra vez: `async_registrar` se llama en cada `async_setup_entry` y es
+idempotente (la ruta estática y el módulo extra se registran una sola vez por arranque de HA,
+porque aiohttp no admite dos rutas GET iguales; el recurso se crea o se actualiza).
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -25,6 +29,8 @@ from homeassistant.core import HomeAssistant
 _LOGGER = logging.getLogger(__name__)
 ARCHIVO = Path(__file__).parent / "frontend" / "pvpc-bono-social-card.js"
 URL = "/pvpc_bonosocial/pvpc-bono-social-card.js"
+# Estado del registro en `hass.data` (vive hasta reiniciar HA, aunque se borre la integración).
+CLAVE = "pvpc_bonosocial_tarjeta"
 
 
 def _version() -> str:
@@ -32,19 +38,35 @@ def _version() -> str:
 
 
 async def async_registrar(hass: HomeAssistant) -> bool:
-    """Registra la tarjeta. False si no hay frontend (por ejemplo, en pruebas sin HTTP)."""
+    """Registra la tarjeta. False si no hay frontend (por ejemplo, en pruebas sin HTTP).
+
+    Se puede llamar las veces que haga falta (cada alta o recarga de una entrada): la ruta
+    estática y el módulo extra solo la primera vez; el recurso de Lovelace, si falta.
+    """
     if getattr(hass, "http", None) is None or "frontend" not in hass.config.components:
         return False
+    estado: dict[str, Any] = hass.data.setdefault(CLAVE, {})
+    candado: asyncio.Lock = estado.setdefault("candado", asyncio.Lock())
+    async with candado:  # dos entradas que arrancan a la vez no duplican ruta ni recurso
+        return await _async_registrar(hass, estado)
+
+
+async def _async_registrar(hass: HomeAssistant, estado: dict[str, Any]) -> bool:
     from homeassistant.components.frontend import add_extra_js_url
     from homeassistant.components.http import StaticPathConfig
 
-    version = await hass.async_add_executor_job(_version)
-    await hass.http.async_register_static_paths([StaticPathConfig(URL, str(ARCHIVO), cache_headers=False)])
-    url = f"{URL}?v={version}"
+    if "version" not in estado:
+        estado["version"] = await hass.async_add_executor_job(_version)
+    if not estado.get("ruta"):
+        ruta = StaticPathConfig(URL, str(ARCHIVO), cache_headers=False)
+        await hass.http.async_register_static_paths([ruta])
+        estado["ruta"] = True
+    url = f"{URL}?v={estado['version']}"
     if await _async_recurso(hass, url):
         _LOGGER.debug("Tarjeta registrada como recurso de Lovelace: %s", url)
-    else:
+    elif estado.get("extra") != url:
         add_extra_js_url(hass, url)
+        estado["extra"] = url
         _LOGGER.debug("Tarjeta registrada como módulo extra del frontend: %s", url)
     return True
 

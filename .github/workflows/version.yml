@@ -7,6 +7,12 @@ on:
     types: [published]
   push:
     tags: ["v*"]
+  # Para volver a adjuntar el zip a una release si el job «zip» falló.
+  workflow_dispatch:
+    inputs:
+      etiqueta:
+        description: "Etiqueta de la release (vX.Y.Z)"
+        required: true
 
 permissions:
   contents: read
@@ -16,12 +22,36 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.etiqueta || github.ref }}
       - name: La etiqueta coincide con el manifest.json
         run: |
           VERSION=$(jq -r .version custom_components/pvpc_bonosocial/manifest.json)
-          ETIQUETA="${GITHUB_REF#refs/tags/}"
+          ETIQUETA="${{ inputs.etiqueta || github.event.release.tag_name || github.ref_name }}"
           if [ "v$VERSION" != "$ETIQUETA" ]; then
             echo "::error::La etiqueta $ETIQUETA no coincide con la versión $VERSION del manifest.json"
             exit 1
           fi
           echo "Etiqueta $ETIQUETA = manifest $VERSION"
+
+  # Con «zip_release» en hacs.json, HACS instala el zip adjunto a la release y cuenta sus
+  # descargas. Solo se adjunta si la etiqueta coincide con el manifest (job anterior).
+  zip:
+    needs: version
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.etiqueta || github.event.release.tag_name }}
+      - name: Empaquetar custom_components/pvpc_bonosocial
+        run: |
+          cd custom_components/pvpc_bonosocial
+          zip -r -X "$GITHUB_WORKSPACE/pvpc_bonosocial.zip" . -x '__pycache__/*' '*/__pycache__/*' '*.pyc'
+          unzip -l "$GITHUB_WORKSPACE/pvpc_bonosocial.zip" | tail -1
+      - name: Adjuntar a la release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ inputs.etiqueta || github.event.release.tag_name }}" pvpc_bonosocial.zip --clobber

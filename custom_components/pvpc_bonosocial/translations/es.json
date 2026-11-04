@@ -452,6 +452,14 @@
     "facturacion_no_soportada": {
       "title": "La factura no se calcula en {territorio}",
       "description": "La factura (periodo en curso, previsión, coste de hoy, comparador y comprobación con la CNMC) solo está hecha para la Península y Baleares: usa la hora de Madrid, sus periodos y el IVA. En {territorio} saldría mal, así que los suministros no se cargan y sus entidades quedan no disponibles. Los precios del PVPC siguen funcionando.\n\nSi los suministros no te sirven, bórralos en Ajustes → Dispositivos y servicios → PVPC + Bono Social. Si en realidad estás en la Península o Baleares, revisa la tarifa elegida y la zona horaria de Home Assistant."
+    },
+    "subentrada_no_cargada": {
+      "title": "No se ha podido cargar «{nombre}»",
+      "description": "Al arrancar, «{nombre}» ha fallado ({error}) y sus entidades quedan no disponibles. Los precios y los demás suministros siguen funcionando. Se vuelve a intentar en cada recarga de la integración; si se repite, revisa el registro de Home Assistant o reconfigura «{nombre}». El aviso desaparece en cuanto carga bien."
+    },
+    "periodo_cerrado_incompleto": {
+      "title": "Periodo cerrado con horas sin consumo en «{suministro}»",
+      "description": "Al cerrar estos periodos faltaba el consumo de algunas horas (por ejemplo, Datadis aún no lo había publicado), que se han contado como 0 kWh: {periodos}. En total, {horas} horas. El periodo se recalcula solo en cuanto llega el consumo, y el aviso desaparece. Si no llega en {dias} días, se queda como está: introduce la factura real del periodo para corregirlo."
     }
   },
   "config_subentries": {

@@ -20,8 +20,9 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 from homeassistant.util import slugify
 
-from .const import CONF_IDS_HEREDADOS, DOMAIN, PREFIJO_ENTIDADES
+from .const import CONF_IDS_HEREDADOS, DOMAIN, PREFIJO_ENTIDADES, SUBENTRY_SUMINISTRO
 from .facturacion import DatosFacturacion, FacturacionSuministro
+from .helpers import primera_subentrada
 from .prices.aiopvpc.const import REFERENCE_TZ
 
 EUR = "EUR"
@@ -350,6 +351,6 @@ CLAVES = tuple(t.clave for t in TIPOS)
 
 def entidades_de(entry: ConfigEntry, coordinadores: dict[str, FacturacionSuministro]):
     """(subentry_id, entidades) de cada suministro, el primero sin nombre en el entity_id."""
-    primero = next(iter(coordinadores), None)
+    primero = primera_subentrada(entry, SUBENTRY_SUMINISTRO)
     for subentry_id, coord in coordinadores.items():
         yield subentry_id, [tipo(coord, subentry_id == primero) for tipo in TIPOS]

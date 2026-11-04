@@ -42,6 +42,15 @@ const casos = [
   { nombre: "ventana_movil", ancho: 360, q: "calculadas=1&config=" + encodeURIComponent('{"graph":false}'), precio: "0,120", textos: [], ventana: true },
   { nombre: "ingles", ancho: 500, q: "idioma=en", redibujo: true, precio: "0.120", textos: ["Current bill", "peak", "Current hour", "Estimated bill"] },
   { nombre: "cambio_de_hora", ancho: 500, q: "", reloj: "2026-10-20T10:59:50+02:00", precio: "0,120", textos: [] },
+  { nombre: "catalan", ancho: 500, q: "idioma=ca", precio: "0,120", textos: ["Factura del període en curs", "punta", "Hora actual", "Factura estimada"] },
+  { nombre: "gallego", ancho: 500, q: "idioma=gl", precio: "0,120", textos: ["Factura do período en curso", "chan", "Hora actual"] },
+  { nombre: "euskera", ancho: 500, q: "idioma=eu", precio: "0,120", textos: ["Aldi honetako faktura", "laua", "Uneko ordua", "Zenbatetsitako faktura"] },
+  // HA en hora peninsular y el navegador en otra zona: la hora en curso, «hoy» y «mañana» son
+  // las de HA. 00:30 en Madrid = 23:30 del día anterior en Canarias y 22:30 en UTC.
+  { nombre: "zona_canarias", ancho: 500, q: "zona=Europe/Madrid", zonaNavegador: "Atlantic/Canary", fijo: "2026-10-20T00:30:00+02:00", precio: "0,120", textos: ["20/10/2026", "21/10/2026", "(13/09 - 20/10)"] },
+  { nombre: "zona_utc", ancho: 500, q: "zona=Europe/Madrid", zonaNavegador: "UTC", fijo: "2026-10-20T00:30:00+02:00", precio: "0,120", textos: ["20/10/2026", "21/10/2026"] },
+  // Y al revés: HA en Canarias y el navegador en Madrid (10:30 en Madrid = 09:30 en Canarias).
+  { nombre: "zona_ha_canarias", ancho: 500, q: "zona=Atlantic/Canary", zonaNavegador: "Europe/Madrid", fijo: "2026-10-20T10:30:00+02:00", precio: "0,120", textos: [] },
 ];
 const navegador = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
 const fallos = [];
@@ -49,11 +58,13 @@ for (const c of casos) {
   const pag = await navegador.newPage({
     viewport: { width: c.ancho, height: 800 },
     ...(c.reloj ? { timezoneId: "Europe/Madrid" } : {}),
+    ...(c.zonaNavegador ? { timezoneId: c.zonaNavegador } : {}),
   });
   const errores = [];
   pag.on("pageerror", (e) => errores.push(e.message));
   pag.on("console", (m) => m.type() === "error" && errores.push(m.text()));
   if (c.reloj) await pag.clock.install({ time: new Date(c.reloj) });
+  if (c.fijo) await pag.clock.setFixedTime(new Date(c.fijo));
   await pag.goto(`${base}?${c.q}`);
   await pag.waitForFunction(() => window.listo);
   await pag.waitForTimeout(200);
@@ -131,6 +142,19 @@ for (const c of casos) {
     await pag.clock.runFor(2000);
     const despues = await franja();
     if (!antes || antes === despues) mal.push(`la hora actual no avanza al cambiar de hora (${antes} → ${despues})`);
+  }
+  if (c.zonaNavegador) {
+    // La franja «Hora actual» tiene que caer en el mismo sitio que en un navegador que esté en la
+    // zona de HA, en el mismo instante.
+    const x = (p) => p.evaluate(() => document.querySelector("pvpc-bono-social-card").shadowRoot.querySelector("rect.ahora")?.getAttribute("x"));
+    const ref = await navegador.newPage({ viewport: { width: c.ancho, height: 800 }, timezoneId: new URLSearchParams(c.q).get("zona") });
+    await ref.clock.setFixedTime(new Date(c.fijo));
+    await ref.goto(`${base}?${c.q}`);
+    await ref.waitForFunction(() => window.listo);
+    await ref.waitForTimeout(200);
+    const [obtenida, esperada] = [await x(pag), await x(ref)];
+    await ref.close();
+    if (!esperada || obtenida !== esperada) mal.push(`hora actual fuera de sitio (x=${obtenida}, debería ser ${esperada})`);
   }
   if (!info.texto.includes(c.precio)) mal.push(`no sale el precio ${c.precio}`);
   for (const t of c.textos) if (!info.texto.includes(t)) mal.push(`no sale «${t}»`);

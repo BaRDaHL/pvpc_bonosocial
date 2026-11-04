@@ -20,7 +20,8 @@ c.setConfig(JSON.parse(p.get("config")||"{}"));
 const importes=[88.4,95.1,112.7,141.3,156.9,121.5,104.2,97.8];
 const callWS=async(m)=>m.type==="recorder/list_statistic_ids"?[{statistic_id:"sensor.otro"},{statistic_id:"pvpc_bonosocial:facturas_prueba"}]
 :{"pvpc_bonosocial:facturas_prueba":importes.map((v,i)=>({start:Date.UTC(2026,i+1,12,22),max:v,mean:v,min:v}))};
-c.hass={states:estados,locale:{language:p.get("idioma")||"es"},language:p.get("idioma")||"es",callWS};
+// Zona horaria de HA (?zona=Europe/Madrid); sin ella, la tarjeta usa la del navegador.
+c.hass={states:estados,locale:{language:p.get("idioma")||"es"},language:p.get("idioma")||"es",callWS,...(p.get("zona")?{config:{time_zone:p.get("zona")}}:{})};
 document.body.appendChild(c);
 window.listo=true;
 </script></body></html>

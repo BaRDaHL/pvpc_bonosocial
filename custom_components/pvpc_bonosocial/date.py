@@ -10,7 +10,9 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .const import SUBENTRY_SUMINISTRO
 from .facturacion import FacturacionSuministro
+from .helpers import primera_subentrada
 from .prices.coordinator import PVPCConfigEntry
 from .sensor_suministro import dispositivo, entity_id_suministro
 
@@ -51,6 +53,6 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: PVPCConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
     suministros = getattr(entry.runtime_data, "suministros", {})
-    primero = next(iter(suministros), None)
+    primero = primera_subentrada(entry, SUBENTRY_SUMINISTRO)
     for subentry_id, coord in suministros.items():
         async_add_entities([FinPeriodo(coord, subentry_id == primero)], config_subentry_id=subentry_id)

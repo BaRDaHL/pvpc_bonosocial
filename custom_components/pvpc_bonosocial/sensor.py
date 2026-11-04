@@ -892,7 +892,7 @@ async def async_setup_entry(
     # Entidades de factura de cada suministro, asociadas a su subentrada.
     for subentry_id, entidades in entidades_suministro(entry, getattr(coordinator, "suministros", {})):
         async_add_entities(entidades, config_subentry_id=subentry_id)
-    for subentry_id, entidades in entidades_comparador(getattr(coordinator, "comparadores", {})):
+    for subentry_id, entidades in entidades_comparador(entry, getattr(coordinator, "comparadores", {})):
         async_add_entities(entidades, config_subentry_id=subentry_id)
     for subentry_id, entidades in entidades_datadis(entry, getattr(coordinator, "datadis", {})):
         async_add_entities(entidades, config_subentry_id=subentry_id)
@@ -930,7 +930,9 @@ class ElecPriceSensor(CoordinatorEntity[ElecPricesDataUpdateCoordinator], Sensor
     def available(self) -> bool:
         """Return if entity is available."""
         sensor_key = self._effective_sensor_key
-        return self.coordinator.data.availability.get(sensor_key, False)
+        # Sin datos si ESIOS no respondió al arrancar y el histórico no tenía los de hoy.
+        data = self.coordinator.data
+        return data is not None and data.availability.get(sensor_key, False)
 
     @property
     def _effective_sensor_key(self) -> str:
@@ -970,7 +972,8 @@ class ElecPriceSensor(CoordinatorEntity[ElecPricesDataUpdateCoordinator], Sensor
     def update_current_price(self, now: datetime) -> None:
         """Update the sensor state, by selecting the current price for this hour."""
         sensor_key = self._effective_sensor_key
-        self.coordinator.api.process_state_and_attributes(self.coordinator.data, sensor_key, now)
+        if self.coordinator.data is not None:
+            self.coordinator.api.process_state_and_attributes(self.coordinator.data, sensor_key, now)
         self.async_write_ha_state()
 
     @property
@@ -1046,8 +1049,9 @@ class PVPCAttributeSensor(CoordinatorEntity[ElecPricesDataUpdateCoordinator], Se
     def available(self) -> bool:
         """Return if entity is available."""
         if self.entity_description.entity_category == EntityCategory.DIAGNOSTIC:
-            return self.coordinator.last_update_success
-        return self.coordinator.data.availability.get(KEY_PVPC, False)
+            return self.coordinator.last_update_success and self.coordinator.data is not None
+        data = self.coordinator.data
+        return data is not None and data.availability.get(KEY_PVPC, False)
 
     async def async_added_to_hass(self) -> None:
         """Handle entity which will be added."""
@@ -1069,7 +1073,7 @@ class PVPCAttributeSensor(CoordinatorEntity[ElecPricesDataUpdateCoordinator], Se
     @callback
     def _update_on_time_change(self, now: datetime) -> None:
         """Refresh state on time changes for time-based attributes."""
-        if self.entity_description.update_on_hour:
+        if self.entity_description.update_on_hour and self.coordinator.data is not None:
             self.coordinator.api.process_state_and_attributes(self.coordinator.data, KEY_PVPC, now)
         self.async_write_ha_state()
 

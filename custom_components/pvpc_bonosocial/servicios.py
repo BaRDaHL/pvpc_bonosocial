@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from decimal import Decimal
 
 import voluptuous as vol
@@ -11,6 +12,8 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 
 from .const import CONF_DESTINO, DOMAIN, SUBENTRY_RESUMEN
+
+_LOGGER = logging.getLogger(__name__)
 
 SERVICIO_CONCILIAR = "conciliar_factura"
 ESQUEMA_CONCILIAR = vol.Schema(
@@ -79,22 +82,35 @@ ESQUEMA_RESUMEN = vol.Schema(
 
 
 async def _async_resumen(call: ServiceCall) -> ServiceResponse:
-    """Envía el resumen (a un destino o a todos los configurados) o, con dry_run, lo devuelve."""
+    """Envía el resumen (a un destino o a todos los configurados) o, con dry_run, lo devuelve.
+
+    Recorre todas las entradas cargadas (una por tarifa: Península y Ceuta/Melilla), cada
+    resumen con el histórico de su entrada. Un destino que falla no corta a los demás.
+    """
     from .notificacion import async_enviar, destino_telegram, texto
 
     hass = call.hass
     entradas = hass.config_entries.async_loaded_entries(DOMAIN)
     if not entradas:
         raise HomeAssistantError("PVPC + Bono Social no está cargada")
-    entry = entradas[0]
-    resumenes = [dict(s.data) for s in entry.subentries.values() if s.subentry_type == SUBENTRY_RESUMEN]
+    # (entrada, datos del resumen) de todos los resúmenes configurados
+    resumenes = [
+        (entry, dict(s.data))
+        for entry in entradas
+        for s in entry.subentries.values()
+        if s.subentry_type == SUBENTRY_RESUMEN
+    ]
     destino = call.data.get("destino")
     if destino:
-        datos = next((r for r in resumenes if r[CONF_DESTINO] == destino), resumenes[0] if resumenes else {})
-        resumenes = [{**datos, CONF_DESTINO: destino}]
+        # Los resúmenes con ese destino (en la entrada a la que pertenecen) o, si no hay
+        # ninguno, el primer resumen configurado (con sus opciones) enviado a ese destino.
+        con_destino = [(e, r) for e, r in resumenes if r[CONF_DESTINO] == destino]
+        if not con_destino:
+            con_destino = [resumenes[0] if resumenes else (entradas[0], {})]
+        resumenes = [(e, {**r, CONF_DESTINO: destino}) for e, r in con_destino]
     manana = call.data["manana"]
     if call.data["dry_run"]:
-        datos = resumenes[0] if resumenes else {}
+        entry, datos = resumenes[0] if resumenes else (entradas[0], {})
         markdown = not datos.get(CONF_DESTINO) or destino_telegram(hass, datos[CONF_DESTINO]) is not None
         mensaje = texto(hass, entry, datos, manana, markdown)
         if mensaje is None:  # mañana aún sin precios
@@ -103,12 +119,24 @@ async def _async_resumen(call: ServiceCall) -> ServiceResponse:
     if not resumenes:
         raise HomeAssistantError("No hay ningún resumen configurado: añade uno o indica el destino")
     enviados = 0
-    for datos in resumenes:
-        if await async_enviar(hass, entry, datos, manana):
-            enviados += 1
+    fallidos: list[str] = []
+    sin_precios: list[str] = []
+    for entry, datos in resumenes:
+        try:
+            if await async_enviar(hass, entry, datos, manana):
+                enviados += 1
+            else:  # mañana aún sin precios para esa entrada
+                sin_precios.append(datos[CONF_DESTINO])
+        except Exception as exc:  # cualquier fallo de un destino no corta a los demás
+            _LOGGER.error("%s: no se pudo enviar el resumen a %s: %s", DOMAIN, datos[CONF_DESTINO], exc)
+            fallidos.append(datos[CONF_DESTINO])
     if not enviados:
+        if fallidos:
+            raise HomeAssistantError(f"No se pudo enviar el resumen a {', '.join(fallidos)}")
         raise HomeAssistantError("Mañana aún no tiene precios publicados")
-    return {"enviados": enviados} if call.return_response else None
+    if not call.return_response:
+        return None
+    return {"enviados": enviados, "fallidos": fallidos, "sin_precios": sin_precios}
 
 
 SERVICIO_COMPARAR = "comparar_tarifas"

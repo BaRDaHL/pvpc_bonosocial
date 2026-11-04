@@ -3,8 +3,10 @@
 import logging
 from datetime import datetime, timedelta
 
+from homeassistant.config_entries import ConfigSubentry
 from homeassistant.const import CONF_API_TOKEN, CONF_NAME, Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
@@ -50,7 +52,12 @@ from .limpieza import async_olvidar_entrada, async_reconciliar
 from .migracion import async_migrar_v02
 from .notificacion import programar as programar_resumenes
 from .prices.aiopvpc.const import KEY_ADJUSTMENT
-from .prices.coordinator import ElecPricesDataUpdateCoordinator, PVPCConfigEntry, zona_de_tarifa
+from .prices.coordinator import (
+    REINTENTO_SIN_PRECIOS,
+    ElecPricesDataUpdateCoordinator,
+    PVPCConfigEntry,
+    zona_de_tarifa,
+)
 from .prices.historico import HistoricoPrecios
 from .servicios import registrar as registrar_servicios
 from .tarjeta import async_quitar as async_quitar_tarjeta
@@ -61,18 +68,24 @@ _DEPENDENCY_LOGGERS: tuple[str, ...] = ("custom_components.pvpc_bonosocial.price
 
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.DATE, Platform.BUTTON]
 ISSUE_TERRITORIO = "facturacion_no_soportada"
+ISSUE_SUBENTRADA = "subentrada_no_cargada"
 NOMBRES_TERRITORIO = {"canarias": "Canarias", "ceuta_melilla": "Ceuta y Melilla"}
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Servicios y tarjeta de la integración (se registran una vez, no por entrada)."""
+    """Servicios de la integración (se registran una vez, no por entrada)."""
     registrar_servicios(hass)
+    return True
+
+
+async def _async_tarjeta(hass: HomeAssistant) -> None:
+    """Registra la tarjeta en cada alta de entrada: si se borró la integración (lo que quita el
+    recurso) y se vuelve a añadir sin reiniciar HA, `async_setup` no se repite (T4)."""
     try:
         await async_registrar_tarjeta(hass)
     except Exception:  # la tarjeta nunca debe impedir que arranquen los sensores
         _LOGGER.exception("No se pudo registrar la tarjeta de PVPC + Bono Social")
-    return True
 
 
 def _sync_dependency_log_levels() -> None:
@@ -87,6 +100,7 @@ def _sync_dependency_log_levels() -> None:
 async def async_setup_entry(hass: HomeAssistant, entry: PVPCConfigEntry) -> bool:
     """Set up pvpc hourly pricing from a config entry."""
     _sync_dependency_log_levels()
+    await _async_tarjeta(hass)
     if origen := entry.data.get(CONF_IMPORTAR):
         # Antes de leer la configuración y de cargar las plataformas (DISENO §9.2).
         await async_importar(hass, entry, origen)
@@ -161,7 +175,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: PVPCConfigEntry) -> bool
         sorted(sensor_keys),
         entry.version,
     )
-    await coordinator.async_config_entry_first_refresh()
+    await coordinator.async_cargar_historico()
+    try:
+        await coordinator.async_config_entry_first_refresh()
+    except ConfigEntryNotReady as err:
+        if not _arrancar_sin_esios(entry, coordinator):
+            raise
+        _LOGGER.warning(
+            "ESIOS no responde al arrancar (%s); se arranca con lo guardado y se reintentará cada %s",
+            err.__cause__ or err,
+            coordinator.update_interval,
+        )
     await coordinator.async_iniciar_historico()
     await _async_preparar_suministros(hass, entry, coordinator)
 
@@ -178,6 +202,43 @@ async def async_setup_entry(hass: HomeAssistant, entry: PVPCConfigEntry) -> bool
     return True
 
 
+def _arrancar_sin_esios(entry: PVPCConfigEntry, coordinator: ElecPricesDataUpdateCoordinator) -> bool:
+    """ESIOS no ha respondido a la primera descarga: ¿se arranca igualmente?
+
+    Sí si hay algo que dar sin él: los precios de hoy guardados en el histórico (el mismo
+    archivo 70) o algún suministro o cuenta de Datadis (su factura sale del histórico y del
+    consumo, no de la descarga de hoy). Los precios sin dato quedan no disponibles y el
+    coordinador reintenta cada `REINTENTO_SIN_PRECIOS` hasta que ESIOS responda. En una
+    instalación sin nada guardado ni suministros, ConfigEntryNotReady: el reintento de HA.
+    """
+    sembrado = coordinator.sembrar_desde_historico()
+    con_subentradas = any(
+        s.subentry_type in (SUBENTRY_SUMINISTRO, SUBENTRY_DATADIS) for s in entry.subentries.values()
+    )
+    if not (sembrado or con_subentradas):
+        return False
+    coordinator.update_interval = REINTENTO_SIN_PRECIOS
+    return True
+
+
+def _avisar_subentrada(hass: HomeAssistant, sub: ConfigSubentry, error: Exception | None) -> None:
+    """Aviso en Reparaciones de un suministro o cuenta de Datadis que no se ha podido cargar
+    (se borra cuando vuelve a cargar). Los demás y los precios siguen funcionando."""
+    issue_id = f"{ISSUE_SUBENTRADA}_{sub.subentry_id}"
+    if error is None:
+        ir.async_delete_issue(hass, DOMAIN, issue_id)
+        return
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        issue_id,
+        is_fixable=False,
+        severity=ir.IssueSeverity.ERROR,
+        translation_key=ISSUE_SUBENTRADA,
+        translation_placeholders={"nombre": sub.title, "error": (str(error) or type(error).__name__)[:200]},
+    )
+
+
 async def _async_preparar_suministros(
     hass: HomeAssistant, entry: PVPCConfigEntry, coordinator: ElecPricesDataUpdateCoordinator
 ) -> None:
@@ -185,23 +246,46 @@ async def _async_preparar_suministros(
     coordinator.suministros = {}
     coordinator.comparadores = {}
     if not _facturacion_soportada(hass, entry):
+        _borrar_avisos_suministros(hass, entry)
         return
     for subentry_id, sub in entry.subentries.items():
         if sub.subentry_type != SUBENTRY_SUMINISTRO or coordinator.historico is None:
             continue
-        facturacion = FacturacionSuministro(hass, entry, sub, coordinator.historico)
-        await facturacion.async_cargar()
-        entry.async_on_unload(facturacion.async_guardar_ya)
-        await facturacion.async_refresh()
+        try:
+            facturacion = FacturacionSuministro(hass, entry, sub, coordinator.historico)
+            await facturacion.async_cargar()
+            entry.async_on_unload(facturacion.async_guardar_ya)
+            await facturacion.async_refresh()
+            if facturacion.usa_shelly:
+                _programar_shelly(hass, entry, facturacion)
+            if facturacion.usa_segunda_opinion:
+                _programar_segunda_opinion(hass, entry, facturacion)
+        except Exception as err:
+            # Un Store dañado o un dato imposible en la subentrada: fuera solo este suministro.
+            _LOGGER.exception("No se pudo cargar el suministro %s", sub.title)
+            _avisar_subentrada(hass, sub, err)
+            continue
+        _avisar_subentrada(hass, sub, None)
         coordinator.suministros[subentry_id] = facturacion
-        comparador = Comparador(hass, entry, facturacion)
-        await comparador.async_cargar()
-        comparador.programar()
+        try:
+            comparador = Comparador(hass, entry, facturacion)
+            await comparador.async_cargar()
+            comparador.programar()
+        except Exception:
+            # Sin comparador la factura sigue: solo faltan la comparativa y su botón.
+            _LOGGER.exception("No se pudo cargar el comparador de %s", sub.title)
+            continue
         coordinator.comparadores[subentry_id] = comparador
-        if facturacion.usa_shelly:
-            _programar_shelly(hass, entry, facturacion)
-        if facturacion.usa_segunda_opinion:
-            _programar_segunda_opinion(hass, entry, facturacion)
+
+
+def _borrar_avisos_suministros(hass: HomeAssistant, entry: PVPCConfigEntry) -> None:
+    """Sin factura (fuera de la Península) los suministros no se cargan: sus avisos («no se ha
+    podido cargar», «periodo incompleto», CNMC, panel…) ya no se pueden resolver ni se borrarían
+    solos. El aviso de territorio, que es de la entrada, explica lo que pasa."""
+    ids = {sid for sid, sub in entry.subentries.items() if sub.subentry_type == SUBENTRY_SUMINISTRO}
+    for dominio, issue_id in list(ir.async_get(hass).issues):
+        if dominio == DOMAIN and any(sid in issue_id for sid in ids):
+            ir.async_delete_issue(hass, DOMAIN, issue_id)
 
 
 def _facturacion_soportada(hass: HomeAssistant, entry: PVPCConfigEntry) -> bool:
@@ -239,10 +323,16 @@ async def _async_preparar_datadis(
     for subentry_id, sub in entry.subentries.items():
         if sub.subentry_type != SUBENTRY_DATADIS:
             continue
-        cuenta = CuentaDatadis(hass, entry, sub)
-        await cuenta.async_cargar()
-        entry.async_on_unload(cuenta.async_guardar_ya)
-        cuenta.async_set_updated_data(cuenta.resumen())
+        try:
+            cuenta = CuentaDatadis(hass, entry, sub)
+            await cuenta.async_cargar()
+            entry.async_on_unload(cuenta.async_guardar_ya)
+            cuenta.async_set_updated_data(cuenta.resumen())
+        except Exception as err:
+            _LOGGER.exception("No se pudo cargar la cuenta de Datadis %s", sub.title)
+            _avisar_subentrada(hass, sub, err)
+            continue
+        _avisar_subentrada(hass, sub, None)
         coordinator.datadis[subentry_id] = cuenta
         entry.async_create_background_task(hass, cuenta.async_refresh(), f"{DOMAIN} Datadis {sub.title}")
 

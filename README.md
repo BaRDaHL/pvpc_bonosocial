@@ -9,7 +9,7 @@
 
 <p align="center">
 <a href="https://github.com/BaRDaHL/pvpc_bonosocial/releases"><img src="https://img.shields.io/github/v/release/BaRDaHL/pvpc_bonosocial" alt="Release"></a>
-<a href="https://hacs.xyz"><img src="https://img.shields.io/badge/HACS-Custom-41BDF5.svg" alt="HACS"></a>
+<a href="https://hacs.xyz"><img src="https://img.shields.io/badge/HACS-Default-41BDF5.svg" alt="HACS"></a>
 <img src="https://img.shields.io/badge/Home%20Assistant-2025.11%2B-blue" alt="Home Assistant 2025.11+">
 <a href="LICENSE"><img src="https://img.shields.io/github/license/BaRDaHL/pvpc_bonosocial" alt="License"></a>
 </p>
@@ -48,11 +48,11 @@ Know **your electricity bill before it arrives**: PVPC hourly prices *plus* the 
 
 ### Install
 
-[![Open in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=BaRDaHL&repository=pvpc_bonosocial&category=integration)
+It is in the **HACS** default store: no custom repository needed.
 
-1. **HACS → ⋮ → Custom repositories** → `https://github.com/BaRDaHL/pvpc_bonosocial` as **Integration** (or use the button above).
-2. Download **PVPC + Bono Social** and restart Home Assistant.
-3. **Settings → Devices & services → Add integration → PVPC + Bono Social.**
+1. [![Open in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=BaRDaHL&repository=pvpc_bonosocial&category=integration) — or search **PVPC + Bono Social** in HACS.
+2. **Download** it and restart Home Assistant.
+3. [![Add integration](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=pvpc_bonosocial) — or **Settings → Devices & services → Add integration → PVPC + Bono Social.**
 4. **Add supply** for your contract to get the bill, then add the **PVPC + Bono Social** card to a dashboard.
 
 ### Documentation
@@ -109,9 +109,11 @@ Sabe **tu factura de la luz antes de que llegue**: precios horarios del PVPC *y*
 
 ### Instalación
 
-1. **HACS → ⋮ → Repositorios personalizados** → `https://github.com/BaRDaHL/pvpc_bonosocial` como **Integración** (o el botón de arriba).
-2. Descarga **PVPC + Bono Social** y reinicia Home Assistant.
-3. **Ajustes → Dispositivos y servicios → Añadir integración → PVPC + Bono Social.**
+Está en la tienda oficial de **HACS**: no hace falta añadir ningún repositorio personalizado.
+
+1. [![Abrir en HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=BaRDaHL&repository=pvpc_bonosocial&category=integration) — o busca **PVPC + Bono Social** en HACS.
+2. **Descárgala** y reinicia Home Assistant.
+3. [![Añadir integración](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=pvpc_bonosocial) — o **Ajustes → Dispositivos y servicios → Añadir integración → PVPC + Bono Social.**
 4. **Añadir suministro** con tu contrato para tener la factura, y pon la tarjeta **PVPC + Bono Social** en un panel.
 
 ### Documentación

@@ -515,12 +515,17 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
                         kwh=dict(f.kwh),
                         total=f.total,
                         bonificados=f.bonificados,
+                        comprobar=False,
                     )
                 except ValueError:
                     _LOGGER.warning("Factura %s del ZIP no válida (%s – %s)", nombre, f.inicio, f.fin)
                     fallidas.append(nombre)
                 else:
                     hechas += 1
+            if hechas:
+                # Una sola consulta a la CNMC (la de la última factura, la que sale en el sensor)
+                # en lugar de una por factura del ZIP.
+                facturacion.programar_comprobacion()
             return self.async_abort(
                 reason="lote_conciliado",
                 description_placeholders={

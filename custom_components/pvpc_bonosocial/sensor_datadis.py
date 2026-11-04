@@ -11,8 +11,9 @@ from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import slugify
 
-from .const import DOMAIN, PREFIJO_ENTIDADES
+from .const import DOMAIN, PREFIJO_ENTIDADES, SUBENTRY_DATADIS
 from .cuenta_datadis import CuentaDatadis
+from .helpers import primera_subentrada
 
 ESTADOS = ["ok", "sin_datos", "sin_datos_recientes", "esperando", "credenciales", "no_responde"]
 
@@ -50,6 +51,6 @@ class EstadoDatadis(CoordinatorEntity[CuentaDatadis], SensorEntity):
 
 
 def entidades_de(entry: ConfigEntry, cuentas: dict[str, CuentaDatadis]):
-    primero = next(iter(cuentas), None)
+    primero = primera_subentrada(entry, SUBENTRY_DATADIS)
     for subentry_id, cuenta in cuentas.items():
         yield subentry_id, [EstadoDatadis(cuenta, subentry_id == primero)]

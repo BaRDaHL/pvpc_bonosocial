@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 from homeassistant.config_entries import ConfigEntry
@@ -35,7 +35,15 @@ from ..const import (
 from ..engine import Tarifas
 from ..helpers import ZONA_CANARIAS, config_entrada
 from .aiopvpc import DEFAULT_POWER_KW, BadApiTokenAuthError, EsiosApiData, PVPCData
-from .aiopvpc.const import KEY_PVPC, REFERENCE_TZ, SENSOR_KEY_TO_DATAID, TARIFFS, normalize_tariff
+from .aiopvpc.const import (
+    KEY_PVPC,
+    PRICE_PRECISION,
+    REFERENCE_TZ,
+    SENSOR_KEY_TO_DATAID,
+    TARIFFS,
+    UTC_TZ,
+    normalize_tariff,
+)
 from .aiopvpc.pvpc_tariff import _price_period_key
 from .historico import HistoricoPrecios
 from .periodos import discrepancias, horas_sin_casar, periodos_del_dia
@@ -45,6 +53,10 @@ _LOGGER = logging.getLogger(__name__)
 PVPCConfigEntry = ConfigEntry["ElecPricesDataUpdateCoordinator"]
 
 INTERVALO_HISTORICO = timedelta(minutes=30)
+INTERVALO_PRECIOS = timedelta(minutes=30)
+# Sin precios frescos de ESIOS (arranque con ESIOS caído): se reintenta antes que cada 30 min,
+# pero sin el ritmo del reintento de HA (segundos), que con Incapsula alarga el bloqueo.
+REINTENTO_SIN_PRECIOS = timedelta(minutes=5)
 ISSUE_PERIODOS = "periodos_discrepantes"
 ISSUE_PEAJES = "tabla_peajes_desfasada"
 ISSUE_TARIFAS = "tarifas_por_revisar"
@@ -122,12 +134,14 @@ class ElecPricesDataUpdateCoordinator(  # pylint: disable=too-few-public-methods
             sensor_keys=tuple(sensor_keys),
         )
         self._better_price_target = better_price_target
+        # Los datos son la semilla del histórico (ESIOS no respondió al arrancar), no una descarga.
+        self._semilla = False
         super().__init__(
             hass,
             _LOGGER,
             config_entry=entry,
             name=DOMAIN,
-            update_interval=timedelta(minutes=30),
+            update_interval=INTERVALO_PRECIOS,
         )
 
     @property
@@ -153,14 +167,78 @@ class ElecPricesDataUpdateCoordinator(  # pylint: disable=too-few-public-methods
     async def _async_update_data(self) -> EsiosApiData:
         """Update electricity prices from the ESIOS API."""
         now = dt_util.utcnow()
+        # Con la semilla del histórico se descarga como en la primera carga: si se le pasara,
+        # aiopvpc vería los precios de hoy y no los pediría nunca a ESIOS.
+        actuales = None if self._semilla else self.data
         try:
-            api_data = await self.api.async_update_all(self.data, now)
+            api_data = await self.api.async_update_all(actuales, now)
         except BadApiTokenAuthError as exc:
+            self._reponer_semilla(now)
             raise ConfigEntryAuthFailed from exc
+        except Exception:
+            self._reponer_semilla(now)
+            raise
         if not api_data or not api_data.sensors or not any(api_data.availability.values()):
+            if self.data is None or self._semilla:
+                self.update_interval = REINTENTO_SIN_PRECIOS
+            self._reponer_semilla(now)
             raise UpdateFailed
+        self._semilla = False
+        self.update_interval = INTERVALO_PRECIOS
         self._log_api_fetch(api_data, now)
         return api_data
+
+    def _reponer_semilla(self, now: datetime) -> None:
+        """Tras un reintento fallido con la semilla, vuelve a calcular su estado en el API.
+
+        `async_update_all(None)` deja el estado y los atributos del API compartido vacíos (no
+        había datos que procesar) y los sensores pasarían a «desconocido» en su siguiente
+        escritura, aunque el coordinador siga teniendo la semilla.
+        """
+        if self._semilla and self.data is not None:
+            self.api.process_state_and_attributes(self.data, KEY_PVPC, now)
+
+    @property
+    def sin_precios_frescos(self) -> bool:
+        """ESIOS aún no ha respondido desde el arranque (precios de la semilla o ninguno)."""
+        return self.data is None or self._semilla
+
+    def sembrar_desde_historico(self) -> bool:
+        """Si ESIOS no responde al arrancar, los precios de hoy (y mañana) salen del histórico.
+
+        El histórico guarda el mismo archivo 70 público que descarga aiopvpc, así que la serie
+        es la misma (€/kWh redondeados como en `extract_prices_from_esios_public`, con la hora
+        «h» del archivo como hora local, también en Canarias). Solo sirve para el precio PVPC: el
+        indexado y los de la API privada quedan no disponibles hasta que ESIOS responda. Devuelve
+        False si el histórico no tiene la hora actual (no hay nada que enseñar).
+        """
+        if self.data is not None or self.historico is None:
+            return False
+        zona = dt_util.get_time_zone(self.hass.config.time_zone) or REFERENCE_TZ
+        ahora = dt_util.utcnow()
+        hoy = ahora.astimezone(REFERENCE_TZ).date()
+        serie: dict[datetime, float] = {}
+        for dia in (hoy, hoy + timedelta(days=1)):
+            precios = self.historico.dia(dia)
+            if precios is None:
+                continue
+            inicio = datetime.combine(dia, time(0), zona).astimezone(UTC_TZ)
+            for i, pcb in enumerate(precios.pcb):
+                serie[inicio + timedelta(hours=i)] = round(float(pcb) / 1000.0, PRICE_PRECISION)
+        if not serie:
+            return False
+        semilla = EsiosApiData(
+            sensors={KEY_PVPC: serie},
+            availability={KEY_PVPC: False},
+            data_source=self.api._data_source,  # aiopvpc va incluida en la integración
+            last_update=ahora,
+        )
+        if not self.api.process_state_and_attributes(semilla, KEY_PVPC, ahora):
+            return False
+        self.data = semilla
+        self._semilla = True
+        self.update_interval = REINTENTO_SIN_PRECIOS
+        return True
 
     def _log_api_fetch(self, api_data: EsiosApiData, now: datetime) -> None:
         """Log fetched API payload details when debug logging is enabled."""
@@ -203,11 +281,11 @@ class ElecPricesDataUpdateCoordinator(  # pylint: disable=too-few-public-methods
 
     # --- histórico de precios (PCB y TEU por hora) -----------------------------------
 
-    async def async_iniciar_historico(self) -> None:
-        """Carga el histórico guardado y programa su actualización en segundo plano.
+    async def async_cargar_historico(self) -> None:
+        """Carga el histórico guardado (sin red): antes de la primera descarga de ESIOS, para
+        que esta ya use el periodo publicado y para arrancar con él si ESIOS no responde.
 
         El periodo publicado (TEU) pasa a mandar sobre la regla en los días con precio.
-        Un fallo del histórico no impide que funcionen los sensores de precio.
         """
         tarifas = await self.hass.async_add_executor_job(Tarifas.empaquetadas)
         historico = HistoricoPrecios(self.hass, zona_de_tarifa(self.api.tariff), tarifas)
@@ -215,6 +293,14 @@ class ElecPricesDataUpdateCoordinator(  # pylint: disable=too-few-public-methods
         self.historico = historico
         self.api.published_period = _en_hora_de_precios(historico.periodo_publicado)
         self._vigilar_tarifas()
+
+    async def async_iniciar_historico(self) -> None:
+        """Programa la actualización del histórico en segundo plano (y lo carga si falta).
+
+        Un fallo del histórico no impide que funcionen los sensores de precio.
+        """
+        if self.historico is None:
+            await self.async_cargar_historico()
         entry = self.config_entry
         entry.async_on_unload(
             async_track_time_interval(self.hass, self._async_tick_historico, INTERVALO_HISTORICO)

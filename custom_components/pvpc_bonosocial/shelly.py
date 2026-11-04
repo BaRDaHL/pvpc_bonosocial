@@ -60,6 +60,8 @@ def horas_completas(texto: str) -> dict[datetime, Decimal]:
             wh = Decimal(fila[1])
         except (ValueError, InvalidOperation):
             continue
+        if not wh.is_finite():  # «nan»/«inf»: se descarta el intervalo (la hora queda incompleta)
+            continue
         if t in vistos:  # la memoria es circular: no contar dos veces
             continue
         vistos.add(t)

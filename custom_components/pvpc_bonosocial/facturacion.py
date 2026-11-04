@@ -13,6 +13,7 @@ Cada suministro (subentrada) tiene un coordinador que, cada 15 minutos:
 
 from __future__ import annotations
 
+import asyncio
 import calendar
 import logging
 from dataclasses import dataclass, field, replace
@@ -104,6 +105,15 @@ ISSUE_HUECO = "dias_sin_factura"
 ISSUE_CNMC = "factura_no_cuadra"
 TOLERANCIA_CNMC = Decimal("0.10")  # € de diferencia que se dan por buenos (redondeos)
 ISSUE_SHELLY = "shelly_no_coincide"
+ISSUE_INCOMPLETO = "periodo_cerrado_incompleto"
+# Días tras el cierre en los que un periodo cerrado con horas sin consumo se sigue recalculando
+# (Datadis puede llegar con días de retraso). Después se deja como está, marcado «incompleta».
+DIAS_RECALCULO_INCOMPLETA = 30
+# Con un medidor de HA (una entidad), las horas sin dato son casi siempre horas con HA parado: no
+# van a llegar nunca y su consumo cae en la hora siguiente. Solo se marca «incompleta» (con aviso)
+# si faltan más de estas. Con una estadística externa (Datadis u otra importación, que llega con
+# retraso) basta con que falte una.
+UMBRAL_HORAS_INCOMPLETA = 24
 
 
 def corte_siguiente(inicio: date) -> date:
@@ -215,6 +225,12 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         )
         self._estado: dict[str, Any] = {}
         self._escrito: tuple | None = None  # (primera hora, última hora, acumulado) ya escritos
+        # Cierre de periodos (actualización) frente a conciliar o fijar el corte: los dos leen
+        # `corte_actual` y `cerradas`, esperan al recorder y luego escriben; sin candado una
+        # factura introducida a mitad de un cierre dejaba periodos solapados (auditoría 20-oct M2).
+        self._candado = asyncio.Lock()
+        # Una sola consulta a la CNMC a la vez (arranque, 04:10, factura nueva, lote ZIP).
+        self._candado_cnmc = asyncio.Lock()
 
     @property
     def datos(self) -> dict[str, Any]:
@@ -279,9 +295,11 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         )
 
     def horas_shelly(self) -> dict[datetime, Decimal]:
-        return {
+        # Un valor no finito (NaN guardado por una versión anterior) no entra en la factura.
+        horas = {
             datetime.fromisoformat(k): Decimal(v) for k, v in (self._estado.get("shelly_horas") or {}).items()
         }
+        return {h: v for h, v in horas.items() if v.is_finite()}
 
     @property
     def estado_shelly(self) -> dict[str, Any]:
@@ -365,6 +383,18 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         Si a la curva le faltan horas del periodo y la diferencia supera la tolerancia, el estado
         es «incompleta» (sin aviso), y la comprobación diaria la repite cuando haya más horas.
         """
+        async with self._candado_cnmc:
+            return await self._async_comprobar_factura(forzar=forzar)
+
+    def programar_comprobacion(self) -> None:
+        """Comprobación con la CNMC en segundo plano, ligada a la entrada para que se cancele en
+        la recarga que sigue a la conciliación."""
+        if self.usa_segunda_opinion:
+            self.config_entry.async_create_background_task(
+                self.hass, self.async_comprobar_factura(forzar=True), f"{DOMAIN} comprobación CNMC"
+            )
+
+    async def _async_comprobar_factura(self, *, forzar: bool) -> dict[str, Any] | None:
         c = self.ultima_conciliada()
         if not self.usa_segunda_opinion or c is None:
             return c.get("cnmc") if c else None
@@ -491,6 +521,10 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
     # --- actualización --------------------------------------------------------------
 
     async def _async_update_data(self) -> DatosFacturacion:
+        async with self._candado:
+            return await self._async_actualizar()
+
+    async def _async_actualizar(self) -> DatosFacturacion:
         inicio = self._inicio_periodo()
         if inicio is None:
             self._avisar_sin_fecha(True)
@@ -508,6 +542,7 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
             await self._async_escribir_coste(cerrada)
             self._guardar_cerrada(inicio, corte, cerrada)
             inicio = corte
+        await self._async_recalcular_incompletas(ahora)
         corte = self._corte(inicio)
         datos = await self._async_estimar(inicio, corte, ahora, cerrar=False)
         datos.anterior = self._anterior_de(inicio)
@@ -636,13 +671,14 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
 
     async def async_fijar_corte(self, corte: date) -> None:
         """Fin del periodo en curso fijado por el usuario (fecha de lectura real de la COR)."""
-        inicio = self._inicio_periodo()
-        if inicio is None or not inicio < corte <= inicio + timedelta(days=62):
-            raise ValueError(
-                f"El fin del periodo debe estar entre {inicio} y {inicio and inicio + timedelta(days=62)}"
-            )
-        self._estado["corte_manual"] = corte.isoformat()
-        self._store.async_delay_save(lambda: self._estado, 5)
+        async with self._candado:
+            inicio = self._inicio_periodo()
+            if inicio is None or not inicio < corte <= inicio + timedelta(days=62):
+                raise ValueError(
+                    f"El fin del periodo debe estar entre {inicio} y {inicio and inicio + timedelta(days=62)}"
+                )
+            self._estado["corte_manual"] = corte.isoformat()
+            self._store.async_delay_save(lambda: self._estado, 5)
         await self.async_request_refresh()
 
     @property
@@ -673,33 +709,150 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         return cerradas[-1] if cerradas else None
 
     def _guardar_cerrada(self, inicio: date, corte: date, datos: DatosFacturacion) -> None:
-        est = datos.estimacion
-        if est is None:
+        fila = self._fila_estimada(inicio, corte, datos)
+        if fila is None:
             return
-        f = est.prevision
         cerradas = [c for c in self._estado.get("cerradas", []) if c["fin"] != corte.isoformat()]
-        cerradas.append(
-            {
-                "inicio": inicio.isoformat(),
-                "fin": corte.isoformat(),
-                "emision": est.emision.isoformat(),
-                "total": str(f.total),
-                "kwh": {p: str(v.quantize(Decimal("0.001"))) for p, v in est.kwh_medidos.items()},
-                "estado": "estimada",
-                "horas_sin_consumo": datos.horas_sin_consumo,
-                "prorrata": self._prorrata(inicio, corte),
-                "consumo": int(sum(est.kwh_medidos.values(), Decimal(0)).quantize(Decimal(1))),
-                "bonificados": None,
-                "total_estimado": str(f.total),
-                "kwh_medido_bruto": str(datos.kwh_medido_bruto.quantize(Decimal("0.001"))),
-                "horas": datos.horas_medidas,
-            }
-        )
+        cerradas.append(fila)
         self._estado["cerradas"] = cerradas[-MAX_CERRADAS:]
         self._estado["corte_actual"] = corte.isoformat()
         if self._estado.get("corte_manual") and date.fromisoformat(self._estado["corte_manual"]) <= corte:
             self._estado.pop("corte_manual")
         self._store.async_delay_save(lambda: self._estado, 5)
+        if fila.get("incompleta"):
+            # Recién estimada: no se vuelve a calcular hasta la hora siguiente.
+            self._estado["incompletas_revisadas"] = (
+                dt_util.now(REFERENCE_TZ).replace(minute=0, second=0, microsecond=0).isoformat()
+            )
+            _LOGGER.warning(
+                "%s: periodo %s – %s cerrado con %d horas sin consumo; se recalculará cuando lleguen",
+                self.subentrada.title,
+                inicio,
+                corte,
+                datos.horas_sin_consumo,
+            )
+
+    def _fila_estimada(self, inicio: date, corte: date, datos: DatosFacturacion) -> dict[str, Any] | None:
+        """Periodo cerrado con la estimación. Si faltan horas de consumo (cuentan como 0 kWh),
+        queda marcado «incompleta» (según `_incompleta`) y se recalcula cuando lleguen
+        (`_async_recalcular_incompletas`)."""
+        est = datos.estimacion
+        if est is None:
+            return None
+        f = est.prevision
+        fila: dict[str, Any] = {
+            "inicio": inicio.isoformat(),
+            "fin": corte.isoformat(),
+            "emision": est.emision.isoformat(),
+            "total": str(f.total),
+            "kwh": {p: str(v.quantize(Decimal("0.001"))) for p, v in est.kwh_medidos.items()},
+            "estado": "estimada",
+            "horas_sin_consumo": datos.horas_sin_consumo,
+            "prorrata": self._prorrata(inicio, corte),
+            "consumo": int(sum(est.kwh_medidos.values(), Decimal(0)).quantize(Decimal(1))),
+            "bonificados": None,
+            "total_estimado": str(f.total),
+            "kwh_medido_bruto": str(datos.kwh_medido_bruto.quantize(Decimal("0.001"))),
+            "horas": datos.horas_medidas,
+        }
+        if self._incompleta(datos.horas_sin_consumo):
+            fila["incompleta"] = True
+        return fila
+
+    def _incompleta(self, horas_sin_consumo: int) -> bool:
+        """Si un periodo cerrado con esas horas sin consumo se marca «incompleta» (y se avisa)."""
+        if not horas_sin_consumo:
+            return False
+        if ":" in self.datos[CONF_FUENTE]:  # estadística externa: las horas que faltan llegarán
+            return True
+        return horas_sin_consumo > UMBRAL_HORAS_INCOMPLETA
+
+    def _incompletas(self, hoy: date) -> list[dict[str, Any]]:
+        """Periodos estimados cerrados con horas sin consumo que aún se recalculan."""
+        limite = (hoy - timedelta(days=DIAS_RECALCULO_INCOMPLETA)).isoformat()
+        return [
+            c
+            for c in self.cerradas
+            if c.get("estado") == "estimada"
+            and c.get("incompleta")
+            and c["fin"] >= limite
+            # las guardadas antes del umbral (p. ej. 1 h con HA parado) dejan de avisar
+            and self._incompleta(c.get("horas_sin_consumo", 0))
+        ]
+
+    async def _async_recalcular_incompletas(self, ahora: datetime) -> None:
+        """Rehace los periodos cerrados a los que les faltaban horas si han llegado (una vez por hora).
+
+        Se sustituye la fila (total, kWh, horas que faltan) y se reescribe su estadística de coste
+        desplazando las horas posteriores. Cuando ya no falta ninguna deja de estar «incompleta» y
+        el aviso se quita. Va dentro del candado del cierre.
+        """
+        hoy = ahora.date()
+        pendientes = self._incompletas(hoy)
+        hora = ahora.replace(minute=0, second=0, microsecond=0).isoformat()
+        if pendientes and self._estado.get("incompletas_revisadas") != hora:
+            self._estado["incompletas_revisadas"] = hora
+            for c in pendientes:
+                inicio, fin = date.fromisoformat(c["inicio"]), date.fromisoformat(c["fin"])
+                try:
+                    datos = await self._async_estimar(inicio, fin, ahora, cerrar=True)
+                except Exception:
+                    continue  # ya registrado en _async_estimar; se reintenta en la próxima hora
+                if datos.horas_sin_consumo >= c.get("horas_sin_consumo", 0):
+                    continue  # no ha llegado nada nuevo
+                fila = self._fila_estimada(inicio, fin, datos)
+                if fila is None:
+                    continue
+                fila["emision"] = c.get("emision", fila["emision"])
+                cerradas = [x for x in self._estado.get("cerradas", []) if x is not c]
+                cerradas.append(fila)
+                cerradas.sort(key=lambda x: x["fin"])
+                self._estado["cerradas"] = cerradas
+                _LOGGER.info(
+                    "%s: periodo %s – %s recalculado (%d horas sin consumo; antes, %d)",
+                    self.subentrada.title,
+                    inicio,
+                    fin,
+                    datos.horas_sin_consumo,
+                    c.get("horas_sin_consumo", 0),
+                )
+                await self._async_reescribir_coste_cerrado(datos)
+                self._escrito = None  # el periodo en curso se reescribe sobre la suma nueva
+            self._store.async_delay_save(lambda: self._estado, 5)
+        self._avisar_incompletas(hoy)
+
+    async def _async_reescribir_coste_cerrado(self, datos: DatosFacturacion) -> None:
+        if not datos.coste_horas:
+            return
+        try:
+            await async_reescribir_periodo(
+                self.hass, self.estadistica_id, self.subentrada.title, datos.coste_horas
+            )
+        except Exception:
+            _LOGGER.exception("%s: no se pudo reescribir la estadística de coste", self.subentrada.title)
+
+    def _avisar_incompletas(self, hoy: date) -> None:
+        issue_id = f"{ISSUE_INCOMPLETO}_{self.subentrada.subentry_id}"
+        pendientes = self._incompletas(hoy)
+        if not pendientes:
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+            return
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            issue_id,
+            is_fixable=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key=ISSUE_INCOMPLETO,
+            translation_placeholders={
+                "suministro": self.subentrada.title,
+                "periodos": ", ".join(
+                    f"{c['inicio']} → {c['fin']} ({c.get('horas_sin_consumo', 0)} h)" for c in pendientes
+                ),
+                "horas": str(sum(c.get("horas_sin_consumo", 0) for c in pendientes)),
+                "dias": str(DIAS_RECALCULO_INCOMPLETA),
+            },
+        )
 
     # --- bono y calibración (F4) -------------------------------------------------------
 
@@ -813,8 +966,32 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         kwh: dict[str, int],
         total: Decimal,
         bonificados: int | None,
+        comprobar: bool = True,
     ) -> None:
-        """Factura real de un periodo: corte real, calibración, arrastre y estadística de coste."""
+        """Factura real de un periodo: corte real, calibración, arrastre y estadística de coste.
+
+        `comprobar=False`: sin comprobación con la CNMC (el lote ZIP la pide una vez al final).
+        La actualización (fuera del candado: el refresco inmediato lo vuelve a tomar) y la
+        comprobación van después de soltar el candado.
+        """
+        async with self._candado:
+            await self._async_conciliar(
+                inicio=inicio, fin=fin, emision=emision, kwh=kwh, total=total, bonificados=bonificados
+            )
+        await self.async_request_refresh()
+        if comprobar:
+            self.programar_comprobacion()
+
+    async def _async_conciliar(
+        self,
+        *,
+        inicio: date,
+        fin: date,
+        emision: date | None,
+        kwh: dict[str, int],
+        total: Decimal,
+        bonificados: int | None,
+    ) -> None:
         if fin <= inicio or (fin - inicio).days > 62:
             raise ValueError("El periodo de la factura debe tener entre 1 y 62 días")
         if fin > dt_util.now(REFERENCE_TZ).date():
@@ -880,13 +1057,7 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         await self._store.async_save(self._estado)
         await self._async_reescribir_periodo(desde, hasta, consumo, total)
         self._escrito = None
-        await self.async_request_refresh()
-        if self.usa_segunda_opinion:
-            # Comprobación de la factura recién introducida con el simulador de la CNMC; ligada a
-            # la entrada para que se cancele en la recarga que sigue a la conciliación.
-            self.config_entry.async_create_background_task(
-                self.hass, self.async_comprobar_factura(forzar=True), f"{DOMAIN} comprobación CNMC"
-            )
+        self._avisar_incompletas(dt_util.now(REFERENCE_TZ).date())  # la real sustituye a la estimada
 
     async def _async_reescribir_periodo(
         self, desde: datetime, hasta: datetime, consumo: dict[datetime, Decimal], total: Decimal

@@ -13,6 +13,7 @@ integración ya está cargada. Los dos dejan en los datos de la entrada la marca
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryDisabler
@@ -177,9 +178,19 @@ def _apartar(registro: er.EntityRegistry, entity_id: str) -> str:
     entidad importada.
     """
     dominio, objeto = entity_id.split(".", 1)
-    apartado = registro.async_generate_entity_id(dominio, f"{objeto}_sustituida")
+    apartado = _entity_id_libre(registro)(dominio, f"{objeto}_sustituida")
     registro.async_update_entity(entity_id, new_entity_id=apartado)
     return apartado
+
+
+def _entity_id_libre(registro: er.EntityRegistry) -> Callable[[str, str], str]:
+    """Función del registro que da un entity_id libre.
+
+    HA 2026.10 renombra `async_generate_entity_id` a `async_get_available_entity_id`
+    (el antiguo avisa en el log y se retira en 2027.2). Mismo resultado en las dos;
+    la nueva no existe en 2025.11, la versión mínima.
+    """
+    return getattr(registro, "async_get_available_entity_id", None) or registro.async_generate_entity_id
 
 
 def clave_de_unique_id(unique_id: str) -> str | None:

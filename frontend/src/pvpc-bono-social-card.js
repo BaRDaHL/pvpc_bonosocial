@@ -15,7 +15,7 @@
 
 import { LitElement, css, html, nothing, svg } from "lit";
 
-const VERSION = "1.1.12";
+const VERSION = "1.2.0";
 const ETIQUETA = "pvpc-bono-social-card";
 const COLORES = ["var(--pvpc-bs-verde)", "var(--pvpc-bs-amarillo)", "var(--pvpc-bs-naranja)", "var(--pvpc-bs-rojo)"];
 const COLOR_PERIODO = { P1: 3, P2: 2, P3: 0 };
@@ -97,7 +97,68 @@ const TEXTOS = {
     periodos: { P1: "peak", P2: "standard", P3: "off-peak" },
     sin_entidad: "PVPC + Bono Social price sensor not found",
   },
+  // Catalán, gallego y euskera: solo los textos que se pintan (los que falten salen en español).
+  ca: {
+    titulo: "Preu de la llum",
+    anterior: "Factura del període anterior",
+    en_curso: "Factura del període en curs",
+    estimada_cierre: "Factura estimada",
+    facturas: "Factures",
+    sin_facturas: "Encara no hi ha factures tancades",
+    calculada: "calculada",
+    abrir: "Veure-ho tot",
+    cerrar: "Tanca",
+    factura_real: "Factura real",
+    calculada_consumo: "Calculada amb el consum",
+    real: "real",
+    sin_precio: "Sense preus",
+    no_disponible: "No disponible",
+    hora_actual: "Hora actual",
+    periodos: { P1: "punta", P2: "pla", P3: "vall" },
+    sin_entidad: "No es troba el sensor de preu de PVPC + Bono Social",
+  },
+  gl: {
+    titulo: "Prezo da luz",
+    anterior: "Factura do período anterior",
+    en_curso: "Factura do período en curso",
+    estimada_cierre: "Factura estimada",
+    facturas: "Facturas",
+    sin_facturas: "Aínda non hai facturas pechadas",
+    calculada: "calculada",
+    abrir: "Ver todo",
+    cerrar: "Pechar",
+    factura_real: "Factura real",
+    calculada_consumo: "Calculada co consumo",
+    real: "real",
+    sin_precio: "Sen prezos",
+    no_disponible: "Non dispoñible",
+    hora_actual: "Hora actual",
+    periodos: { P1: "punta", P2: "chan", P3: "val" },
+    sin_entidad: "Non se atopa o sensor de prezo de PVPC + Bono Social",
+  },
+  eu: {
+    titulo: "Argindarraren prezioa",
+    anterior: "Aurreko aldiko faktura",
+    en_curso: "Aldi honetako faktura",
+    estimada_cierre: "Zenbatetsitako faktura",
+    facturas: "Fakturak",
+    sin_facturas: "Oraindik ez dago itxitako fakturarik",
+    calculada: "kalkulatua",
+    abrir: "Ikusi dena",
+    cerrar: "Itxi",
+    factura_real: "Benetako faktura",
+    calculada_consumo: "Kontsumoarekin kalkulatua",
+    real: "benetakoa",
+    sin_precio: "Preziorik ez",
+    no_disponible: "Ez dago erabilgarri",
+    hora_actual: "Uneko ordua",
+    periodos: { P1: "punta", P2: "laua", P3: "harana" },
+    sin_entidad: "Ez da aurkitu PVPC + Bono Social-en prezio-sentsorea",
+  },
 };
+
+// Idiomas cooficiales con textos propios; lo que les falte, en español.
+const COOFICIALES = ["ca", "gl", "eu"];
 
 // --- datos ------------------------------------------------------------------------------
 
@@ -115,18 +176,68 @@ export function serie(atributos, manana = false) {
   return out;
 }
 
-/** Día y hora del reloj del navegador, para saber si lo pintado se ha quedado atrás (con el
- * desfase horario: las dos horas 02 del día de 25 h son distintas). */
-export function horaLocal(ahora = new Date()) {
-  return `${ahora.getFullYear()}-${ahora.getMonth()}-${ahora.getDate()}-${ahora.getHours()}-${ahora.getTimezoneOffset()}`;
+// --- hora en la zona de HA ------------------------------------------------------------
+//
+// Los atributos `price_HHh` van en la hora de la zona de HA (`hass.config.time_zone`: la
+// peninsular o la canaria), no en la del navegador: con el móvil en otra zona (de viaje, un
+// portátil en UTC, HA en Canarias y el navegador en hora peninsular…) la hora en curso, «hoy»
+// y «mañana» se calculan siempre en la zona de HA. La preferencia de perfil «Zona horaria:
+// local/servidor» (`hass.locale.time_zone`) no se aplica aquí a propósito: los precios de cada
+// hora son de la zona del servidor y mostrarlos en otra descuadraría la gráfica.
+
+const FORMATEADORES = new Map();
+
+/** Formateador de fecha y hora (24 h) en `zona`; con una zona no válida, la del navegador. */
+function formateador(zona) {
+  const clave = zona || "";
+  let f = FORMATEADORES.get(clave);
+  if (!f) {
+    const opciones = { hourCycle: "h23", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric" };
+    try {
+      f = new Intl.DateTimeFormat("en-US", zona ? { ...opciones, timeZone: zona } : opciones);
+    } catch {
+      f = new Intl.DateTimeFormat("en-US", opciones); // RangeError: zona desconocida
+    }
+    FORMATEADORES.set(clave, f);
+  }
+  return f;
 }
 
-/** Posición de la hora en curso dentro de la serie de hoy. */
-export function posicionActual(puntos, ahora = new Date()) {
-  const h = ahora.getHours();
+/** Fecha y hora de pared de `ahora` en `zona` (por defecto, la del navegador), con el desfase
+ * en minutos respecto a UTC. */
+export function enZona(ahora = new Date(), zona) {
+  const p = {};
+  for (const { type, value } of formateador(zona).formatToParts(ahora)) p[type] = Number(value);
+  const r = { anio: p.year, mes: p.month, dia: p.day, hora: p.hour % 24, minuto: p.minute };
+  const pared = Date.UTC(r.anio, r.mes - 1, r.dia, r.hora, r.minuto);
+  r.desfase = Math.round((pared - Math.floor(ahora.getTime() / 60000) * 60000) / 60000);
+  return r;
+}
+
+/** Zona horaria de HA (la de los precios); sin ella (HA muy antiguo), la del navegador. */
+export function zonaDeHA(hass) {
+  return hass?.config?.time_zone || undefined;
+}
+
+/** Fecha «AAAA-MM-DD» de hoy (o `dias` después) en `zona`. */
+export function fechaIso(ahora = new Date(), zona, dias = 0) {
+  const r = enZona(ahora, zona);
+  return new Date(Date.UTC(r.anio, r.mes - 1, r.dia + dias)).toISOString().slice(0, 10);
+}
+
+/** Día y hora en la zona de HA, para saber si lo pintado se ha quedado atrás (con el desfase
+ * horario: las dos horas 02 del día de 25 h son distintas). */
+export function horaLocal(ahora = new Date(), zona) {
+  const r = enZona(ahora, zona);
+  return `${r.anio}-${r.mes}-${r.dia}-${r.hora}-${r.desfase}`;
+}
+
+/** Posición de la hora en curso (en la zona de HA) dentro de la serie de hoy. */
+export function posicionActual(puntos, ahora = new Date(), zona) {
+  const h = enZona(ahora, zona).hora;
   const i = puntos.findIndex((p) => p.hora === h);
   // Segunda vez de la misma hora (día de 25 h): una hora antes el reloj marcaba lo mismo.
-  const repetida = new Date(ahora.getTime() - 3600000).getHours() === h;
+  const repetida = enZona(new Date(ahora.getTime() - 3600000), zona).hora === h;
   return repetida && puntos[i + 1]?.hora === h ? i + 1 : i;
 }
 
@@ -348,12 +459,19 @@ class PvpcBonoSocialCard extends LitElement {
 
   get _t() {
     const idioma = (this.hass?.locale?.language || this.hass?.language || "es").slice(0, 2);
+    if (COOFICIALES.includes(idioma)) return { ...TEXTOS.es, ...TEXTOS[idioma] };
     return TEXTOS[idioma] || TEXTOS.en;
   }
 
-  _num(valor, decimales = 3) {
+  /** Idioma para `Intl`: en catalán, gallego y euskera, con el español de respaldo (si el
+   * navegador no trae sus datos, números y fechas salen como en español y no en inglés). */
+  get _idiomas() {
     const idioma = this.hass?.locale?.language || this.hass?.language || "es";
-    return new Intl.NumberFormat(idioma, {
+    return COOFICIALES.includes(idioma.slice(0, 2)) ? [idioma, "es"] : idioma;
+  }
+
+  _num(valor, decimales = 3) {
+    return new Intl.NumberFormat(this._idiomas, {
       minimumFractionDigits: decimales,
       maximumFractionDigits: decimales,
     }).format(valor);
@@ -385,26 +503,30 @@ class PvpcBonoSocialCard extends LitElement {
     }
     const ids = new Set([...this._entidadesVigiladas(antes), ...this._entidadesVigiladas(ahora)]);
     for (const id of ids) if (antes.states[id] !== ahora.states[id]) return true;
-    // La franja «Hora actual», el color del icono y la fecha salen del reloj del navegador.
-    return this._horaPintada !== horaLocal();
+    // La franja «Hora actual», el color del icono y la fecha salen del reloj (en la zona de HA).
+    return this._horaPintada !== horaLocal(new Date(), zonaDeHA(ahora));
   }
 
   /** Redibujo al empezar cada hora: sin él, la hora en curso se queda en la anterior hasta que
    * cambie una entidad vigilada (el precio llega a las hh:00 del servidor, que puede ir por delante). */
   _programarCambioDeHora() {
     clearTimeout(this._temporizadorHora);
-    // En tiempo absoluto: con la hora de pared, el día de 25 h se saltaría la segunda 02.
+    // En tiempo absoluto: con la hora de pared, el día de 25 h se saltaría la segunda 02. Lo que
+    // falta para la hora en punto se mide en la zona de HA (vale también con desfases de media hora).
     const ahora = Date.now();
-    const siguiente = (Math.floor(ahora / 3600000) + 1) * 3600000 + 1000;
+    const minuto = enZona(new Date(ahora), zonaDeHA(this.hass)).minuto;
+    const espera = (60 - minuto) * 60000 - (ahora % 60000) + 1000;
     this._temporizadorHora = setTimeout(() => {
       this.requestUpdate();
       this._programarCambioDeHora();
-    }, siguiente - ahora);
+    }, espera);
   }
 
   render() {
     if (!this._config || !this.hass) return nothing;
-    this._horaPintada = horaLocal();
+    const zona = zonaDeHA(this.hass);
+    const reloj = new Date();
+    this._horaPintada = horaLocal(reloj, zona);
     const t = this._t;
     const id = this._config.entity || entidadPrecio(this.hass);
     const estado = id && this.hass.states[id];
@@ -419,7 +541,7 @@ class PvpcBonoSocialCard extends LitElement {
       Array.isArray(a.colores_manana) && a.colores_manana.length === manana.length
         ? a.colores_manana
         : coloresPorRango(manana);
-    const ahora = posicionActual(hoy);
+    const ahora = posicionActual(hoy, reloj, zona);
     const iny = this._config.entity_injection && this.hass.states[this._config.entity_injection];
     const inyeccion = iny ? { hoy: serie(iny.attributes), manana: this._config.next_day ? serie(iny.attributes, true) : [] } : null;
     // Periodo de cada hora de hoy; en fines de semana y festivos (todo valle) no se marca.
@@ -576,10 +698,13 @@ class PvpcBonoSocialCard extends LitElement {
     return `${String(h).padStart(2, "0")}:00`;
   }
 
+  /** Fecha de hoy (o `dias` después) en la zona de HA, en el formato del idioma. */
   _fecha(dias = 0) {
-    const d = new Date();
-    d.setDate(d.getDate() + dias);
-    return new Intl.DateTimeFormat(this.hass?.locale?.language || this.hass?.language || "es").format(d);
+    // Mediodía UTC del día calculado, formateado en UTC: el mismo día en cualquier navegador.
+    const d = new Date(`${fechaIso(new Date(), zonaDeHA(this.hass), dias)}T12:00:00Z`);
+    return new Intl.DateTimeFormat(this._idiomas, {
+      timeZone: "UTC",
+    }).format(d);
   }
 
   _triangulo(tipo, color) {
@@ -633,8 +758,7 @@ class PvpcBonoSocialCard extends LitElement {
     const actual = idActual && this.hass.states[idActual];
     if (this._config.factura_actual && actual && Number.isFinite(Number(actual.state))) {
       const a = actual.attributes || {};
-      const hoy = new Date();
-      const hoyIso = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}-${String(hoy.getDate()).padStart(2, "0")}`;
+      const hoyIso = fechaIso(new Date(), zonaDeHA(this.hass));
       if (typeof a.acumulado === "number") {
         lineas.push(linea(t.en_curso, periodo(a.inicio, hoyIso), a.acumulado));
       }
@@ -838,7 +962,8 @@ class PvpcBonoSocialCard extends LitElement {
       .map((f) => {
         // Primer día facturado (el día siguiente a la lectura anterior), como la estadística.
         const [a, m, d] = String(f.inicio).split("-").map(Number);
-        return { inicio: new Date(a, m - 1, d + 1), total: Number(f.total), real: f.real !== false };
+        // Mediodía UTC: el mismo día en cualquier zona (el mes se pinta en la de HA).
+        return { inicio: new Date(Date.UTC(a, m - 1, d + 1, 12)), total: Number(f.total), real: f.real !== false };
       })
       .slice(-cuantas);
   }
@@ -895,8 +1020,14 @@ class PvpcBonoSocialCard extends LitElement {
     const hueco = (ancho - m.izq - m.der) / facturas.length;
     const barra = Math.min(hueco * 0.6, 56);
     const y = (v) => m.arr + (alto - m.arr - m.aba) * (1 - Math.max(v, 0) / max);
-    const idioma = this.hass?.locale?.language || this.hass?.language || "es";
-    const mes = new Intl.DateTimeFormat(idioma, { month: "short", year: "2-digit" });
+    const idioma = this._idiomas;
+    const zona = zonaDeHA(this.hass);
+    let mes;
+    try {
+      mes = new Intl.DateTimeFormat(idioma, { month: "short", year: "2-digit", ...(zona ? { timeZone: zona } : {}) });
+    } catch {
+      mes = new Intl.DateTimeFormat(idioma, { month: "short", year: "2-digit" });
+    }
     return html`
       <div class="facturas">
         ${cabecera}

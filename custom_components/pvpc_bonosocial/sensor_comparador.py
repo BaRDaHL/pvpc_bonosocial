@@ -10,10 +10,13 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .comparador import Comparador, senal
+from .const import SUBENTRY_SUMINISTRO
+from .helpers import primera_subentrada
 from .sensor_suministro import EUR, dispositivo, entity_id_suministro
 
 CLAVE = "mejor_alternativa"
@@ -60,7 +63,7 @@ class MejorAlternativa(SensorEntity):
         }
 
 
-def entidades_de(comparadores: dict[str, Comparador]):
-    primero = next(iter(comparadores), None)
+def entidades_de(entry: ConfigEntry, comparadores: dict[str, Comparador]):
+    primero = primera_subentrada(entry, SUBENTRY_SUMINISTRO)
     for subentry_id, comp in comparadores.items():
         yield subentry_id, [MejorAlternativa(comp, subentry_id == primero)]

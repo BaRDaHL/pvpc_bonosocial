@@ -175,15 +175,21 @@ def _fecha(texto: str) -> date:
 
 
 def _kwh(valor: Any) -> Decimal:
+    if isinstance(valor, bool):  # bool es int: Decimal("True") lanzaría InvalidOperation
+        raise ValueError(f"Consumo no numérico: {valor!r}")
     if isinstance(valor, int | float):
-        return Decimal(str(valor))
-    texto = str(valor).strip()
-    if "," in texto:  # coma decimal del CSV
-        texto = texto.replace(".", "").replace(",", ".")
+        texto = str(valor)
+    else:
+        texto = str(valor).strip()
+        if "," in texto:  # coma decimal del CSV
+            texto = texto.replace(".", "").replace(",", ".")
     try:
-        return Decimal(texto)
-    except InvalidOperation as exc:
+        numero = Decimal(texto)
+    except (InvalidOperation, ArithmeticError) as exc:
         raise ValueError(f"Consumo no numérico: {valor!r}") from exc
+    if not numero.is_finite():  # NaN/Infinity: rompería la curva y la estadística
+        raise ValueError(f"Consumo no finito: {valor!r}")
+    return numero
 
 
 def curva(registros: Iterable[Mapping[str, Any]]) -> Curva:
@@ -195,7 +201,7 @@ def curva(registros: Iterable[Mapping[str, Any]]) -> Curva:
             dia = _fecha(r["date"])
             hora = int(str(r["time"]).split(":")[0])
             kwh = _kwh(r.get("consumptionKWh", 0))
-        except (KeyError, ValueError) as exc:
+        except (KeyError, ValueError, TypeError) as exc:  # TypeError: registro que no es un objeto
             _LOGGER.debug("Datadis: registro descartado (%s): %s", exc, r)
             continue
         real = str(r.get("obtainMethod", "Real")).lower().startswith("real")

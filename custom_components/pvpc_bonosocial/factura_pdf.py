@@ -41,7 +41,10 @@ def _fecha(texto: str) -> date:
     m = re.fullmatch(r"(\d{1,2}) de (\w+) de (\d{4})", texto.strip())
     if not m or m.group(2).lower() not in MESES:
         raise FacturaNoReconocida(f"Fecha no reconocida: {texto!r}")
-    return date(int(m.group(3)), MESES[m.group(2).lower()], int(m.group(1)))
+    try:
+        return date(int(m.group(3)), MESES[m.group(2).lower()], int(m.group(1)))
+    except ValueError as exc:  # «31 de febrero»: no debe tumbar el resto del ZIP
+        raise FacturaNoReconocida(f"Fecha imposible: {texto!r}") from exc
 
 
 def _num(s: str) -> Decimal:

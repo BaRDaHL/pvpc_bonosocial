@@ -5,7 +5,7 @@ body{margin:0;padding:16px;font-family:Roboto,Arial,sans-serif;background:var(--
 body.oscuro{--primary-background-color:#111;--card-background-color:#1c1c1c;--primary-text-color:#e1e1e1;--secondary-text-color:#9b9b9b;--primary-color:#03a9f4;--divider-color:#333}
 ha-card{display:block;background:var(--card-background-color);border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.2)}
 </style></head><body>
-<script>customElements.define("ha-card",class extends HTMLElement{});</script>
+<script>customElements.define("ha-card",class extends HTMLElement{});customElements.define("ha-form",class extends HTMLElement{});</script>
 <script type="module">
 import "/pvpc-bono-social-card.js";
 const p=new URLSearchParams(location.search);
@@ -13,6 +13,7 @@ if(p.get("oscuro"))document.body.classList.add("oscuro");
 const estados=await (await fetch("estados.json")).json();
 // Facturas en el atributo del sensor (v1.1.6+): las tres primeras calculadas con el consumo.
 if(p.get("calculadas"))estados["sensor.pvpc_bs_factura_actual"].attributes.facturas=[88.4,95.1,112.7,141.3,156.9,121.5,104.2,97.8].map((v,i)=>({inicio:`2026-${String(i+2).padStart(2,"0")}-12`,fin:`2026-${String(i+3).padStart(2,"0")}-12`,total:v,real:i>=3}));
+if(p.get("doce"))estados["sensor.pvpc_bs_factura_actual"].attributes.facturas=[...Array(12)].map((_,i)=>{const a=new Date(Date.UTC(2025,i+10,12));const b=new Date(Date.UTC(2025,i+11,12));return{inicio:a.toISOString().slice(0,10),fin:b.toISOString().slice(0,10),total:90+i,real:true}});
 if(p.get("sin_manana"))for(const e of Object.values(estados))for(const k of Object.keys(e.attributes||{}))if(k.startsWith("price_next_day_"))delete e.attributes[k];
 const c=document.createElement("pvpc-bono-social-card");
 c.setConfig(JSON.parse(p.get("config")||"{}"));

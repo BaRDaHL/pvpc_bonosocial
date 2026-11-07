@@ -29,9 +29,6 @@ from homeassistant.helpers.selector import (
     EntitySelectorConfig,
     FileSelector,
     FileSelectorConfig,
-    NumberSelector,
-    NumberSelectorConfig,
-    NumberSelectorMode,
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
@@ -72,13 +69,22 @@ from .const import (
     FRECUENCIAS_SHELLY,
     FUENTE_ESTADISTICA,
     FUENTE_SENSOR,
+    SUBENTRY_SUMINISTRO,
     TIPOS_FUENTE,
 )
 from .engine import LIMITES_ANUALES_KWH, Bono
+from .estadistica import id_estadistica
 from .factura_pdf import DatosFactura, FacturaNoReconocida, leer_factura
 from .facturacion import FacturaFutura
 from .helpers import TERRITORIO_PENINSULA, config_entrada, territorio
 from .prices.aiopvpc.const import REFERENCE_TZ
+from .validacion import (
+    MAX_KWH_FACTURA,
+    MAX_TOTAL_FACTURA,
+    NumeroConAviso,
+    errores_de_rango,
+    errores_factura,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -87,12 +93,22 @@ STATE_CLASSES_ENERGIA = {"total", "total_increasing"}
 NOMBRE_POR_DEFECTO = "Suministro"
 
 
-def _potencia() -> NumberSelector:
-    return NumberSelector(
-        NumberSelectorConfig(
-            min=0.1, max=15, step=0.001, unit_of_measurement="kW", mode=NumberSelectorMode.BOX
-        )
-    )
+_POTENCIA = NumeroConAviso("rango_potencia", min=0.1, max=15, step=0.001, unit_of_measurement="kW")
+_RANGOS_DATOS = {CONF_POTENCIA_P1: _POTENCIA, CONF_POTENCIA_P2: _POTENCIA}
+_RANGOS_FACTURA = {
+    CONF_DIAS_EMISION: NumeroConAviso("rango_dias_emision", min=0, max=30, step=1),
+    CONF_ARRASTRE_INICIAL: NumeroConAviso("rango_arrastre", min=0, max=5000, step=1),
+    CONF_ALQUILER: NumeroConAviso("rango_alquiler", min=0, max=5, step=0.01, unit_of_measurement="€"),
+    CONF_COMPARADOR_UMBRAL: NumeroConAviso("rango_umbral", min=0, max=5000, step=1, unit_of_measurement="€"),
+}
+_KWH_FACTURA = NumeroConAviso("rango_kwh", min=0, max=MAX_KWH_FACTURA, step=1, unit_of_measurement="kWh")
+_RANGOS_FACTURA_REAL = {
+    "kwh_p1": _KWH_FACTURA,
+    "kwh_p2": _KWH_FACTURA,
+    "kwh_p3": _KWH_FACTURA,
+    "kwh_bonificados": _KWH_FACTURA,
+    "total": NumeroConAviso("rango_total", min=0, max=MAX_TOTAL_FACTURA, step=0.01, unit_of_measurement="€"),
+}
 
 
 def _select(opciones: list[str], clave: str) -> SelectSelector:
@@ -135,6 +151,22 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
             self._titulo = subentrada.title
         return await self._paso_datos("datos", user_input)
 
+    def _nombre_en_uso(self, nombre: str) -> bool:
+        """La estadística de coste sale del nombre al crear el suministro: dos iguales se pisarían las
+        horas en el panel de Energía. Compara la estadística, no el texto («Casa 1» y «casa-1» chocan).
+        Al reconfigurar no hace falta: la estadística ya está fijada y renombrar no la cambia.
+        """
+        estadistica = id_estadistica(nombre.strip() or NOMBRE_POR_DEFECTO)
+        entrada = self._get_entry()
+        usadas = {
+            id_estadistica(s.title)
+            for s in entrada.subentries.values()
+            if s.subentry_type == SUBENTRY_SUMINISTRO
+        }
+        suministros = getattr(getattr(entrada, "runtime_data", None), "suministros", {})
+        usadas.update(f.estadistica_id for f in suministros.values())
+        return estadistica in usadas
+
     def _contrato_cambiado(self) -> bool:
         original = self._get_reconfigure_subentry().data
         return any(original.get(c) != self._datos.get(c) for c in CAMPOS_CONTRATO)
@@ -158,12 +190,10 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
                     anteriores.append({"hasta": hasta, **{c: original.get(c) for c in CAMPOS_CONTRATO}})
                     self._datos[CONF_CONTRATOS_ANTERIORES] = anteriores
                 return await self.async_step_fuente()
+        # Sin fecha propuesta: el selector de fecha no se puede vaciar, y vacío significa «corrección».
+        sugerida = (user_input or {}).get("vigente_desde")
         esquema = vol.Schema(
-            {
-                vol.Optional(
-                    "vigente_desde", description={"suggested_value": dt_util.now().date().isoformat()}
-                ): DateSelector()
-            }
+            {vol.Optional("vigente_desde", description={"suggested_value": sugerida}): DateSelector()}
         )
         return self.async_show_form(step_id="cambio_contrato", data_schema=esquema, errors=errores)
 
@@ -178,9 +208,12 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
         if user_input is not None:
             bono = user_input[CONF_BONO]
             categoria = user_input.get(CONF_CATEGORIA)
+            errores = errores_de_rango(user_input, _RANGOS_DATOS)
             if bono != Bono.NINGUNO and not categoria:
                 errores[CONF_CATEGORIA] = "categoria_requerida"
-            else:
+            if not self._reconfigurando and self._nombre_en_uso(user_input[CONF_NAME]):
+                errores[CONF_NAME] = "nombre_en_uso"
+            if not errores:
                 self._titulo = user_input[CONF_NAME].strip() or NOMBRE_POR_DEFECTO
                 self._datos.update(
                     {
@@ -199,8 +232,8 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
         esquema = vol.Schema(
             {
                 vol.Required(CONF_NAME, default=actual.get(CONF_NAME, NOMBRE_POR_DEFECTO)): str,
-                vol.Required(CONF_POTENCIA_P1, default=actual.get(CONF_POTENCIA_P1, 4.6)): _potencia(),
-                vol.Required(CONF_POTENCIA_P2, default=actual.get(CONF_POTENCIA_P2, 4.6)): _potencia(),
+                vol.Required(CONF_POTENCIA_P1, default=actual.get(CONF_POTENCIA_P1, 4.6)): _POTENCIA,
+                vol.Required(CONF_POTENCIA_P2, default=actual.get(CONF_POTENCIA_P2, 4.6)): _POTENCIA,
                 vol.Required(CONF_BONO, default=actual.get(CONF_BONO, Bono.NINGUNO.value)): _select(
                     [b.value for b in Bono], "bono"
                 ),
@@ -219,8 +252,8 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
         tipo = self._datos[CONF_TIPO_FUENTE]
         errores: dict[str, str] = {}
         if user_input is not None:
-            fuente = user_input[CONF_FUENTE]
-            error = self._validar_fuente(tipo, fuente)
+            fuente = user_input.get(CONF_FUENTE)
+            error = self._validar_fuente(tipo, fuente) if fuente else "obligatorio"
             if error:
                 errores[CONF_FUENTE] = error
             else:
@@ -235,7 +268,9 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
         else:
             selector = StatisticSelector(StatisticSelectorConfig())
         actual = (user_input or {}).get(CONF_FUENTE, self._datos.get(CONF_FUENTE))
-        esquema = vol.Schema({vol.Required(CONF_FUENTE, description={"suggested_value": actual}): selector})
+        # El frontend no sabe dar valor inicial a un selector de estadística obligatorio: con
+        # vol.Required y sin valor pinta un formulario vacío. Lo obligatorio se comprueba arriba.
+        esquema = vol.Schema({vol.Optional(CONF_FUENTE, description={"suggested_value": actual}): selector})
         return self.async_show_form(step_id="fuente", data_schema=esquema, errors=errores)
 
     async def async_step_comprobacion(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
@@ -268,9 +303,14 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
     async def async_step_factura(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         errores: dict[str, str] = {}
         if user_input is not None:
+            errores = errores_de_rango(user_input, _RANGOS_FACTURA)
             codigo_postal = (user_input.get(CONF_CODIGO_POSTAL) or "").strip()
             if codigo_postal and not (len(codigo_postal) == 5 and codigo_postal.isdigit()):
                 errores[CONF_CODIGO_POSTAL] = "codigo_postal_invalido"
+            elif not codigo_postal and (
+                user_input.get(CONF_COMPARAR_MENSUAL) or user_input.get(CONF_SEGUNDA_OPINION)
+            ):
+                errores[CONF_CODIGO_POSTAL] = "codigo_postal_requerido"
             if error := self._validar_fin_ultima_factura(user_input.get(CONF_FIN_ULTIMA_FACTURA)):
                 errores[CONF_FIN_ULTIMA_FACTURA] = error
         if user_input is not None and not errores:
@@ -282,9 +322,8 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
                     CONF_ALQUILER: float(user_input[CONF_ALQUILER]),
                     CONF_ARRASTRE_INICIAL: int(user_input.get(CONF_ARRASTRE_INICIAL) or 0),
                     CONF_CODIGO_POSTAL: codigo_postal or None,
-                    CONF_COMPARAR_MENSUAL: bool(user_input.get(CONF_COMPARAR_MENSUAL))
-                    and bool(codigo_postal),
-                    CONF_SEGUNDA_OPINION: bool(user_input.get(CONF_SEGUNDA_OPINION)) and bool(codigo_postal),
+                    CONF_COMPARAR_MENSUAL: bool(user_input.get(CONF_COMPARAR_MENSUAL)),
+                    CONF_SEGUNDA_OPINION: bool(user_input.get(CONF_SEGUNDA_OPINION)),
                     CONF_COMPARADOR_DESTINO: user_input.get(CONF_COMPARADOR_DESTINO) or None,
                     CONF_COMPARADOR_ENVIO: user_input.get(CONF_COMPARADOR_ENVIO, "siempre"),
                     CONF_COMPARADOR_UMBRAL: float(user_input.get(CONF_COMPARADOR_UMBRAL) or 0),
@@ -312,48 +351,43 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
                 )
             return self.async_create_entry(title=self._titulo, data=self._datos)
 
+        # Tras un error siguen en pantalla los valores tecleados, no los guardados.
+        actual = {**self._datos, **(user_input or {})}
+        fin_sugerido = self._inicio_periodo_actual()
+        if user_input is not None:
+            fin_sugerido = user_input.get(CONF_FIN_ULTIMA_FACTURA)
         esquema = vol.Schema(
             {
                 vol.Optional(
                     CONF_FIN_ULTIMA_FACTURA,
-                    description={"suggested_value": self._inicio_periodo_actual()},
+                    description={"suggested_value": fin_sugerido},
                 ): DateSelector(),
                 vol.Required(
-                    CONF_DIAS_EMISION, default=self._datos.get(CONF_DIAS_EMISION, DEFAULT_DIAS_EMISION)
-                ): NumberSelector(NumberSelectorConfig(min=0, max=30, step=1, mode=NumberSelectorMode.BOX)),
+                    CONF_DIAS_EMISION, default=actual.get(CONF_DIAS_EMISION, DEFAULT_DIAS_EMISION)
+                ): _RANGOS_FACTURA[CONF_DIAS_EMISION],
                 vol.Optional(
-                    CONF_ARRASTRE_INICIAL, default=int(self._datos.get(CONF_ARRASTRE_INICIAL, 0))
-                ): NumberSelector(NumberSelectorConfig(min=0, max=5000, step=1, mode=NumberSelectorMode.BOX)),
+                    CONF_ARRASTRE_INICIAL, default=int(actual.get(CONF_ARRASTRE_INICIAL, 0))
+                ): _RANGOS_FACTURA[CONF_ARRASTRE_INICIAL],
                 vol.Required(
-                    CONF_ALQUILER, default=self._datos.get(CONF_ALQUILER, DEFAULT_ALQUILER)
-                ): NumberSelector(
-                    NumberSelectorConfig(
-                        min=0, max=5, step=0.01, unit_of_measurement="€", mode=NumberSelectorMode.BOX
-                    )
-                ),
+                    CONF_ALQUILER, default=actual.get(CONF_ALQUILER, DEFAULT_ALQUILER)
+                ): _RANGOS_FACTURA[CONF_ALQUILER],
                 vol.Optional(
-                    CONF_CODIGO_POSTAL, description={"suggested_value": self._datos.get(CONF_CODIGO_POSTAL)}
+                    CONF_CODIGO_POSTAL, description={"suggested_value": actual.get(CONF_CODIGO_POSTAL)}
                 ): str,
-                vol.Optional(
-                    CONF_COMPARAR_MENSUAL, default=bool(self._datos.get(CONF_COMPARAR_MENSUAL))
-                ): bool,
-                vol.Optional(CONF_SEGUNDA_OPINION, default=bool(self._datos.get(CONF_SEGUNDA_OPINION))): bool,
+                vol.Optional(CONF_COMPARAR_MENSUAL, default=bool(actual.get(CONF_COMPARAR_MENSUAL))): bool,
+                vol.Optional(CONF_SEGUNDA_OPINION, default=bool(actual.get(CONF_SEGUNDA_OPINION))): bool,
                 vol.Optional(
                     CONF_COMPARADOR_DESTINO,
-                    description={"suggested_value": self._datos.get(CONF_COMPARADOR_DESTINO)},
+                    description={"suggested_value": actual.get(CONF_COMPARADOR_DESTINO)},
                 ): EntitySelector(EntitySelectorConfig(domain="notify")),
                 vol.Optional(
-                    CONF_COMPARADOR_ENVIO, default=self._datos.get(CONF_COMPARADOR_ENVIO, "siempre")
+                    CONF_COMPARADOR_ENVIO, default=actual.get(CONF_COMPARADOR_ENVIO, "siempre")
                 ): _select(ENVIOS_COMPARADOR, CONF_COMPARADOR_ENVIO),
                 vol.Optional(
-                    CONF_COMPARADOR_UMBRAL, default=float(self._datos.get(CONF_COMPARADOR_UMBRAL) or 0)
-                ): NumberSelector(
-                    NumberSelectorConfig(
-                        min=0, max=5000, step=1, unit_of_measurement="€", mode=NumberSelectorMode.BOX
-                    )
-                ),
+                    CONF_COMPARADOR_UMBRAL, default=float(actual.get(CONF_COMPARADOR_UMBRAL) or 0)
+                ): _RANGOS_FACTURA[CONF_COMPARADOR_UMBRAL],
                 vol.Optional(
-                    CONF_COMPARADOR_FORMATO, default=self._datos.get(CONF_COMPARADOR_FORMATO, "completo")
+                    CONF_COMPARADOR_FORMATO, default=actual.get(CONF_COMPARADOR_FORMATO, "completo")
                 ): _select(FORMATOS_COMPARADOR, CONF_COMPARADOR_FORMATO),
             }
         )
@@ -377,9 +411,11 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
         return self._datos.get(CONF_FIN_ULTIMA_FACTURA)
 
     def _validar_fin_ultima_factura(self, fin: str | None) -> str | None:
-        """No puede ser anterior al fin de una factura real ya introducida (esa manda)."""
+        """No puede ser futura ni anterior al fin de una factura real ya introducida (esa manda)."""
         if not fin:
             return None
+        if date.fromisoformat(fin) > dt_util.now(REFERENCE_TZ).date():
+            return "fin_factura_futura"
         facturacion = self._facturacion()
         conciliada = facturacion.ultima_conciliada() if facturacion is not None else None
         if conciliada is not None and date.fromisoformat(fin) < date.fromisoformat(conciliada["fin"]):
@@ -429,34 +465,19 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
             return self.async_abort(reason="no_cargada")
         errores: dict[str, str] = {}
         if user_input is not None:
-            inicio = date.fromisoformat(user_input["inicio"])
-            fin = date.fromisoformat(user_input["fin"])
-            emision = user_input.get("emision")
-            bonificados = user_input.get("kwh_bonificados")
-            try:
-                await facturacion.async_conciliar(
-                    inicio=inicio,
-                    fin=fin,
-                    emision=date.fromisoformat(emision) if emision else None,
-                    kwh={p: int(user_input[f"kwh_{p.lower()}"]) for p in ("P1", "P2", "P3")},
-                    total=Decimal(str(user_input["total"])).quantize(Decimal("0.01")),
-                    bonificados=int(bonificados) if bonificados is not None else None,
-                )
-            except FacturaFutura:
-                errores["fin"] = "factura_futura"
-            except ValueError:
-                errores["base"] = "periodo_no_valido"
-            else:
-                self._hecha = (inicio, fin)
+            errores = {
+                campo: "obligatorio"
+                for campo in ("kwh_p1", "kwh_p2", "kwh_p3", "total")
+                if user_input.get(campo) is None
+            }
+            errores.update(errores_de_rango(user_input, _RANGOS_FACTURA_REAL))
+            if not errores:
+                errores = await self._conciliar_del_formulario(facturacion, user_input)
+            if not errores:
                 return await self.async_step_factura_hecha()
 
         sugerido = self._sugerencia_factura(facturacion)
         actual = {**sugerido, **(user_input or {})}
-        kwh = NumberSelector(
-            NumberSelectorConfig(
-                min=0, max=100000, step=1, unit_of_measurement="kWh", mode=NumberSelectorMode.BOX
-            )
-        )
 
         def _campo(clave: str, obligatorio: bool = True) -> vol.Marker:
             tipo = vol.Required if obligatorio else vol.Optional
@@ -467,18 +488,43 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
                 _campo("inicio"): DateSelector(),
                 _campo("fin"): DateSelector(),
                 _campo("emision", False): DateSelector(),
-                _campo("kwh_p1"): kwh,
-                _campo("kwh_p2"): kwh,
-                _campo("kwh_p3"): kwh,
-                _campo("total"): NumberSelector(
-                    NumberSelectorConfig(
-                        min=0, max=100000, step=0.01, unit_of_measurement="€", mode=NumberSelectorMode.BOX
-                    )
-                ),
-                _campo("kwh_bonificados", False): kwh,
+                # Opcionales en el esquema: como obligatorios y sin valor, el frontend los rellena con
+                # un 0 que parece un dato. Que estén rellenos se comprueba arriba.
+                _campo("kwh_p1", False): _KWH_FACTURA,
+                _campo("kwh_p2", False): _KWH_FACTURA,
+                _campo("kwh_p3", False): _KWH_FACTURA,
+                _campo("total", False): _RANGOS_FACTURA_REAL["total"],
+                _campo("kwh_bonificados", False): _KWH_FACTURA,
             }
         )
         return self.async_show_form(step_id="factura_datos", data_schema=esquema, errors=errores)
+
+    async def _conciliar_del_formulario(self, facturacion: Any, datos: dict[str, Any]) -> dict[str, str]:
+        """Concilia lo tecleado; devuelve los errores por campo (vacío si ha entrado)."""
+        inicio = date.fromisoformat(datos["inicio"])
+        fin = date.fromisoformat(datos["fin"])
+        emision = datos.get("emision")
+        bonificados = datos.get("kwh_bonificados")
+        kwh = {p: int(datos[f"kwh_{p.lower()}"]) for p in ("P1", "P2", "P3")}
+        total = Decimal(str(datos["total"])).quantize(Decimal("0.01"))
+        bonificados = int(bonificados) if bonificados is not None else None
+        if errores := errores_factura(kwh, total, bonificados):
+            return errores
+        try:
+            await facturacion.async_conciliar(
+                inicio=inicio,
+                fin=fin,
+                emision=date.fromisoformat(emision) if emision else None,
+                kwh=kwh,
+                total=total,
+                bonificados=bonificados,
+            )
+        except FacturaFutura:
+            return {"fin": "factura_futura"}
+        except ValueError:
+            return {"base": "periodo_no_valido"}
+        self._hecha = (inicio, fin)
+        return {}
 
     async def async_step_factura_hecha(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         """Factura introducida: añadir otra sin salir, o terminar."""
@@ -604,6 +650,10 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
 MAX_FACTURAS_ZIP = 12
 MAX_BYTES_PDF = 4 * 1024 * 1024
 MAX_BYTES_ZIP = 50 * 1024 * 1024
+# Directorio central de un ZIP: un mínimo de 46 bytes por entrada, así que caben ~5.000. Con 12 PDF y
+# sus carpetas sobra; se mira antes de abrirlo porque zipfile crea un objeto por entrada al abrirlo.
+MAX_BYTES_DIRECTORIO_ZIP = 256 * 1024
+MAX_SOBRAN_NOMBRADOS = 20  # de los PDF que sobran, cuántos se nombran en el formulario
 MOTIVOS_ZIP = {
     "es": {
         "pdf_no_reconocido": "no se reconoce (solo facturas de la Comercializadora Regulada, Gas & Power)",
@@ -613,6 +663,7 @@ MOTIVOS_ZIP = {
         "no_legible": "no se puede descomprimir (¿con contraseña o dañado?)",
         "factura_futura": "acaba después de hoy (revisa las fechas de la factura)",
         "periodo_no_valido": "el periodo no tiene entre 1 y 62 días",
+        "datos_no_validos": "importe a cero o más kWh bonificados que consumidos",
     },
     "en": {
         "pdf_no_reconocido": "not recognised (only bills from Comercializadora Regulada, Gas & Power)",
@@ -622,6 +673,7 @@ MOTIVOS_ZIP = {
         "no_legible": "cannot be extracted (password-protected or damaged?)",
         "factura_futura": "ends after today (check the bill dates)",
         "periodo_no_valido": "the period is not between 1 and 62 days",
+        "datos_no_validos": "zero amount, or more discounted kWh than consumed",
     },
 }
 
@@ -642,6 +694,8 @@ class Subida:
                 motivo = "factura_futura"
             elif f.fin <= f.inicio or (f.fin - f.inicio).days > 62:
                 motivo = "periodo_no_valido"
+            elif errores_factura(f.kwh, f.total, f.bonificados):
+                motivo = "datos_no_validos"
             else:
                 continue
             self.buenas.remove((nombre, f))
@@ -677,6 +731,10 @@ def _leer_subida(hass: Any, archivo: str) -> Subida:
         subida.leer(nombre, contenido)
         return subida
     subida = Subida(zip=True)
+    if _directorio_zip_excesivo(contenido):
+        subida.zip = False  # se rechaza entero, igual que un archivo demasiado grande
+        subida.malas.append((nombre, "demasiado_grande"))
+        return subida
     try:
         with zipfile.ZipFile(io.BytesIO(contenido)) as z:
             pdfs = [
@@ -689,6 +747,9 @@ def _leer_subida(hass: Any, archivo: str) -> Subida:
             ]
             for n, info in enumerate(pdfs):
                 nombre = Path(info.filename).name
+                if n >= MAX_FACTURAS_ZIP + MAX_SOBRAN_NOMBRADOS:
+                    subida.malas.append((f"… {len(pdfs) - n}", "sobran"))
+                    break
                 if n >= MAX_FACTURAS_ZIP:
                     subida.malas.append((nombre, "sobran"))
                 elif info.file_size > MAX_BYTES_PDF:
@@ -714,6 +775,19 @@ def _leer_subida(hass: Any, archivo: str) -> Subida:
     except zipfile.BadZipFile as exc:
         raise ValueError("ZIP no válido") from exc
     return subida
+
+
+def _directorio_zip_excesivo(contenido: bytes) -> bool:
+    """¿El directorio central del ZIP pasa del tope? Se lee del registro final, sin abrir el ZIP.
+
+    Se mira su tamaño y no el número de entradas que declara: zipfile lee todo el directorio aunque
+    el contador mienta. Si no se encuentra el registro, decide zipfile (ZIP no válido).
+    """
+    fin = contenido.rfind(b"PK\x05\x06", max(0, len(contenido) - 66 * 1024))
+    if fin < 0 or fin + 22 > len(contenido):
+        return False
+    tamano = int.from_bytes(contenido[fin + 12 : fin + 16], "little")
+    return tamano > MAX_BYTES_DIRECTORIO_ZIP
 
 
 def _leer_miembro(z: zipfile.ZipFile, info: zipfile.ZipInfo) -> bytes | None:

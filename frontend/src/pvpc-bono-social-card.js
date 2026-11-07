@@ -15,7 +15,7 @@
 
 import { LitElement, css, html, nothing, svg } from "lit";
 
-const VERSION = "1.2.0";
+const VERSION = "1.2.2";
 const ETIQUETA = "pvpc-bono-social-card";
 const COLORES = ["var(--pvpc-bs-verde)", "var(--pvpc-bs-amarillo)", "var(--pvpc-bs-naranja)", "var(--pvpc-bs-rojo)"];
 const COLOR_PERIODO = { P1: 3, P2: 2, P3: 0 };
@@ -23,7 +23,7 @@ const COLOR_PERIODO = { P1: 3, P2: 2, P3: 0 };
 const COLOR_HOY = "#4269d0";
 const COLOR_MANANA = "#f4bd4a";
 /** Color de la configuración: «#4269d0», cualquier color CSS o [r, g, b] (selector de color del editor). */
-export function colorCss(valor, defecto) {
+function colorCss(valor, defecto) {
   if (Array.isArray(valor) && valor.length === 3 && valor.every((c) => Number.isFinite(Number(c)))) {
     return `rgb(${valor.map(Number).join(", ")})`;
   }
@@ -45,14 +45,8 @@ const TRIANGULO = {
 const TEXTOS = {
   es: {
     titulo: "Precio de la luz",
-    ahora: "Ahora",
-    hoy: "Hoy",
-    manana: "Mañana",
-    minimo: "Mínimo",
-    maximo: "Máximo",
     anterior: "Factura periodo anterior",
     en_curso: "Factura periodo en curso",
-    prevision: "previsión",
     estimada_cierre: "Factura estimada",
     facturas: "Facturas",
     sin_facturas: "Aún no hay facturas cerradas",
@@ -61,8 +55,6 @@ const TEXTOS = {
     cerrar: "Cerrar",
     factura_real: "Factura real",
     calculada_consumo: "Calculada con el consumo",
-    estimada: "estimada",
-    desviacion: "desviación",
     real: "real",
     sin_precio: "Sin precios",
     no_disponible: "No disponible",
@@ -72,14 +64,8 @@ const TEXTOS = {
   },
   en: {
     titulo: "Electricity price",
-    ahora: "Now",
-    hoy: "Today",
-    manana: "Tomorrow",
-    minimo: "Minimum",
-    maximo: "Maximum",
     anterior: "Previous bill",
     en_curso: "Current bill",
-    prevision: "forecast",
     estimada_cierre: "Estimated bill",
     facturas: "Bills",
     sin_facturas: "No closed bills yet",
@@ -88,8 +74,6 @@ const TEXTOS = {
     cerrar: "Close",
     factura_real: "Actual bill",
     calculada_consumo: "Calculated from consumption",
-    estimada: "estimated",
-    desviacion: "deviation",
     real: "actual",
     sin_precio: "No prices",
     no_disponible: "Unavailable",
@@ -160,10 +144,35 @@ const TEXTOS = {
 // Idiomas cooficiales con textos propios; lo que les falte, en español.
 const COOFICIALES = ["ca", "gl", "eu"];
 
+// --- tamaño de las gráficas ---------------------------------------------------------------
+//
+// Las gráficas se dibujan a 480 unidades de ancho. Entre estas dos escalas (px por unidad), que es
+// el tamaño normal de la tarjeta, se ven como siempre. Fuera de ellas, el lienzo se adapta al ancho
+// real en lugar de escalar el texto: 47 px en la vista panel de una pantalla 2K y 4 px a 246 px.
+const ANCHO_BASE = 480;
+const ESCALA_MIN = 0.95;
+const ESCALA_MAX = 1.2;
+
+/** Lienzo (en unidades del viewBox) para `anchoPx`; sin medir aún, el de siempre. */
+function lienzo(anchoPx, altoBase, altoMaximo) {
+  if (!anchoPx) return { ancho: ANCHO_BASE, alto: altoBase };
+  const escala = Math.min(Math.max(anchoPx / ANCHO_BASE, ESCALA_MIN), ESCALA_MAX);
+  const ancho = Math.round(anchoPx / escala);
+  // El alto acompaña al ancho, con límites: ni una tira en un panel ni un cuadrado en el móvil.
+  const proporcional = Math.round((altoBase * ancho) / ANCHO_BASE);
+  const alto = ancho > ANCHO_BASE ? Math.min(proporcional, altoMaximo) : Math.max(proporcional, Math.round(altoBase * 0.8));
+  return { ancho, alto };
+}
+
+/** Cada cuántas etiquetas se pinta una para que no se pisen (se cuenta desde la última). */
+function cadaCuantas(hueco, anchoEtiqueta) {
+  return Math.max(1, Math.ceil(anchoEtiqueta / hueco));
+}
+
 // --- datos ------------------------------------------------------------------------------
 
 /** Precios del día desde los atributos `price_HHh` (o `price_next_day_HHh`), en orden de hora. */
-export function serie(atributos, manana = false) {
+function serie(atributos, manana = false) {
   const prefijo = manana ? "price_next_day_" : "price_";
   const out = [];
   for (let h = 0; h < 24; h++) {
@@ -205,7 +214,7 @@ function formateador(zona) {
 
 /** Fecha y hora de pared de `ahora` en `zona` (por defecto, la del navegador), con el desfase
  * en minutos respecto a UTC. */
-export function enZona(ahora = new Date(), zona) {
+function enZona(ahora = new Date(), zona) {
   const p = {};
   for (const { type, value } of formateador(zona).formatToParts(ahora)) p[type] = Number(value);
   const r = { anio: p.year, mes: p.month, dia: p.day, hora: p.hour % 24, minuto: p.minute };
@@ -215,25 +224,25 @@ export function enZona(ahora = new Date(), zona) {
 }
 
 /** Zona horaria de HA (la de los precios); sin ella (HA muy antiguo), la del navegador. */
-export function zonaDeHA(hass) {
+function zonaDeHA(hass) {
   return hass?.config?.time_zone || undefined;
 }
 
 /** Fecha «AAAA-MM-DD» de hoy (o `dias` después) en `zona`. */
-export function fechaIso(ahora = new Date(), zona, dias = 0) {
+function fechaIso(ahora = new Date(), zona, dias = 0) {
   const r = enZona(ahora, zona);
   return new Date(Date.UTC(r.anio, r.mes - 1, r.dia + dias)).toISOString().slice(0, 10);
 }
 
 /** Día y hora en la zona de HA, para saber si lo pintado se ha quedado atrás (con el desfase
  * horario: las dos horas 02 del día de 25 h son distintas). */
-export function horaLocal(ahora = new Date(), zona) {
+function horaLocal(ahora = new Date(), zona) {
   const r = enZona(ahora, zona);
   return `${r.anio}-${r.mes}-${r.dia}-${r.hora}-${r.desfase}`;
 }
 
 /** Posición de la hora en curso (en la zona de HA) dentro de la serie de hoy. */
-export function posicionActual(puntos, ahora = new Date(), zona) {
+function posicionActual(puntos, ahora = new Date(), zona) {
   const h = enZona(ahora, zona).hora;
   const i = puntos.findIndex((p) => p.hora === h);
   // Segunda vez de la misma hora (día de 25 h): una hora antes el reloj marcaba lo mismo.
@@ -275,6 +284,40 @@ function entidadPrecio(hass) {
   );
 }
 
+const POR_DEFECTO = {
+  current: true,
+  details: true,
+  graph: true,
+  next_day: true,
+  factura: "header",
+  factura_actual: true,
+  factura_anterior: true,
+  prevision: true,
+  icon_color: "price",
+  colores: "fijo",
+  color_hoy: COLOR_HOY,
+  color_manana: COLOR_MANANA,
+  bandas: true,
+  grafica_facturas: false,
+  facturas_meses: "6",
+  facturas_importe: true,
+  ventana: true,
+};
+
+/** La configuración con los valores por defecto y las opciones de la tarjeta antigua (`show_*`). */
+function conDefectos(config) {
+  const antigua = {};
+  for (const [vieja, nueva] of [
+    ["show_current", "current"],
+    ["show_details", "details"],
+    ["show_graph", "graph"],
+  ]) {
+    if (typeof config[vieja] === "boolean" && !(nueva in config)) antigua[nueva] = config[vieja];
+  }
+  if (typeof config.show_only_today === "boolean" && !("next_day" in config)) antigua.next_day = !config.show_only_today;
+  return { ...POR_DEFECTO, ...antigua, ...config };
+}
+
 // --- tarjeta ----------------------------------------------------------------------------
 
 class PvpcBonoSocialCard extends LitElement {
@@ -284,98 +327,12 @@ class PvpcBonoSocialCard extends LitElement {
     _cursor: { state: true },
     _facturas: { state: true },
     _ventana: { state: true },
+    _anchoUtil: { state: true },
   };
 
-  static getConfigForm() {
-    return {
-      schema: [
-        { name: "entity", selector: { entity: { domain: "sensor" } } },
-        { name: "title", selector: { text: {} } },
-        {
-          name: "factura",
-          selector: {
-            select: {
-              mode: "dropdown",
-              options: [
-                { value: "below_chart", label: "Bajo la gráfica / Below the chart" },
-                { value: "header", label: "Arriba / In the header" },
-                { value: "hidden", label: "Oculta / Hidden" },
-              ],
-            },
-          },
-        },
-        {
-          type: "grid",
-          name: "",
-          schema: [
-            { name: "factura_actual", selector: { boolean: {} } },
-            { name: "factura_anterior", selector: { boolean: {} } },
-            { name: "prevision", selector: { boolean: {} } },
-            { name: "current", selector: { boolean: {} } },
-            { name: "details", selector: { boolean: {} } },
-            { name: "graph", selector: { boolean: {} } },
-            { name: "next_day", selector: { boolean: {} } },
-            { name: "ventana", selector: { boolean: {} } },
-          ],
-        },
-        {
-          name: "colores",
-          selector: {
-            select: {
-              mode: "dropdown",
-              options: [
-                { value: "fijo", label: "Un color por día / One colour per day" },
-                { value: "precio", label: "Hoy por precio / Today by price" },
-              ],
-            },
-          },
-        },
-        {
-          type: "grid",
-          name: "",
-          schema: [
-            { name: "color_hoy", selector: { color_rgb: {} } },
-            { name: "color_manana", selector: { color_rgb: {} } },
-            { name: "bandas", selector: { boolean: {} } },
-          ],
-        },
-        { name: "entity_injection", selector: { entity: { domain: "sensor" } } },
-        {
-          name: "icon_color",
-          selector: {
-            select: {
-              mode: "dropdown",
-              options: [
-                { value: "price", label: "Por precio / By price" },
-                { value: "period", label: "Por periodo P1-P3 / By period" },
-                { value: "fijo", label: "Azul fijo / Fixed blue" },
-              ],
-            },
-          },
-        },
-        {
-          type: "grid",
-          name: "",
-          schema: [
-            { name: "grafica_facturas", selector: { boolean: {} } },
-            { name: "facturas_importe", selector: { boolean: {} } },
-            { name: "facturas_tendencia", selector: { boolean: {} } },
-            {
-              name: "facturas_meses",
-              selector: {
-                select: { mode: "dropdown", options: ["3", "5", "6", "9", "12"].map((v) => ({ value: v, label: v })) },
-              },
-            },
-            { name: "color_facturas", selector: { color_rgb: {} } },
-          ],
-        },
-        { name: "titulo_grafica", selector: { text: {} } },
-        { name: "titulo_facturas", selector: { text: {} } },
-        { name: "entity_factura_actual", selector: { entity: { domain: "sensor" } } },
-        { name: "entity_factura_anterior", selector: { entity: { domain: "sensor" } } },
-      ],
-      computeLabel: (s) => ETIQUETAS_EDITOR[s.name] || s.name,
-    };
+  static async getConfigElement() {
+    await cargarHaForm();
+    return document.createElement(ETIQUETA_EDITOR);
   }
 
   /** Configuración inicial al añadir la tarjeta (la que eligió el titular, 13-oct-2026). */
@@ -407,37 +364,7 @@ class PvpcBonoSocialCard extends LitElement {
 
   setConfig(config) {
     if (!config) throw new Error("Configuración no válida");
-    // Opciones de la tarjeta antigua (show_current, show_details, show_graph, show_only_today).
-    const antigua = {};
-    for (const [vieja, nueva] of [
-      ["show_current", "current"],
-      ["show_details", "details"],
-      ["show_graph", "graph"],
-    ]) {
-      if (typeof config[vieja] === "boolean" && !(nueva in config)) antigua[nueva] = config[vieja];
-    }
-    if (typeof config.show_only_today === "boolean" && !("next_day" in config)) antigua.next_day = !config.show_only_today;
-    this._config = {
-      current: true,
-      details: true,
-      graph: true,
-      next_day: true,
-      factura: "header",
-      factura_actual: true,
-      factura_anterior: true,
-      prevision: true,
-      icon_color: "price",
-      colores: "fijo",
-      color_hoy: COLOR_HOY,
-      color_manana: COLOR_MANANA,
-      bandas: true,
-      grafica_facturas: false,
-      facturas_meses: "6",
-      facturas_importe: true,
-      ventana: true,
-      ...antigua,
-      ...config,
-    };
+    this._config = conDefectos(config);
   }
 
   getCardSize() {
@@ -746,7 +673,7 @@ class PvpcBonoSocialCard extends LitElement {
     const dm = (iso) => (typeof iso === "string" ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "");
     const periodo = (desde, hasta) => (desde && hasta ? ` (${dm(desde)} - ${dm(hasta)})` : "");
     const linea = (texto, fechas, importe, extra = nothing) =>
-      html`<div>${texto}${fechas}: <b>${this._num(importe, 2)} €</b>${extra}</div>`;
+      html`<div>${texto}<span class="sin-corte">${fechas}</span>: <b class="sin-corte">${this._num(importe, 2)} €</b>${extra}</div>`;
 
     // 1. Periodo anterior
     const anterior = idAnterior && this.hass.states[idAnterior];
@@ -775,8 +702,7 @@ class PvpcBonoSocialCard extends LitElement {
     if (!hoy.length) return html`<div class="aviso">${t.sin_precio}</div>`;
     const cHoy = this._cHoy;
     const cManana = this._cManana;
-    const ancho = 480;
-    const alto = 190;
+    const { ancho, alto } = lienzo(this._anchoUtil, 190, 300);
     const m = { izq: 38, der: 16, arr: 24, aba: 24 };
     const series = [
       { puntos: hoy, color: cHoy },
@@ -821,6 +747,8 @@ class PvpcBonoSocialCard extends LitElement {
     const punto = (puntos, color, i, clase) =>
       svg`<circle class=${clase} cx=${x(i)} cy=${y(puntos[i].precio)} r="3" fill=${color}></circle>`;
     const porPrecio = this._config.colores === "precio";
+    // «00:00» mide unas 27 unidades: con poco ancho, una etiqueta cada 6 h (la rejilla sigue igual).
+    const horasPorEtiqueta = cadaCuantas(hueco * 3, 28);
 
     const titulo = this._config.titulo_grafica ?? "PVPC";
     return html`
@@ -850,8 +778,10 @@ class PvpcBonoSocialCard extends LitElement {
               <text class="eje" x=${m.izq - 4} y=${y(v) + 3} text-anchor="end">${this._num(Math.abs(v) < 0.005 ? 0 : v, 2)}</text>`,
           )}
           ${[0, 3, 6, 9, 12, 15, 18, 21, 24].map(
-            (h) => svg`<line class="rejilla" x1=${x0(h)} x2=${x0(h)} y1=${m.arr} y2=${alto - m.aba}></line>
-              <text class="eje" x=${x0(h)} y=${alto - 8} text-anchor="middle">${this._hora(h)}</text>`,
+            (h, k) => svg`<line class="rejilla" x1=${x0(h)} x2=${x0(h)} y1=${m.arr} y2=${alto - m.aba}></line>
+              ${k % horasPorEtiqueta
+                ? nothing
+                : svg`<text class="eje" x=${x0(h)} y=${alto - 8} text-anchor="middle">${this._hora(h)}</text>`}`,
           )}
           ${series.map(
             (s) =>
@@ -891,8 +821,11 @@ class PvpcBonoSocialCard extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    // Al cambiar el ancho, se vuelve a alinear la factura de la cabecera con los detalles.
-    this._observador ??= new ResizeObserver(() => this._alinearFactura());
+    // Al cambiar el ancho, se vuelven a medir las gráficas y a alinear la factura de la cabecera.
+    this._observador ??= new ResizeObserver(() => {
+      this._medirAncho();
+      this._alinearFactura();
+    });
     this._observador.observe(this);
     this._programarCambioDeHora();
   }
@@ -901,6 +834,15 @@ class PvpcBonoSocialCard extends LitElement {
     super.disconnectedCallback();
     this._observador?.disconnect();
     clearTimeout(this._temporizadorHora);
+  }
+
+  /** Ancho útil de la tarjeta en px, para el lienzo de las gráficas. */
+  _medirAncho() {
+    const contenedor = this.renderRoot?.querySelector(".contenedor");
+    if (!contenedor?.clientWidth) return;
+    const ancho = contenedor.clientWidth - 32; // padding del contenedor
+    // Con menos de 2 px de diferencia no se redibuja: una barra de scroll no debe provocar vaivenes.
+    if (Math.abs(ancho - (this._anchoUtil ?? 0)) >= 2) this._anchoUtil = ancho;
   }
 
   /**
@@ -935,6 +877,7 @@ class PvpcBonoSocialCard extends LitElement {
 
   updated(cambios) {
     super.updated?.(cambios);
+    this._medirAncho();
     this._alinearFactura();
     if (cambios.has("_ventana") && this._ventana) {
       const dialogo = this.renderRoot.querySelector("dialog.ventana");
@@ -1013,21 +956,34 @@ class PvpcBonoSocialCard extends LitElement {
     if (!facturas.length) return html`<div class="facturas">${cabecera}<div class="aviso">${t.sin_facturas}</div></div>`;
     const color = colorCss(this._config.color_facturas, this._cHoy);
     const conImporte = this._config.facturas_importe !== false;
-    const ancho = 480;
-    const alto = 150;
+    const { ancho, alto } = lienzo(this._anchoUtil, 150, 220);
     const m = { izq: 8, der: 8, arr: conImporte ? 18 : 6, aba: 20 };
     const max = Math.max(...facturas.map((f) => f.total), 1);
     const hueco = (ancho - m.izq - m.der) / facturas.length;
     const barra = Math.min(hueco * 0.6, 56);
+    // Con muchas barras o poco ancho, una etiqueta de cada tantas: la última, la factura más reciente.
+    const ultima = facturas.length - 1;
+    const importeMasLargo = Math.max(...facturas.map((f) => this._num(f.total, 2).length + 2));
+    const cadaImporte = cadaCuantas(hueco, importeMasLargo * 6.2);
     const y = (v) => m.arr + (alto - m.arr - m.aba) * (1 - Math.max(v, 0) / max);
     const idioma = this._idiomas;
     const zona = zonaDeHA(this.hass);
-    let mes;
+    let formato;
     try {
-      mes = new Intl.DateTimeFormat(idioma, { month: "short", year: "2-digit", ...(zona ? { timeZone: zona } : {}) });
+      formato = new Intl.DateTimeFormat(idioma, { month: "short", year: "2-digit", ...(zona ? { timeZone: zona } : {}) });
     } catch {
-      mes = new Intl.DateTimeFormat(idioma, { month: "short", year: "2-digit" });
+      formato = new Intl.DateTimeFormat(idioma, { month: "short", year: "2-digit" });
     }
+    // Solo mes y año: en catalán y gallego el formato lleva «del»/«de» y las etiquetas se pisan.
+    const mes = {
+      format: (fecha) => {
+        const partes = formato.formatToParts(fecha);
+        const parte = (tipo) => partes.find((p) => p.type === tipo)?.value ?? "";
+        return `${parte("month")} ${parte("year")}`;
+      },
+    };
+    const mesMasLargo = Math.max(...facturas.map((f) => mes.format(f.inicio).length));
+    const cadaMes = cadaCuantas(hueco, mesMasLargo * 5.2);
     return html`
       <div class="facturas">
         ${cabecera}
@@ -1041,13 +997,16 @@ class PvpcBonoSocialCard extends LitElement {
                 height=${Math.max(alto - m.aba - y(f.total) - (f.real ? 0 : 1), 0)} rx="3"
                 fill=${f.real ? color : "none"} stroke=${color}>
                 <title>${mes.format(f.inicio)}: ${this._num(f.total, 2)} € (${f.real ? t.real : t.calculada})</title></rect>
-              <text class="eje" x=${cx} y=${alto - 6} text-anchor="middle">${mes.format(f.inicio)}</text>`;
+              ${(ultima - i) % cadaMes
+                ? nothing
+                : svg`<text class="eje" x=${cx} y=${alto - 6} text-anchor="middle">${mes.format(f.inicio)}</text>`}`;
           })}
           ${this._config.facturas_tendencia && facturas.length > 1 ? this._tendencia(facturas, hueco, m, y) : nothing}
           ${conImporte
-            ? facturas.map(
-                (f, i) =>
-                  svg`<text class="importe" x=${m.izq + hueco * (i + 0.5)} y=${y(f.total) - 5}
+            ? facturas.map((f, i) =>
+                (ultima - i) % cadaImporte
+                  ? nothing
+                  : svg`<text class="importe" x=${m.izq + hueco * (i + 0.5)} y=${y(f.total) - 5}
                     text-anchor="middle">${this._num(f.total, 2)} €</text>`,
               )
             : nothing}
@@ -1130,7 +1089,11 @@ class PvpcBonoSocialCard extends LitElement {
     .actual {
       text-align: right;
     }
+    .sin-corte {
+      white-space: nowrap;
+    }
     .precio {
+      white-space: nowrap;
       font-size: 1.9em;
       font-weight: 700;
       line-height: 1.1;
@@ -1196,6 +1159,28 @@ class PvpcBonoSocialCard extends LitElement {
         font-size: 0.85em;
       }
     }
+    /* El mínimo que anuncia la tarjeta (6 columnas): dos columnas de precios tienen que caber. */
+    @container (max-width: 250px) {
+      .precio {
+        font-size: 1.4em;
+      }
+      .detalles {
+        column-gap: 6px;
+      }
+      .detalle {
+        gap: 3px;
+      }
+      .tri {
+        width: 14px;
+        height: 14px;
+      }
+      .detalle .valor {
+        font-size: 0.78em;
+      }
+      .detalle .horas {
+        font-size: 0.72em;
+      }
+    }
     .grafica > svg {
       width: 100%;
       height: auto;
@@ -1212,9 +1197,10 @@ class PvpcBonoSocialCard extends LitElement {
     }
     .serie {
       fill: none;
-      stroke-width: 1.5;
+      stroke-width: 2.5;
     }
     .serie.punteada {
+      stroke-width: 1.5;
       stroke-dasharray: 2 3;
     }
     .tramo {
@@ -1326,13 +1312,6 @@ class PvpcBonoSocialCard extends LitElement {
       text-align: right;
       margin-top: 6px;
     }
-    .factura .grande {
-      font-size: 1.2em;
-    }
-    .suave {
-      color: var(--secondary-text-color);
-      white-space: nowrap;
-    }
     .factura.estrecha {
       display: none;
     }
@@ -1427,6 +1406,171 @@ class PvpcBonoSocialCard extends LitElement {
   `;
 }
 
+// --- editor visual -----------------------------------------------------------------------
+
+const ETIQUETA_EDITOR = `${ETIQUETA}-editor`;
+
+/** Parte de una etiqueta «español / inglés» para el idioma del usuario. */
+function enSuIdioma(etiqueta, idioma) {
+  const [es, en] = etiqueta.split(" / ");
+  return ["es", ...COOFICIALES].includes(idioma) ? es : (en ?? es);
+}
+
+function esquemaEditor(idioma) {
+  const opciones = (lista) => ({
+    select: {
+      mode: "dropdown",
+      options: lista.map(([value, label]) => ({ value, label: enSuIdioma(label, idioma) })),
+    },
+  });
+  const interruptores = (...nombres) => nombres.map((name) => ({ name, selector: { boolean: {} } }));
+  return [
+    { name: "entity", selector: { entity: { domain: "sensor" } } },
+    { name: "title", selector: { text: {} } },
+    {
+      name: "factura",
+      selector: opciones([
+        ["below_chart", "Bajo la gráfica / Below the chart"],
+        ["header", "Arriba / In the header"],
+        ["hidden", "Oculta / Hidden"],
+      ]),
+    },
+    {
+      type: "grid",
+      name: "",
+      schema: interruptores("factura_actual", "factura_anterior", "prevision", "current", "details", "graph", "next_day", "ventana"),
+    },
+    {
+      name: "colores",
+      selector: opciones([
+        ["fijo", "Un color por día / One colour per day"],
+        ["precio", "Hoy por precio / Today by price"],
+      ]),
+    },
+    {
+      type: "grid",
+      name: "",
+      schema: [
+        { name: "color_hoy", selector: { color_rgb: {} } },
+        { name: "color_manana", selector: { color_rgb: {} } },
+        ...interruptores("bandas"),
+      ],
+    },
+    { name: "entity_injection", selector: { entity: { domain: "sensor" } } },
+    {
+      name: "icon_color",
+      selector: opciones([
+        ["price", "Por precio / By price"],
+        ["period", "Por periodo P1-P3 / By period"],
+        ["fijo", "Azul fijo / Fixed blue"],
+      ]),
+    },
+    {
+      type: "grid",
+      name: "",
+      schema: [
+        ...interruptores("grafica_facturas", "facturas_importe", "facturas_tendencia"),
+        { name: "facturas_meses", selector: opciones(["3", "5", "6", "9", "12"].map((v) => [v, v])) },
+        { name: "color_facturas", selector: { color_rgb: {} } },
+      ],
+    },
+    { name: "titulo_grafica", selector: { text: {} } },
+    { name: "titulo_facturas", selector: { text: {} } },
+    { name: "entity_factura_actual", selector: { entity: { domain: "sensor" } } },
+    { name: "entity_factura_anterior", selector: { entity: { domain: "sensor" } } },
+  ];
+}
+
+/** [r, g, b] de un color de la configuración (el selector de color solo entiende eso). */
+function aRgb(valor, defecto) {
+  if (Array.isArray(valor) && valor.length === 3) return valor.map(Number);
+  const texto = typeof valor === "string" ? valor.trim() : "";
+  const hexa = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(texto)?.[1];
+  if (hexa) {
+    const largo = hexa.length === 3 ? [...hexa].map((c) => c + c).join("") : hexa;
+    return [0, 2, 4].map((i) => parseInt(largo.slice(i, i + 2), 16));
+  }
+  const rgb = /^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i.exec(texto);
+  if (rgb) return rgb.slice(1, 4).map(Number);
+  if (texto) {
+    // Un color con nombre: que lo traduzca el navegador. Si no lo conoce, deja el negro de partida.
+    const lienzo2d = document.createElement("canvas").getContext("2d");
+    lienzo2d.fillStyle = "#000000";
+    lienzo2d.fillStyle = texto;
+    if (lienzo2d.fillStyle !== "#000000" || texto.toLowerCase() === "black") return aRgb(lienzo2d.fillStyle);
+  }
+  return defecto === undefined ? [0, 0, 0] : aRgb(defecto);
+}
+
+/** Lo que enseña el editor: lo que de verdad hace la tarjeta, aunque el YAML no lo diga. */
+function datosEditor(config, hass) {
+  const c = conDefectos(config);
+  return {
+    ...c,
+    entity: c.entity || entidadPrecio(hass),
+    entity_factura_actual: c.entity_factura_actual || buscarEntidad(hass, "sensor.pvpc_bs_factura_actual"),
+    entity_factura_anterior: c.entity_factura_anterior || buscarEntidad(hass, "sensor.pvpc_bs_factura_anterior"),
+    color_hoy: aRgb(c.color_hoy, COLOR_HOY),
+    color_manana: aRgb(c.color_manana, COLOR_MANANA),
+    color_facturas: aRgb(c.color_facturas ?? c.color_hoy, COLOR_HOY),
+    facturas_meses: String(c.facturas_meses),
+    grafica_facturas: Boolean(c.grafica_facturas),
+  };
+}
+
+/** HA carga ha-form con los editores de sus tarjetas: si no está, se le pide uno que lo use. */
+async function cargarHaForm() {
+  if (customElements.get("ha-form")) return;
+  try {
+    const ayudas = await window.loadCardHelpers?.();
+    const tarjeta = await ayudas?.createCardElement({ type: "entities", entities: [] });
+    await tarjeta?.constructor?.getConfigElement?.();
+  } catch (err) {
+    console.warn("pvpc-bono-social-card: no se pudo cargar el editor", err);
+  }
+}
+
+class PvpcBonoSocialCardEditor extends LitElement {
+  static properties = {
+    hass: { attribute: false },
+    _config: { state: true },
+  };
+
+  setConfig(config) {
+    this._config = config;
+  }
+
+  get _idioma() {
+    return (this.hass?.locale?.language || this.hass?.language || "es").slice(0, 2);
+  }
+
+  render() {
+    if (!this._config || !this.hass) return nothing;
+    return html`<ha-form
+      .hass=${this.hass}
+      .data=${datosEditor(this._config, this.hass)}
+      .schema=${esquemaEditor(this._idioma)}
+      .computeLabel=${(s) => (ETIQUETAS_EDITOR[s.name] ? enSuIdioma(ETIQUETAS_EDITOR[s.name], this._idioma) : s.name)}
+      @value-changed=${this._alCambiar}
+    ></ha-form>`;
+  }
+
+  /** Solo se escribe lo que el usuario ha tocado: el resto no tiene por qué acabar en su YAML. */
+  _alCambiar(ev) {
+    ev.stopPropagation();
+    const nuevos = ev.detail.value;
+    const antes = datosEditor(this._config, this.hass);
+    const config = { ...this._config };
+    for (const clave of new Set([...Object.keys(nuevos), ...Object.keys(antes)])) {
+      if (JSON.stringify(nuevos[clave]) === JSON.stringify(antes[clave])) continue;
+      if (nuevos[clave] === undefined) delete config[clave];
+      else config[clave] = nuevos[clave];
+    }
+    this._config = config;
+    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config }, bubbles: true, composed: true }));
+  }
+}
+
 const ETIQUETAS_EDITOR = {
   entity: "Sensor de precio / Price sensor",
   title: "Título / Title",
@@ -1458,6 +1602,7 @@ const ETIQUETAS_EDITOR = {
 
 if (!customElements.get(ETIQUETA)) {
   customElements.define(ETIQUETA, PvpcBonoSocialCard);
+  customElements.define(ETIQUETA_EDITOR, PvpcBonoSocialCardEditor);
   window.customCards = window.customCards || [];
   window.customCards.push({
     type: ETIQUETA,

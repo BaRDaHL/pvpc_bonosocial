@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 import aiohttp
@@ -32,8 +32,6 @@ from .const import (
     ATTR_NEXT_PERIOD_IN_UPDATE,
     ATTR_NEXT_POWER_PERIOD_IN_UPDATE,
     ATTR_NEXT_PRICE_IN_UPDATE,
-    ATTR_POWER_P1,
-    ATTR_POWER_P3,
     ATTR_PRICE_MODE,
     ATTR_SHOW_REFERENCE_PRICE,
     ATTR_TARIFF,
@@ -49,14 +47,11 @@ from .const import (
     ENTRY_MINOR_VERSION,
     ENTRY_VERSION,
     LEGACY_ATTR_ENABLE_INJECTION_PRICE,
-    LEGACY_ATTR_POWER,
-    LEGACY_ATTR_POWER_P2_P3,
     PRICE_MODES,
     SUBENTRY_DATADIS,
     SUBENTRY_RESUMEN,
     SUBENTRY_SUMINISTRO,
     UPDATE_FREQUENCY_OPTIONS,
-    VALID_POWER,
     VALID_TARIFF,
     normalize_better_price_target,
     normalize_price_mode,
@@ -65,7 +60,7 @@ from .flujo_datadis import DatadisSubentryFlow
 from .flujo_resumen import ResumenSubentryFlow
 from .flujo_suministro import SuministroSubentryFlow
 from .importacion import CONF_COPIA, CONF_IMPORTAR, config_importada, entrada_a_importar, resumen
-from .prices.aiopvpc import DEFAULT_POWER_KW, PVPCData
+from .prices.aiopvpc import EsiosForbiddenError, PVPCData
 
 _MAIL_TO_LINK = "[consultasios@ree.es](mailto:consultasios@ree.es?subject=Personal%20token%20request)"
 
@@ -76,10 +71,62 @@ async def _async_comprobar_token(hass, api: PVPCData | None, token: str) -> tupl
     try:
         if not await api.check_api_token(dt_util.utcnow(), token):
             return api, "invalid_auth"
+    except EsiosForbiddenError:
+        return api, "esios_rechaza"
     except (aiohttp.ClientError, TimeoutError):
         # fallo transitorio: no se pudo llegar a la API, lo que no dice nada del token
         return api, "cannot_connect"
     return api, None
+
+
+# La potencia contratada no se pide aquí: se pide una sola vez, al añadir el suministro, y de ahí
+# la leen también los sensores de precio (helpers.potencia_contratada). Hasta la v1.2.1 se pedía
+# dos veces, con valores por defecto distintos.
+_PREFERENCIAS_POR_DEFECTO = {
+    ATTR_BETTER_PRICE_TARGET: DEFAULT_BETTER_PRICE_TARGET,
+    ATTR_NEXT_PRICE_IN_UPDATE: DEFAULT_UPDATE_FREQUENCY,
+    ATTR_NEXT_BEST_IN_UPDATE: DEFAULT_UPDATE_FREQUENCY,
+    ATTR_NEXT_PERIOD_IN_UPDATE: DEFAULT_UPDATE_FREQUENCY,
+    ATTR_NEXT_POWER_PERIOD_IN_UPDATE: DEFAULT_UPDATE_FREQUENCY,
+    ATTR_ENABLE_PRIVATE_API: DEFAULT_ENABLE_PRIVATE_API,
+}
+
+
+def _select(opciones: Iterable[str], clave: str) -> SelectSelector:
+    return SelectSelector(
+        SelectSelectorConfig(options=list(opciones), translation_key=clave, mode=SelectSelectorMode.DROPDOWN)
+    )
+
+
+def _campos_preferencias(valores: Mapping[str, Any]) -> dict[Any, Any]:
+    """Campos comunes del alta y las opciones, con los valores que hay que mostrar."""
+    campos: dict[Any, Any] = {
+        vol.Required(ATTR_BETTER_PRICE_TARGET, default=valores[ATTR_BETTER_PRICE_TARGET]): _select(
+            BETTER_PRICE_TARGETS, "better_price_target"
+        ),
+    }
+    for clave in (
+        ATTR_NEXT_PRICE_IN_UPDATE,
+        ATTR_NEXT_BEST_IN_UPDATE,
+        ATTR_NEXT_PERIOD_IN_UPDATE,
+        ATTR_NEXT_POWER_PERIOD_IN_UPDATE,
+    ):
+        campos[vol.Required(clave, default=valores[clave])] = _select(
+            UPDATE_FREQUENCY_OPTIONS, "update_frequency"
+        )
+    campos[vol.Required(ATTR_ENABLE_PRIVATE_API, default=valores[ATTR_ENABLE_PRIVATE_API])] = bool
+    return campos
+
+
+def _esquema_modo(modos: list[str], modo: str, precio_referencia: bool) -> vol.Schema:
+    return vol.Schema(
+        {
+            vol.Required(ATTR_PRICE_MODE, default=modo if modo in modos else DEFAULT_PRICE_MODE): _select(
+                modos, "price_mode"
+            ),
+            vol.Required(ATTR_SHOW_REFERENCE_PRICE, default=precio_referencia): bool,
+        }
+    )
 
 
 def _available_price_modes(enable_private_api: bool, api_token: str | None) -> list[str]:
@@ -92,8 +139,6 @@ def _available_price_modes(enable_private_api: bool, api_token: str | None) -> l
 class PVPCOptionsFlowHandler(OptionsFlow):
     """Handle PVPC options flow (la recarga la hace el update listener de la entrada)."""
 
-    _power_p1: float | None = None
-    _power_p3: float | None = None
     _better_price_target: str | None = None
     _enable_private_api: bool | None = None
     _price_mode: str | None = None
@@ -109,16 +154,6 @@ class PVPCOptionsFlowHandler(OptionsFlow):
         """Manage the options."""
         options = self.config_entry.options
         data = self.config_entry.data
-
-        def _get_power_value(primary_key: str, legacy_key: str) -> float:
-            value = options.get(
-                primary_key,
-                options.get(legacy_key, data.get(primary_key, data.get(legacy_key))),
-            )
-            return DEFAULT_POWER_KW if value is None else value
-
-        power_p1 = _get_power_value(ATTR_POWER_P1, LEGACY_ATTR_POWER)
-        power_p3 = _get_power_value(ATTR_POWER_P3, LEGACY_ATTR_POWER_P2_P3)
         better_price_target = normalize_better_price_target(
             options.get(ATTR_BETTER_PRICE_TARGET, data.get(ATTR_BETTER_PRICE_TARGET))
         )
@@ -154,55 +189,16 @@ class PVPCOptionsFlowHandler(OptionsFlow):
         if enable_private_api is None:
             enable_private_api = bool(api_token) if api_token else DEFAULT_ENABLE_PRIVATE_API
 
-        schema = vol.Schema(
-            {
-                vol.Required(ATTR_POWER_P1, default=power_p1): VALID_POWER,
-                vol.Required(ATTR_POWER_P3, default=power_p3): VALID_POWER,
-                vol.Required(ATTR_BETTER_PRICE_TARGET, default=better_price_target): SelectSelector(
-                    SelectSelectorConfig(
-                        options=list(BETTER_PRICE_TARGETS),
-                        translation_key="better_price_target",
-                        mode=SelectSelectorMode.DROPDOWN,
-                    )
-                ),
-                vol.Required(ATTR_NEXT_PRICE_IN_UPDATE, default=next_price_in_update): SelectSelector(
-                    SelectSelectorConfig(
-                        options=list(UPDATE_FREQUENCY_OPTIONS),
-                        translation_key="update_frequency",
-                        mode=SelectSelectorMode.DROPDOWN,
-                    )
-                ),
-                vol.Required(ATTR_NEXT_BEST_IN_UPDATE, default=next_best_in_update): SelectSelector(
-                    SelectSelectorConfig(
-                        options=list(UPDATE_FREQUENCY_OPTIONS),
-                        translation_key="update_frequency",
-                        mode=SelectSelectorMode.DROPDOWN,
-                    )
-                ),
-                vol.Required(ATTR_NEXT_PERIOD_IN_UPDATE, default=next_period_in_update): SelectSelector(
-                    SelectSelectorConfig(
-                        options=list(UPDATE_FREQUENCY_OPTIONS),
-                        translation_key="update_frequency",
-                        mode=SelectSelectorMode.DROPDOWN,
-                    )
-                ),
-                vol.Required(
-                    ATTR_NEXT_POWER_PERIOD_IN_UPDATE,
-                    default=next_power_period_in_update,
-                ): SelectSelector(
-                    SelectSelectorConfig(
-                        options=list(UPDATE_FREQUENCY_OPTIONS),
-                        translation_key="update_frequency",
-                        mode=SelectSelectorMode.DROPDOWN,
-                    )
-                ),
-                vol.Required(ATTR_ENABLE_PRIVATE_API, default=enable_private_api): bool,
-            }
-        )
-
+        valores = {
+            ATTR_BETTER_PRICE_TARGET: better_price_target,
+            ATTR_NEXT_PRICE_IN_UPDATE: next_price_in_update,
+            ATTR_NEXT_BEST_IN_UPDATE: next_best_in_update,
+            ATTR_NEXT_PERIOD_IN_UPDATE: next_period_in_update,
+            ATTR_NEXT_POWER_PERIOD_IN_UPDATE: next_power_period_in_update,
+            ATTR_ENABLE_PRIVATE_API: enable_private_api,
+        }
         if user_input is not None:
-            self._power_p1 = user_input[ATTR_POWER_P1]
-            self._power_p3 = user_input[ATTR_POWER_P3]
+            valores.update(user_input)
             self._better_price_target = user_input[ATTR_BETTER_PRICE_TARGET]
             self._next_price_in_update = user_input[ATTR_NEXT_PRICE_IN_UPDATE]
             self._next_best_in_update = user_input[ATTR_NEXT_BEST_IN_UPDATE]
@@ -218,17 +214,20 @@ class PVPCOptionsFlowHandler(OptionsFlow):
             self._price_mode = DEFAULT_PRICE_MODE
             return self._async_guardar()
 
-        return self.async_show_form(step_id="init", data_schema=schema)
+        return self.async_show_form(step_id="init", data_schema=vol.Schema(_campos_preferencias(valores)))
 
     async def async_step_api_token(self, user_input: dict[str, Any] | None = None):
         """Pide el token (solo si la entrada no tiene ninguno) y lo valida contra ESIOS."""
         errors: dict[str, str] = {}
-        if user_input is not None and (api_token := user_input.get(CONF_API_TOKEN)):
-            self._api, error = await _async_comprobar_token(self.hass, self._api, api_token)
-            if error is None:
-                self._api_token = api_token
-                return await self.async_step_price_mode()
-            errors["base"] = error
+        if user_input is not None:
+            if api_token := user_input.get(CONF_API_TOKEN, "").strip():
+                self._api, error = await _async_comprobar_token(self.hass, self._api, api_token)
+                if error is None:
+                    self._api_token = api_token
+                    return await self.async_step_price_mode()
+                errors["base"] = error
+            else:
+                errors[CONF_API_TOKEN] = "obligatorio"
 
         schema = vol.Schema({vol.Required(CONF_API_TOKEN, default=self._api_token or ""): str})
         return self.async_show_form(
@@ -247,8 +246,6 @@ class PVPCOptionsFlowHandler(OptionsFlow):
         son las mismas, async_update_entry no detecta cambio y no vuelve a disparar el listener.
         """
         opciones = {
-            ATTR_POWER_P1: self._power_p1,
-            ATTR_POWER_P3: self._power_p3,
             ATTR_BETTER_PRICE_TARGET: self._better_price_target,
             ATTR_NEXT_PRICE_IN_UPDATE: self._next_price_in_update,
             ATTR_NEXT_BEST_IN_UPDATE: self._next_best_in_update,
@@ -283,30 +280,10 @@ class PVPCOptionsFlowHandler(OptionsFlow):
                 )
             )
         )
-        if default_mode not in selectable_price_modes:
-            default_mode = DEFAULT_PRICE_MODE
-        schema = vol.Schema(
-            {
-                vol.Required(ATTR_PRICE_MODE, default=default_mode): SelectSelector(
-                    SelectSelectorConfig(
-                        options=selectable_price_modes,
-                        translation_key="price_mode",
-                        mode=SelectSelectorMode.DROPDOWN,
-                    )
-                ),
-                vol.Required(ATTR_SHOW_REFERENCE_PRICE, default=default_show_reference_price): bool,
-            }
-        )
+        schema = _esquema_modo(selectable_price_modes, default_mode, default_show_reference_price)
 
         if user_input is not None:
-            selected_mode = normalize_price_mode(user_input[ATTR_PRICE_MODE])
-            if selected_mode not in selectable_price_modes:
-                return self.async_show_form(
-                    step_id="price_mode",
-                    data_schema=schema,
-                    errors={"base": "indexed_requires_private_api"},
-                )
-            self._price_mode = selected_mode
+            self._price_mode = normalize_price_mode(user_input[ATTR_PRICE_MODE])
             self._show_reference_price = bool(user_input[ATTR_SHOW_REFERENCE_PRICE])
             return self._async_guardar()
 
@@ -320,8 +297,6 @@ class TariffSelectorConfigFlow(ConfigFlow, domain=DOMAIN):
     MINOR_VERSION = ENTRY_MINOR_VERSION
     _name: str | None = None
     _tariff: str | None = None
-    _power_p1: float | None = None
-    _power_p3: float | None = None
     _better_price_target: str | None = None
     _enable_private_api: bool | None = None
     _price_mode: str | None = None
@@ -352,77 +327,19 @@ class TariffSelectorConfigFlow(ConfigFlow, domain=DOMAIN):
             SUBENTRY_DATADIS: DatadisSubentryFlow,
         }
 
-    def is_matching(self, other_flow: ConfigFlow) -> bool:
-        """Return True if another flow is configuring the same tariff."""
-        return (
-            isinstance(other_flow, TariffSelectorConfigFlow)
-            and self._tariff is not None
-            and self._tariff == getattr(other_flow, "_tariff", None)
-        )
-
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
         """Initial configuration step."""
         if user_input is None and not self._origen_elegido and entrada_a_importar(self.hass):
             return await self.async_step_origen()
-        data_schema = vol.Schema(
-            {
-                vol.Required(CONF_NAME, default=DEFAULT_NAME): str,
-                vol.Required(ATTR_TARIFF, default=DEFAULT_TARIFF): VALID_TARIFF,
-                vol.Required(ATTR_POWER_P1, default=DEFAULT_POWER_KW): VALID_POWER,
-                vol.Required(ATTR_POWER_P3, default=DEFAULT_POWER_KW): VALID_POWER,
-                vol.Required(ATTR_BETTER_PRICE_TARGET, default=DEFAULT_BETTER_PRICE_TARGET): SelectSelector(
-                    SelectSelectorConfig(
-                        options=list(BETTER_PRICE_TARGETS),
-                        translation_key="better_price_target",
-                        mode=SelectSelectorMode.DROPDOWN,
-                    )
-                ),
-                vol.Required(ATTR_NEXT_PRICE_IN_UPDATE, default=DEFAULT_UPDATE_FREQUENCY): SelectSelector(
-                    SelectSelectorConfig(
-                        options=list(UPDATE_FREQUENCY_OPTIONS),
-                        translation_key="update_frequency",
-                        mode=SelectSelectorMode.DROPDOWN,
-                    )
-                ),
-                vol.Required(ATTR_NEXT_BEST_IN_UPDATE, default=DEFAULT_UPDATE_FREQUENCY): SelectSelector(
-                    SelectSelectorConfig(
-                        options=list(UPDATE_FREQUENCY_OPTIONS),
-                        translation_key="update_frequency",
-                        mode=SelectSelectorMode.DROPDOWN,
-                    )
-                ),
-                vol.Required(ATTR_NEXT_PERIOD_IN_UPDATE, default=DEFAULT_UPDATE_FREQUENCY): SelectSelector(
-                    SelectSelectorConfig(
-                        options=list(UPDATE_FREQUENCY_OPTIONS),
-                        translation_key="update_frequency",
-                        mode=SelectSelectorMode.DROPDOWN,
-                    )
-                ),
-                vol.Required(
-                    ATTR_NEXT_POWER_PERIOD_IN_UPDATE,
-                    default=DEFAULT_UPDATE_FREQUENCY,
-                ): SelectSelector(
-                    SelectSelectorConfig(
-                        options=list(UPDATE_FREQUENCY_OPTIONS),
-                        translation_key="update_frequency",
-                        mode=SelectSelectorMode.DROPDOWN,
-                    )
-                ),
-                vol.Required(
-                    ATTR_ENABLE_PRIVATE_API,
-                    default=DEFAULT_ENABLE_PRIVATE_API,
-                ): bool,
-            }
-        )
-
+        valores: dict[str, Any] = {**_PREFERENCIAS_POR_DEFECTO, **(user_input or {})}
         if user_input is not None:
-            await self.async_set_unique_id(user_input[ATTR_TARIFF])
+            # Sin raise_on_progress: un alta abandonada a medias (navegador cerrado) sigue viva hasta
+            # reiniciar HA y no debe impedir empezar otra. La tarifa ya configurada sí aborta.
+            await self.async_set_unique_id(user_input[ATTR_TARIFF], raise_on_progress=False)
             self._abort_if_unique_id_configured()
 
             self._name = user_input[CONF_NAME]
             self._tariff = user_input[ATTR_TARIFF]
-            self._power_p1 = user_input[ATTR_POWER_P1]
-            self._power_p3 = user_input[ATTR_POWER_P3]
             self._better_price_target = user_input[ATTR_BETTER_PRICE_TARGET]
             self._next_price_in_update = user_input[ATTR_NEXT_PRICE_IN_UPDATE]
             self._next_best_in_update = user_input[ATTR_NEXT_BEST_IN_UPDATE]
@@ -433,25 +350,15 @@ class TariffSelectorConfigFlow(ConfigFlow, domain=DOMAIN):
                 return await self.async_step_api_token()
             self._price_mode = DEFAULT_PRICE_MODE
             self._show_reference_price = DEFAULT_SHOW_REFERENCE_PRICE
-            return self.async_create_entry(
-                title=self._name,
-                data={
-                    CONF_NAME: self._name,
-                    ATTR_TARIFF: self._tariff,
-                    ATTR_POWER_P1: self._power_p1,
-                    ATTR_POWER_P3: self._power_p3,
-                    ATTR_BETTER_PRICE_TARGET: self._better_price_target,
-                    ATTR_NEXT_PRICE_IN_UPDATE: self._next_price_in_update,
-                    ATTR_NEXT_BEST_IN_UPDATE: self._next_best_in_update,
-                    ATTR_NEXT_PERIOD_IN_UPDATE: self._next_period_in_update,
-                    ATTR_NEXT_POWER_PERIOD_IN_UPDATE: (self._next_power_period_in_update),
-                    ATTR_ENABLE_PRIVATE_API: self._enable_private_api,
-                    ATTR_PRICE_MODE: DEFAULT_PRICE_MODE,
-                    ATTR_SHOW_REFERENCE_PRICE: self._show_reference_price,
-                    CONF_API_TOKEN: None,
-                },
-            )
+            return self.async_create_entry(title=self._name, data=self._build_entry_data())
 
+        data_schema = vol.Schema(
+            {
+                vol.Required(CONF_NAME, default=valores.get(CONF_NAME, DEFAULT_NAME)): str,
+                vol.Required(ATTR_TARIFF, default=valores.get(ATTR_TARIFF, DEFAULT_TARIFF)): VALID_TARIFF,
+                **_campos_preferencias(valores),
+            }
+        )
         return self.async_show_form(step_id="user", data_schema=data_schema)
 
     async def async_step_origen(self, user_input: dict[str, Any] | None = None):
@@ -474,7 +381,7 @@ class TariffSelectorConfigFlow(ConfigFlow, domain=DOMAIN):
                 errores[CONF_COPIA] = "falta_copia"
             else:
                 config = config_importada(origen)
-                await self.async_set_unique_id(config[ATTR_TARIFF])
+                await self.async_set_unique_id(config[ATTR_TARIFF], raise_on_progress=False)
                 self._abort_if_unique_id_configured()
                 return self.async_create_entry(
                     title=config[CONF_NAME], data={**config, CONF_IMPORTAR: origen.entry_id}
@@ -491,22 +398,29 @@ class TariffSelectorConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             self._api_token = user_input[CONF_API_TOKEN]
             return await self._async_verify("api_token")
-
-        schema = vol.Schema({vol.Required(CONF_API_TOKEN, default=self._api_token): str})
         return self.async_show_form(
             step_id="api_token",
-            data_schema=schema,
+            data_schema=self._esquema_token(),
             description_placeholders={"mail_to_link": _MAIL_TO_LINK},
         )
 
     async def _async_verify(self, step_id: str):
         """Verify API token if used."""
         errors: dict[str, str] = {}
-        if self._api_token:
+        self._api_token = (self._api_token or "").strip()
+        if not self._api_token:
+            errors[CONF_API_TOKEN] = "obligatorio"
+        else:
             self._api, error = await _async_comprobar_token(self.hass, self._api, self._api_token)
             if error is not None:
                 errors["base"] = error
-                return self.async_show_form(step_id=step_id, data_schema=self._esquema_token(), errors=errors)
+        if errors:
+            return self.async_show_form(
+                step_id=step_id,
+                data_schema=self._esquema_token(),
+                errors=errors,
+                description_placeholders={"mail_to_link": _MAIL_TO_LINK},
+            )
 
         if self.source in (SOURCE_REAUTH, SOURCE_RECONFIGURE):
             entry = (
@@ -537,31 +451,12 @@ class TariffSelectorConfigFlow(ConfigFlow, domain=DOMAIN):
             if self._show_reference_price is not None
             else DEFAULT_SHOW_REFERENCE_PRICE
         )
-        if default_mode not in selectable_price_modes:
-            default_mode = DEFAULT_PRICE_MODE
-        schema = vol.Schema(
-            {
-                vol.Required(ATTR_PRICE_MODE, default=default_mode): SelectSelector(
-                    SelectSelectorConfig(
-                        options=selectable_price_modes,
-                        translation_key="price_mode",
-                        mode=SelectSelectorMode.DROPDOWN,
-                    )
-                ),
-                vol.Required(ATTR_SHOW_REFERENCE_PRICE, default=default_show_reference_price): bool,
-            }
-        )
+        schema = _esquema_modo(selectable_price_modes, default_mode, default_show_reference_price)
 
         if user_input is not None:
-            selected_mode = normalize_price_mode(user_input[ATTR_PRICE_MODE])
-            if selected_mode not in selectable_price_modes:
-                return self.async_show_form(
-                    step_id="price_mode",
-                    data_schema=schema,
-                    errors={"base": "indexed_requires_private_api"},
-                )
-            self._price_mode = selected_mode
+            self._price_mode = normalize_price_mode(user_input[ATTR_PRICE_MODE])
             self._show_reference_price = bool(user_input[ATTR_SHOW_REFERENCE_PRICE])
+            self._abort_if_unique_id_configured()  # otra alta paralela pudo terminar antes
             assert self._name is not None
             return self.async_create_entry(
                 title=self._name,
@@ -575,8 +470,6 @@ class TariffSelectorConfigFlow(ConfigFlow, domain=DOMAIN):
         return {
             CONF_NAME: self._name,
             ATTR_TARIFF: self._tariff,
-            ATTR_POWER_P1: self._power_p1,
-            ATTR_POWER_P3: self._power_p3,
             ATTR_BETTER_PRICE_TARGET: self._better_price_target,
             ATTR_NEXT_PRICE_IN_UPDATE: self._next_price_in_update,
             ATTR_NEXT_BEST_IN_UPDATE: self._next_best_in_update,

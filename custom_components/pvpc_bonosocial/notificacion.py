@@ -16,8 +16,9 @@ from collections.abc import Mapping
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 
-import voluptuous as vol
+from awesomeversion import AwesomeVersion
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
+from homeassistant.const import __version__ as HA_VERSION
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
@@ -177,6 +178,19 @@ def destino_telegram(hass: HomeAssistant, entity_id: str) -> tuple[str, Any] | N
     return (bot.entry_id, chat) if bot and chat is not None else None
 
 
+VERSION_CHAT_ID_TELEGRAM = AwesomeVersion("2026.3.0")
+
+
+def clave_chat_telegram(version: str = HA_VERSION) -> str:
+    """Clave del chat en `telegram_bot.send_message`.
+
+    No se puede probar una y caer en la otra si falla: hasta HA 2026.2 el esquema tiene ALLOW_EXTRA,
+    acepta `chat_id` sin error y lo ignora, y el bot manda el mensaje a su primer chat, que puede ser
+    de otra persona. Desde la 2026.3 se lee `chat_id` y `target` crea un aviso de migración.
+    """
+    return "chat_id" if AwesomeVersion(version) >= VERSION_CHAT_ID_TELEGRAM else "target"
+
+
 async def async_mandar(
     hass: HomeAssistant,
     destino: str,
@@ -187,20 +201,18 @@ async def async_mandar(
     """Envía un texto a una entidad `notify` (Markdown si es un chat de Telegram)."""
     if telegram is not None:
         bot, chat = telegram
-        datos_envio = {
-            "config_entry_id": bot,
-            "chat_id": [chat],
-            "title": titulo,
-            "message": cuerpo,
-            "parse_mode": "markdown",
-        }
-        try:
-            await hass.services.async_call("telegram_bot", "send_message", datos_envio, blocking=True)
-        except vol.Invalid:
-            # Hasta que HA renombró `target` a `chat_id` (core#154868), solo vale `target`; desde la
-            # 2026.9, solo `chat_id`.
-            datos_envio["target"] = datos_envio.pop("chat_id")
-            await hass.services.async_call("telegram_bot", "send_message", datos_envio, blocking=True)
+        await hass.services.async_call(
+            "telegram_bot",
+            "send_message",
+            {
+                "config_entry_id": bot,
+                clave_chat_telegram(): [chat],
+                "title": titulo,
+                "message": cuerpo,
+                "parse_mode": "markdown",
+            },
+            blocking=True,
+        )
     else:
         await hass.services.async_call(
             "notify",

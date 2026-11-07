@@ -9,13 +9,14 @@
     "error": {
       "invalid_auth": "Invalid authentication.",
       "cannot_connect": "Failed to connect: the ESIOS API could not be reached.",
-      "indexed_requires_private_api": "Indexed mode requires private API and a valid API token.",
-      "falta_copia": "A backup is required before continuing."
+      "falta_copia": "A backup is required before continuing.",
+      "esios_rechaza": "ESIOS refused the request (403): the token is not valid or ESIOS is rate-limiting access. Check the token and try again in a while.",
+      "obligatorio": "This field is required."
     },
     "step": {
       "api_token": {
         "data": {
-          "api_token": "API Token"
+          "api_token": "Personal ESIOS token"
         },
         "description": "To use the extended API you must request a personal token by mailing to {mail_to_link}.",
         "title": "ESIOS API token"
@@ -30,23 +31,29 @@
       },
       "reauth_confirm": {
         "data": {
-          "api_token": "API Token",
+          "api_token": "Personal ESIOS token",
           "description": "Re-authenticate with a valid token"
         }
       },
       "user": {
-        "description": "PVPC + Bono Social works without a token (public API). If you have a token, enable the checkbox below (private API), which also allows using indexed price mode and fetching injection price, day-ahead wholesale price (OMIE), and the regulated gas adjustment (MAG tax).",
+        "description": "PVPC + Bono Social works without a token (ESIOS public API). With a personal ESIOS token (private API) it also provides the surplus price, the day-ahead wholesale price (OMIE), the gas adjustment (MAG) and the indexed price mode. The contracted power is asked for when adding the supply.",
         "data": {
-          "name": "Sensor Name",
-          "power_p1": "P1 (peak) (kW)",
-          "power_p3": "P3 (off-peak) (kW)",
+          "name": "Entry name",
           "tariff": "Applicable tariff by geographic zone",
-          "better_price_target": "Better Price Target",
-          "next_price_in_update": "Next Price In update frequency",
-          "next_best_in_update": "Next Best In update frequency",
-          "next_period_in_update": "Next Period In update frequency",
-          "next_power_period_in_update": "Next Power Period In update frequency",
-          "enable_private_api": "Enable API token fetching (private API)"
+          "better_price_target": "\"Next best price\" target",
+          "next_price_in_update": "Update rate of \"Next price in\"",
+          "next_best_in_update": "Update rate of \"Next best price in\"",
+          "next_period_in_update": "Update rate of \"Next period in\"",
+          "next_power_period_in_update": "Update rate of \"Next power period in\"",
+          "enable_private_api": "Use the ESIOS private API (with token)"
+        },
+        "data_description": {
+          "next_price_in_update": "Every minute, every hour or disabled (the entity is disabled).",
+          "next_best_in_update": "Every minute, every hour or disabled (the entity is disabled).",
+          "next_period_in_update": "Every minute, every hour or disabled (the entity is disabled).",
+          "next_power_period_in_update": "Every minute, every hour or disabled (the entity is disabled).",
+          "better_price_target": "Price level an hour must reach for \"Next best price\" to pick it.",
+          "name": "Name shown in Devices & services. The sensors are always called sensor.pvpc_bs_*."
         }
       },
       "origen": {
@@ -68,7 +75,7 @@
         "title": "ESIOS API token",
         "description": "Change your personal ESIOS token. It is checked before being saved. If you do not have one, you can request it at {mail_to_link}.",
         "data": {
-          "api_token": "API Token"
+          "api_token": "Personal ESIOS token"
         }
       }
     }
@@ -77,27 +84,33 @@
     "error": {
       "invalid_auth": "Invalid authentication.",
       "cannot_connect": "Failed to connect: the ESIOS API could not be reached.",
-      "indexed_requires_private_api": "Indexed mode requires private API and a valid API token."
+      "esios_rechaza": "ESIOS refused the request (403): the token is not valid or ESIOS is rate-limiting access. Check the token and try again in a while.",
+      "obligatorio": "This field is required."
     },
     "step": {
       "api_token": {
         "data": {
-          "api_token": "API Token"
+          "api_token": "Personal ESIOS token"
         },
         "description": "To use the extended API you must request a personal token by mailing to {mail_to_link}.",
         "title": "ESIOS API token"
       },
       "init": {
-        "description": "PVPC + Bono Social works without a token (public API). If you have a token, enable the checkbox below (private API), which also allows using indexed price mode and fetching injection price, day-ahead wholesale price (OMIE), and the regulated gas adjustment (MAG tax).",
+        "description": "PVPC + Bono Social works without a token (ESIOS public API). With a personal ESIOS token (private API) it also provides the surplus price, the day-ahead wholesale price (OMIE), the gas adjustment (MAG) and the indexed price mode. The contracted power is asked for when adding the supply.",
         "data": {
-          "power_p1": "P1 (peak) (kW)",
-          "power_p3": "P3 (off-peak) (kW)",
-          "better_price_target": "Better Price Target",
-          "next_price_in_update": "Next Price In update frequency",
-          "next_best_in_update": "Next Best In update frequency",
-          "next_period_in_update": "Next Period In update frequency",
-          "next_power_period_in_update": "Next Power Period In update frequency",
-          "enable_private_api": "Enable API token fetching (private API)"
+          "better_price_target": "\"Next best price\" target",
+          "next_price_in_update": "Update rate of \"Next price in\"",
+          "next_best_in_update": "Update rate of \"Next best price in\"",
+          "next_period_in_update": "Update rate of \"Next period in\"",
+          "next_power_period_in_update": "Update rate of \"Next power period in\"",
+          "enable_private_api": "Use the ESIOS private API (with token)"
+        },
+        "data_description": {
+          "next_price_in_update": "Every minute, every hour or disabled (the entity is disabled).",
+          "next_best_in_update": "Every minute, every hour or disabled (the entity is disabled).",
+          "next_period_in_update": "Every minute, every hour or disabled (the entity is disabled).",
+          "next_power_period_in_update": "Every minute, every hour or disabled (the entity is disabled).",
+          "better_price_target": "Price level an hour must reach for \"Next best price\" to pick it."
         }
       },
       "price_mode": {
@@ -235,7 +248,7 @@
         "name": "OMIE data ID"
       },
       "factura_actual": {
-        "name": "Current period bill (forecast)"
+        "name": "Current period bill forecast"
       },
       "factura_anterior": {
         "name": "Previous period bill"
@@ -460,6 +473,10 @@
     "periodo_cerrado_incompleto": {
       "title": "Closed period with hours without consumption in «{suministro}»",
       "description": "When these periods were closed, the consumption of some hours was missing (for example, Datadis had not published it yet) and those hours were counted as 0 kWh: {periodos}. {horas} hours in total. The period is recalculated automatically as soon as the consumption arrives, and this notice disappears. If it does not arrive within {dias} days, it is left as it is: enter the real bill for the period to correct it."
+    },
+    "factura_no_cuadra_medidor": {
+      "title": "A «{suministro}» bill does not match the meter",
+      "description": "The kWh of these bills are too far from what the meter measured over the same period (official reading ÷ meter outside {minimo}–{maximo}): {facturas}. They are not used to calibrate the meter; the other bills are. It is usually a mistyped bill (check the kWh per period and the dates) or a meter that does not measure the whole supply. If you correct the bill (enter it again with the same dates), this notice disappears."
     }
   },
   "config_subentries": {
@@ -483,7 +500,9 @@
           },
           "data_description": {
             "categoria": "Sets the yearly discounted kWh limit (RD 897/2017). Required with bono social.",
-            "tipo_fuente": "The bill cannot be computed without an hourly consumption source."
+            "tipo_fuente": "The bill cannot be computed without an hourly consumption source.",
+            "potencia_p1_kw": "Between 0.1 and 15 kW.",
+            "potencia_p2_kw": "Between 0.1 and 15 kW."
           }
         },
         "reconfigure": {
@@ -506,7 +525,9 @@
           },
           "data_description": {
             "categoria": "Sets the yearly discounted kWh limit (RD 897/2017). Required with bono social.",
-            "tipo_fuente": "The bill cannot be computed without an hourly consumption source."
+            "tipo_fuente": "The bill cannot be computed without an hourly consumption source.",
+            "potencia_p1_kw": "Between 0.1 and 15 kW.",
+            "potencia_p2_kw": "Between 0.1 and 15 kW."
           }
         },
         "fuente": {
@@ -524,7 +545,7 @@
             "dias_hasta_emision": "Days between the end of the period and the issue date",
             "alquiler_contador_eur_mes": "Meter rental (€/month)",
             "arrastre_inicial_kwh": "Accumulated discounted kWh (carry-over)",
-            "codigo_postal": "Postal code (only to compare tariffs)",
+            "codigo_postal": "Postal code (for the CNMC options)",
             "comparar_mensual": "Compare tariffs every month",
             "segunda_opinion_cnmc": "Check each bill with the CNMC",
             "comparador_destino": "Send the tariff comparison to",
@@ -534,12 +555,14 @@
           },
           "data_description": {
             "arrastre_inicial_kwh": "The discounted kWh left over in the last 12 months that you have not used yet. If you do not know, leave 0: it is corrected when bills are reconciled.",
-            "codigo_postal": "Optional. Only used to compare tariffs: the postal code, the contracted power and the yearly kWh per period are sent to the CNMC, nothing else.",
+            "codigo_postal": "Optional: only needed for the two options below, which send data to the CNMC. Comparing tariffs sends the postal code, the contracted power and the yearly kWh per period. Checking each bill also sends the hourly consumption of the period and the type of social bonus. Without those options nothing is sent.",
             "comparar_mensual": "On the 2nd of every month, compares your last 12 months with the CNMC offers and leaves a notification. Needs the postal code.",
             "segunda_opinion_cnmc": "When you enter an actual bill, the integration asks the official CNMC simulator for the same bill (with the bill's meter kWh) and warns you if it does not match. Hourly consumption, power, bonus type and postcode are sent (no CUPS). Needs the postcode.",
             "comparador_destino": "Optional. A notify entity (a Telegram chat, your phone…). Telegram needs the Telegram bot integration set up in Home Assistant. Besides the Home Assistant notification, the comparison (button or monthly) is sent there.",
             "comparador_umbral_eur": "Only with “Only if an offer saves money”: the best offer must save more than this per year.",
-            "fin_ultima_factura": "End of the last bill: it is the start of the current period. When reconfiguring, the one in force is suggested; if you change it, the current period starts on that day (also backwards) and the later estimated periods are recalculated."
+            "fin_ultima_factura": "End of the last bill: it is the start of the current period. When reconfiguring, the one in force is suggested; if you change it, the current period starts on that day (also backwards) and the later estimated periods are recalculated.",
+            "dias_hasta_emision": "Between 0 and 30 days.",
+            "alquiler_contador_eur_mes": "Between €0 and €5."
           }
         },
         "comprobacion": {
@@ -614,7 +637,20 @@
         "fecha_futura": "It cannot be a future date: make the change on the day it starts.",
         "codigo_postal_invalido": "The postal code must have 5 digits",
         "zip_sin_facturas": "The ZIP has no readable bill (only PDFs from Comercializadora Regulada, Gas & Power are read).",
-        "antes_de_factura_real": "There is already a real bill ending after that date: the current period cannot start before that bill ends."
+        "antes_de_factura_real": "There is already a real bill ending after that date: the current period cannot start before that bill ends.",
+        "obligatorio": "This field is required.",
+        "fin_factura_futura": "The last bill cannot end after today: check the date.",
+        "importe_a_cero": "The bill total cannot be zero: power and meter rental are always charged.",
+        "bonificados_mayor_que_consumo": "Discounted kWh cannot exceed the total consumption on the bill.",
+        "rango_potencia": "Power must be between 0.1 and 15 kW.",
+        "rango_dias_emision": "Must be between 0 and 30 days.",
+        "rango_arrastre": "Must be between 0 and 5000 kWh.",
+        "rango_alquiler": "Must be between €0 and €5 per month.",
+        "rango_umbral": "Must be between €0 and €5000 per year.",
+        "rango_kwh": "Must be between 0 and 100000 kWh.",
+        "rango_total": "Must be between €0 and €100000.",
+        "codigo_postal_requerido": "The postal code is needed to compare tariffs or check bills with the CNMC.",
+        "nombre_en_uso": "There is already a supply with that name: choose another so their costs are not mixed in the Energy dashboard."
       },
       "abort": {
         "reconfigure_successful": "Supply updated.",
@@ -694,6 +730,11 @@
       },
       "abort": {
         "reconfigure_successful": "Summary updated."
+      },
+      "error": {
+        "rango_franjas": "Must be between 0 and 6.",
+        "rango_duracion": "Must be between 1 and 6 hours.",
+        "hora_no_valida": "That time is not valid."
       }
     },
     "datadis": {

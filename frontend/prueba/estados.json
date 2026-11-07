@@ -170,11 +170,11 @@
   }
  },
  "sensor.pvpc_bs_factura_anterior": {
-  "state": "133.62",
+  "state": "112.40",
   "attributes": {
    "estado": "conciliada",
-   "estimada": 133.95,
-   "desviacion": 0.33,
+   "estimada": 112.75,
+   "desviacion": 0.35,
    "inicio": "2026-08-12",
    "fin": "2026-09-13"
   }

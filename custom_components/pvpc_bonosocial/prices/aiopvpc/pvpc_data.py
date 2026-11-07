@@ -64,6 +64,10 @@ class BadApiTokenAuthError(Exception):
     """Exception to signal HA that ESIOS API token is invalid (401 status)."""
 
 
+class EsiosForbiddenError(aiohttp.ClientError):
+    """ESIOS answered 403 while checking a token: bad token or rate limit."""
+
+
 class PVPCData:
     """
     Data handler for PVPC hourly prices.
@@ -94,6 +98,7 @@ class PVPCData:
         self._sensor_keys: set[str] = {key for key in sensor_keys if key in ALL_SENSORS}
 
         self._timeout = timeout
+        self._ultimo_403 = False  # only read by check_api_token
         self._session = session
         self._data_source = data_source
         self._api_token = api_token
@@ -187,6 +192,7 @@ class PVPCData:
                 )
             if resp.status == 403:
                 # transient forbidden (rate-limit/WAF), not a bad token
+                self._ultimo_403 = True
                 _LOGGER.warning(
                     "[%s] Forbidden error with '%s': %s",
                     sensor_key,
@@ -258,10 +264,12 @@ class PVPCData:
         Check if ESIOS API token is valid.
 
         Returns False only when the API rejects the token (401).
-        Transient failures (timeouts, connection errors, 403/5xx responses)
-        are raised instead, so callers can tell a bad token apart from an
-        unreachable API. The private data-source and token are kept only on
-        success; any failure restores the previous configuration.
+        Other failures are raised instead, so callers can tell a bad token apart
+        from an unreachable API: EsiosForbiddenError for a 403 (bad token or
+        rate limit, ESIOS does not say which) and aiohttp.ClientError or
+        TimeoutError for connection errors and 5xx responses. The private
+        data-source and token are kept only on success; any failure restores
+        the previous configuration.
         """
         prev_data_source = self._data_source
         prev_api_token = self._api_token
@@ -276,6 +284,7 @@ class PVPCData:
             local_ref_now,
         )
         token_ok = False
+        self._ultimo_403 = False
         try:
             try:
                 async with asyncio.timeout(self._timeout):
@@ -287,8 +296,12 @@ class PVPCData:
                 # be validated, which is not the same as invalid
                 raise aiohttp.ClientError("ESIOS API unavailable, could not validate token") from exc
             if response is None:
-                # transient failure (403/5xx/malformed payload): the token
-                # could not be validated, which is not the same as invalid
+                if self._ultimo_403:
+                    # ESIOS answers 403 both to made-up tokens and when rate-limiting: it reached
+                    # the API, so it must not be reported as a connection failure
+                    raise EsiosForbiddenError("ESIOS refused the request (403)")
+                # transient failure (5xx/malformed payload): the token could not be
+                # validated, which is not the same as invalid
                 raise aiohttp.ClientError("ESIOS API unavailable, could not validate token")
             token_ok = True
             return True

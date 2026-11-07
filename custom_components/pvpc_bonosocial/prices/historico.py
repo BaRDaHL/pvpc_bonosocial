@@ -9,10 +9,11 @@ unos 100 KB). Los valores se guardan como texto para no perder decimales.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
+from functools import cached_property
 from typing import Any
 
 import aiohttp
@@ -54,9 +55,14 @@ class PreciosDia:
     pcb: tuple[Decimal, ...]
     teu: tuple[Decimal, ...]
 
-    def inicios_utc(self) -> list[datetime]:
+    @cached_property
+    def _inicios(self) -> tuple[datetime, ...]:
         inicio = medianoche_utc(self.dia)
-        return [inicio + timedelta(hours=i) for i in range(len(self.pcb))]
+        return tuple(inicio + timedelta(hours=i) for i in range(len(self.pcb)))
+
+    def inicios_utc(self) -> tuple[datetime, ...]:
+        """Inicio de cada hora. Una sola vez por día: la factura lo pide por cada hora del periodo."""
+        return self._inicios
 
 
 def medianoche_utc(dia: date) -> datetime:
@@ -112,7 +118,6 @@ class HistoricoPrecios:
         )
         self._dias: dict[date, PreciosDia] = {}
         self._periodos: dict[datetime, str | None] = {}
-        self._oyentes: list[Callable[[Sequence[date]], None]] = []
         # Días pasados que ESIOS no tiene o que no se pudieron leer: no se reintentan
         # hasta el siguiente arranque, para que el relleno no se atasque en ellos.
         self._sin_datos: set[date] = set()
@@ -131,11 +136,6 @@ class HistoricoPrecios:
             return None
         clave = inicio.astimezone(UTC_TZ).replace(minute=0, second=0, microsecond=0)
         return self._periodos.get(clave)
-
-    def al_actualizar(self, oyente: Callable[[Sequence[date]], None]) -> Callable[[], None]:
-        """Avisa con los días nuevos tras cada actualización. Devuelve la baja."""
-        self._oyentes.append(oyente)
-        return lambda: self._oyentes.remove(oyente)
 
     # --- persistencia ---------------------------------------------------------------
 
@@ -230,8 +230,6 @@ class HistoricoPrecios:
         self._purgar(hoy)
         if nuevos:
             self._store.async_delay_save(self._datos_store, 10)
-            for oyente in list(self._oyentes):
-                oyente(nuevos)
         return nuevos
 
     async def _descargar(self, session: aiohttp.ClientSession, dia: date) -> dict[str, Any] | None:

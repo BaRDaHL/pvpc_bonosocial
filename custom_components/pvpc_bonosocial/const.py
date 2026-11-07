@@ -8,7 +8,9 @@ DOMAIN = "pvpc_bonosocial"
 # Versión de la entrada principal. La 1 es la de la v0.2 (se migra en migracion.py). No
 # tiene nada que ver con las versiones 1-7 de PVPC Next, que viven en su propio dominio.
 ENTRY_VERSION = 2
-ENTRY_MINOR_VERSION = 2  # 2.2: el token de ESIOS vive solo en entry.data
+# 2.2: el token de ESIOS vive solo en entry.data. 2.3: la potencia de la entrada (altas anteriores a la
+# v1.2.2) vive solo en entry.data; desde la v1.2.2 solo se pide al añadir el suministro.
+ENTRY_MINOR_VERSION = 3
 
 # Subentradas «Suministro» (DISENO §2.1)
 SUBENTRY_SUMINISTRO = "suministro"
@@ -147,9 +149,7 @@ UPDATE_FREQUENCY_BY_SENSOR = {
     "pvpc_next_period_in": ATTR_NEXT_PERIOD_IN_UPDATE,
     "pvpc_next_power_period_in": ATTR_NEXT_POWER_PERIOD_IN_UPDATE,
 }
-VALID_POWER = vol.All(vol.Coerce(float), vol.Range(min=1.0, max=15.0))
 VALID_TARIFF = vol.In(TARIFFS)
-VALID_PRICE_MODE = vol.In(PRICE_MODES)
 
 
 def normalize_better_price_target(target: str | None) -> str:

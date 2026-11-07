@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 import zlib
+from bisect import bisect_left
 from typing import Any
 
 # --- analizador mínimo de objetos PDF --------------------------------------------------
@@ -23,6 +24,8 @@ _MAX_FLUJO = 8 * 1024 * 1024  # bytes descomprimidos por flujo
 _MAX_TOTAL = 16 * 1024 * 1024  # bytes de contenido leídos en todo el documento (cada uso cuenta)
 _MAX_FORMULARIOS = 500  # formularios (XObject Form) dibujados en todo el documento
 _MAX_GLIFOS = 70_000  # entradas de las tablas ToUnicode de una fuente
+_MAX_OBJETOS = 20_000  # objetos del documento
+_MAX_PAGINAS = 200  # páginas del documento
 _ESPACIO = b" \t\r\n\x0c\x00"
 
 
@@ -153,11 +156,17 @@ class PdfDemasiadoComplejo(ValueError):
 class Documento:
     def __init__(self, datos: bytes) -> None:
         self.datos = datos
-        self._objetos: dict[int, tuple[Any, bytes | None]] = {}
+        # Los flujos son vistas de `datos`, no copias: con muchos objetos sin /Length que acaban en el
+        # mismo endstream, copiarlos costaría del orden del cuadrado del tamaño del PDF.
+        self._objetos: dict[int, tuple[Any, memoryview | None]] = {}
+        vista = memoryview(datos)
+        finales: list[int] | None = None  # posiciones de endstream, solo si hacen falta
         self._descomprimidos: dict[int, bytes] = {}
         self._leidos = 0  # bytes de flujo entregados (presupuesto _MAX_TOTAL)
         self.formularios = 0  # formularios dibujados (presupuesto _MAX_FORMULARIOS)
-        for m in re.finditer(rb"(\d+)\s+(\d+)\s+obj\b", datos):
+        for cuenta, m in enumerate(re.finditer(rb"(\d+)\s+(\d+)\s+obj\b", datos)):
+            if cuenta >= _MAX_OBJETOS:
+                raise PdfDemasiadoComplejo("Demasiados objetos")
             n = int(m.group(1))
             lector = _Lector(datos)
             lector.i = m.end()
@@ -174,10 +183,17 @@ class Documento:
                 if isinstance(largo, int) and datos[inicio + largo : inicio + largo + 30].lstrip().startswith(
                     b"endstream"
                 ):
-                    flujo = datos[inicio : inicio + largo]
+                    flujo = vista[inicio : inicio + largo]
                 else:
-                    fin = datos.index(b"endstream", inicio)
-                    flujo = datos[inicio:fin].rstrip(b"\r\n")
+                    if finales is None:
+                        finales = [f.start() for f in re.finditer(b"endstream", datos)]
+                    i = bisect_left(finales, inicio)
+                    if i == len(finales):
+                        raise ValueError("Flujo sin endstream")
+                    fin = finales[i]
+                    while fin > inicio and datos[fin - 1] in b"\r\n":
+                        fin -= 1
+                    flujo = vista[inicio:fin]
             self._objetos[n] = (valor, flujo)
 
     def resolver(self, x: Any) -> Any:
@@ -214,15 +230,21 @@ class Documento:
                     return b""
             else:
                 return b""  # imágenes u otros filtros: no tienen texto
-        return datos
+        return bytes(datos)
 
     def paginas(self) -> list[dict]:
         raiz = next(
             (v for v, _ in self._objetos.values() if isinstance(v, dict) and v.get("Type") == "Catalog"), None
         )
         out: list[dict] = []
+        vistos: set[Ref] = set()
 
         def recorrer(nodo: Any, heredado: dict) -> None:
+            # Un nodo solo cuenta una vez: unos pocos KB de Kids repetidos describen millones de páginas.
+            if isinstance(nodo, Ref):
+                if nodo in vistos:
+                    return
+                vistos.add(nodo)
             nodo = self.resolver(nodo)
             if not isinstance(nodo, dict):
                 return
@@ -231,6 +253,8 @@ class Documento:
                 for hijo in self.resolver(nodo.get("Kids")) or []:
                     recorrer(hijo, {"Resources": recursos})
             else:
+                if len(out) >= _MAX_PAGINAS:
+                    raise PdfDemasiadoComplejo("Demasiadas páginas")
                 out.append({**nodo, "Resources": recursos})
 
         if raiz:

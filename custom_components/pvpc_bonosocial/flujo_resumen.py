@@ -16,14 +16,10 @@ from homeassistant.helpers.selector import (
     BooleanSelector,
     EntitySelector,
     EntitySelectorConfig,
-    NumberSelector,
-    NumberSelectorConfig,
-    NumberSelectorMode,
     SelectOptionDict,
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
-    TimeSelector,
 )
 
 from .const import (
@@ -46,6 +42,7 @@ from .const import (
     SUBENTRY_SUMINISTRO,
 )
 from .resumen import FORMATOS_TABLA
+from .validacion import HoraConAviso, NumeroConAviso, errores_de_rango, hora_valida
 
 POR_DEFECTO: dict[str, Any] = {
     CONF_HOY_ACTIVO: True,
@@ -64,8 +61,12 @@ POR_DEFECTO: dict[str, Any] = {
 }
 
 
-def _numero(minimo: int, maximo: int) -> NumberSelector:
-    return NumberSelector(NumberSelectorConfig(min=minimo, max=maximo, step=1, mode=NumberSelectorMode.BOX))
+_FRANJAS = NumeroConAviso("rango_franjas", min=0, max=6, step=1)
+_RANGOS = {
+    CONF_FRANJAS_HOY: _FRANJAS,
+    CONF_FRANJAS_MANANA: _FRANJAS,
+    CONF_DURACION_FRANJA: NumeroConAviso("rango_duracion", min=1, max=6, step=1),
+}
 
 
 class ResumenSubentryFlow(ConfigSubentryFlow):
@@ -86,7 +87,18 @@ class ResumenSubentryFlow(ConfigSubentryFlow):
             for sid, sub in self._get_entry().subentries.items()
             if sub.subentry_type == SUBENTRY_SUMINISTRO
         }
+        errores: dict[str, str] = {}
         if user_input is not None:
+            errores = errores_de_rango(user_input, _RANGOS)
+            errores.update(
+                {
+                    clave: "hora_no_valida"
+                    for clave in (CONF_HOY_HORA, CONF_MANANA_HORA)
+                    if clave in user_input and not hora_valida(user_input[clave])
+                }
+            )
+            actual = {**actual, **user_input}
+        if user_input is not None and not errores:
             datos = {**POR_DEFECTO, **user_input}
             for clave in (CONF_FRANJAS_HOY, CONF_FRANJAS_MANANA, CONF_DURACION_FRANJA):
                 datos[clave] = int(datos[clave])
@@ -119,12 +131,14 @@ class ResumenSubentryFlow(ConfigSubentryFlow):
         campos.update(
             {
                 vol.Required(CONF_HOY_ACTIVO, default=actual[CONF_HOY_ACTIVO]): BooleanSelector(),
-                vol.Required(CONF_HOY_HORA, default=actual[CONF_HOY_HORA]): TimeSelector(),
+                vol.Required(CONF_HOY_HORA, default=actual[CONF_HOY_HORA]): HoraConAviso(),
                 vol.Required(CONF_MANANA_ACTIVO, default=actual[CONF_MANANA_ACTIVO]): BooleanSelector(),
-                vol.Required(CONF_MANANA_HORA, default=actual[CONF_MANANA_HORA]): TimeSelector(),
-                vol.Required(CONF_FRANJAS_HOY, default=actual[CONF_FRANJAS_HOY]): _numero(0, 6),
-                vol.Required(CONF_FRANJAS_MANANA, default=actual[CONF_FRANJAS_MANANA]): _numero(0, 6),
-                vol.Required(CONF_DURACION_FRANJA, default=actual[CONF_DURACION_FRANJA]): _numero(1, 6),
+                vol.Required(CONF_MANANA_HORA, default=actual[CONF_MANANA_HORA]): HoraConAviso(),
+                vol.Required(CONF_FRANJAS_HOY, default=actual[CONF_FRANJAS_HOY]): _FRANJAS,
+                vol.Required(CONF_FRANJAS_MANANA, default=actual[CONF_FRANJAS_MANANA]): _FRANJAS,
+                vol.Required(CONF_DURACION_FRANJA, default=actual[CONF_DURACION_FRANJA]): _RANGOS[
+                    CONF_DURACION_FRANJA
+                ],
                 vol.Required(CONF_INCLUIR_CONSUMO, default=actual[CONF_INCLUIR_CONSUMO]): BooleanSelector(),
                 vol.Required(CONF_INCLUIR_FACTURA, default=actual[CONF_INCLUIR_FACTURA]): BooleanSelector(),
                 vol.Required(CONF_FORMATO_TABLA, default=actual[CONF_FORMATO_TABLA]): SelectSelector(
@@ -145,7 +159,7 @@ class ResumenSubentryFlow(ConfigSubentryFlow):
                 ),
             }
         )
-        return self.async_show_form(step_id=step_id, data_schema=vol.Schema(campos))
+        return self.async_show_form(step_id=step_id, data_schema=vol.Schema(campos), errors=errores)
 
     def _titulo(self, destino: str) -> str:
         estado = self.hass.states.get(destino)

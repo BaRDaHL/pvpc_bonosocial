@@ -8,9 +8,7 @@ from datetime import UTC, datetime, timedelta
 from ..festivos import es_festivo_p3
 
 _PRICE_HOURS_P1_PCB = (10, 11, 12, 13, 18, 19, 20, 21)
-_PRICE_HOURS_P2_PCB = (8, 9, 14, 15, 16, 17, 22, 23)
 _PRICE_HOURS_P1_CYM = (11, 12, 13, 14, 19, 20, 21, 22)
-_PRICE_HOURS_P2_CYM = (8, 9, 10, 15, 16, 17, 18, 23)
 
 
 def _valle_todo_el_dia(local_ts: datetime) -> bool:

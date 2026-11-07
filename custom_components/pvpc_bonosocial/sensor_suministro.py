@@ -346,7 +346,6 @@ TIPOS = (
     EstadoDatos,
     ComprobacionFactura,
 )
-CLAVES = tuple(t.clave for t in TIPOS)
 
 
 def entidades_de(entry: ConfigEntry, coordinadores: dict[str, FacturacionSuministro]):

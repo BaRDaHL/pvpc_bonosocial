@@ -9,7 +9,7 @@ from decimal import Decimal
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_API_TOKEN
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -19,21 +19,16 @@ from homeassistant.util import dt as dt_util
 
 from ..const import (
     ATTR_BETTER_PRICE_TARGET,
-    ATTR_POWER_P1,
-    ATTR_POWER_P3,
     ATTR_PRICE_MODE,
     ATTR_TARIFF,
     DEFAULT_BETTER_PRICE_TARGET,
     DEFAULT_PRICE_MODE,
     DOMAIN,
-    LEGACY_ATTR_POWER,
-    LEGACY_ATTR_POWER_P2_P3,
-    LEGACY_ATTR_POWER_P3,
     normalize_better_price_target,
     normalize_price_mode,
 )
 from ..engine import Tarifas
-from ..helpers import ZONA_CANARIAS, config_entrada
+from ..helpers import ZONA_CANARIAS, config_entrada, potencia_contratada
 from .aiopvpc import DEFAULT_POWER_KW, BadApiTokenAuthError, EsiosApiData, PVPCData
 from .aiopvpc.const import (
     KEY_PVPC,
@@ -102,24 +97,18 @@ class ElecPricesDataUpdateCoordinator(  # pylint: disable=too-few-public-methods
         """Initialize."""
         config = config_entrada(entry)
 
-        power_p1 = config.get(ATTR_POWER_P1, config.get(LEGACY_ATTR_POWER))
-        power_p3 = config.get(
-            ATTR_POWER_P3,
-            config.get(LEGACY_ATTR_POWER_P2_P3, config.get(LEGACY_ATTR_POWER_P3)),
-        )
+        # Potencia del primer suministro (o de la entrada, si viene de antes de la v1.2.2); sin
+        # ninguna, la API usa la de PVPC Next pero «potencia disponible» no da valor.
+        self.potencia_contratada = potencia_contratada(entry)
+        power_p1, power_p3 = self.potencia_contratada or (DEFAULT_POWER_KW, DEFAULT_POWER_KW)
         better_price_target = normalize_better_price_target(
             config.get(ATTR_BETTER_PRICE_TARGET, DEFAULT_BETTER_PRICE_TARGET)
         )
-        if power_p1 is None:
-            power_p1 = DEFAULT_POWER_KW
-        if power_p3 is None:
-            power_p3 = DEFAULT_POWER_KW
         configured_price_mode = normalize_price_mode(config.get(ATTR_PRICE_MODE, DEFAULT_PRICE_MODE))
         effective_price_mode = (
             configured_price_mode if configured_price_mode != "indexed" or use_private_api else "pvpc"
         )
         api_token = config.get(CONF_API_TOKEN) if use_private_api else None
-        self._configured_price_mode = configured_price_mode
         self._price_mode = effective_price_mode
         if configured_price_mode == "indexed" and not use_private_api:
             _LOGGER.warning("Indexed mode requested but private API is disabled; falling back to PVPC mode")
@@ -159,11 +148,6 @@ class ElecPricesDataUpdateCoordinator(  # pylint: disable=too-few-public-methods
         """Return effective price mode."""
         return self._price_mode
 
-    @property
-    def configured_price_mode(self) -> str:
-        """Return configured price mode."""
-        return self._configured_price_mode
-
     async def _async_update_data(self) -> EsiosApiData:
         """Update electricity prices from the ESIOS API."""
         now = dt_util.utcnow()
@@ -187,6 +171,18 @@ class ElecPricesDataUpdateCoordinator(  # pylint: disable=too-few-public-methods
         self.update_interval = INTERVALO_PRECIOS
         self._log_api_fetch(api_data, now)
         return api_data
+
+    @callback
+    def async_al_empezar_hora(self, now: datetime) -> None:
+        """Al empezar cada hora: un único cálculo y todas las entidades al día a la vez.
+
+        Con un temporizador por entidad, las que no tenían el suyo (mínimo y máximo) se quedaban con
+        los valores de ayer hasta el siguiente refresco, hasta 30 minutos después de medianoche.
+        """
+        if self.data is not None:
+            for clave in list(self.data.sensors):
+                self.api.process_state_and_attributes(self.data, clave, now)
+        self.async_update_listeners()
 
     def _reponer_semilla(self, now: datetime) -> None:
         """Tras un reintento fallido con la semilla, vuelve a calcular su estado en el API.

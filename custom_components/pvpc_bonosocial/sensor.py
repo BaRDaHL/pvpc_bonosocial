@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -17,9 +17,9 @@ from homeassistant.components.sensor import (
 from homeassistant.const import (
     CONF_API_TOKEN,
     CURRENCY_EURO,
-    STATE_UNAVAILABLE,
     UnitOfEnergy,
     UnitOfPower,
+    UnitOfTime,
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
@@ -84,7 +84,6 @@ _PRICE_LEVEL_TARGET_MAX = {
     "cheap": 0.4,
     "neutral": 0.6,
 }
-_DEBUG_LAST_UPDATE: dict[str, datetime] = {}
 _KEY_REFERENCE_PVPC = "PVPC_REFERENCE"
 
 
@@ -95,7 +94,6 @@ class PVPCAttributeSensorDescription(SensorEntityDescription):
     attribute_key: str | None = None
     value_fn: Callable[[ElecPricesDataUpdateCoordinator], StateType] | None = None
     update_every_minute: bool = False
-    update_on_hour: bool = False
 
 
 def entity_id_de(clave: str) -> str:
@@ -105,10 +103,7 @@ def entity_id_de(clave: str) -> str:
 
 def _format_time_to_better_price(
     coordinator: ElecPricesDataUpdateCoordinator,
-) -> str | None:
-    current_prices = coordinator.data.sensors.get(KEY_PVPC, {})
-    if not current_prices:
-        return None
+) -> float | None:
     next_target = _next_target_price(coordinator)
     if not next_target:
         return None
@@ -120,10 +115,7 @@ def _format_time_to_better_price(
 
 def _format_time_to_next_price(
     coordinator: ElecPricesDataUpdateCoordinator,
-) -> str | None:
-    current_prices = coordinator.data.sensors.get(KEY_PVPC, {})
-    if not current_prices:
-        return None
+) -> float | None:
     next_price = _next_price_candidate(coordinator)
     if not next_price:
         return None
@@ -133,44 +125,28 @@ def _format_time_to_next_price(
     return _format_time_delta(coordinator, "pvpc_next_price_in", delta_seconds)
 
 
-def _format_time_to_next_period(
-    coordinator: ElecPricesDataUpdateCoordinator,
-) -> str | None:
-    current_prices = coordinator.data.sensors.get(KEY_PVPC, {})
-    if not current_prices:
-        return STATE_UNAVAILABLE
-    local_tz = _local_timezone(coordinator)
-    now_local = ensure_utc_time(dt_util.utcnow()).astimezone(local_tz)
+def _segundos_hasta_periodo(coordinator: ElecPricesDataUpdateCoordinator, calcular) -> int:
+    """Segundos hasta el siguiente periodo según `calcular` (de precio o de potencia)."""
+    now_local = ensure_utc_time(dt_util.utcnow()).astimezone(_local_timezone(coordinator))
     hour_start = now_local.replace(minute=0, second=0, microsecond=0)
-    _current_period, _next_period, delta = get_current_and_next_price_periods(
+    _current_period, _next_period, delta = calcular(
         hour_start,
         zone_ceuta_melilla=coordinator.api.tariff != TARIFFS[0],
         published=coordinator.api.published_period,
     )
     # En UTC: el día del cambio de hora, la resta en hora de pared se come o suma una hora.
     next_period_start = hour_start.astimezone(UTC) + delta
-    delta_seconds = int((next_period_start - now_local).total_seconds())
-    return _format_time_delta(coordinator, "pvpc_next_period_in", delta_seconds)
+    return int((next_period_start - now_local).total_seconds())
 
 
-def _format_time_to_next_power_period(
-    coordinator: ElecPricesDataUpdateCoordinator,
-) -> str | None:
-    current_prices = coordinator.data.sensors.get(KEY_PVPC, {})
-    if not current_prices:
-        return STATE_UNAVAILABLE
-    local_tz = _local_timezone(coordinator)
-    now_local = ensure_utc_time(dt_util.utcnow()).astimezone(local_tz)
-    hour_start = now_local.replace(minute=0, second=0, microsecond=0)
-    _current_period, _next_period, delta = get_current_and_next_power_periods(
-        hour_start,
-        zone_ceuta_melilla=coordinator.api.tariff != TARIFFS[0],
-        published=coordinator.api.published_period,
-    )
-    # En UTC: el día del cambio de hora, la resta en hora de pared se come o suma una hora.
-    next_period_start = hour_start.astimezone(UTC) + delta
-    delta_seconds = int((next_period_start - now_local).total_seconds())
-    return _format_time_delta(coordinator, "pvpc_next_power_period_in", delta_seconds)
+def _format_time_to_next_period(coordinator: ElecPricesDataUpdateCoordinator) -> float | None:
+    segundos = _segundos_hasta_periodo(coordinator, get_current_and_next_price_periods)
+    return _format_time_delta(coordinator, "pvpc_next_period_in", segundos)
+
+
+def _format_time_to_next_power_period(coordinator: ElecPricesDataUpdateCoordinator) -> float | None:
+    segundos = _segundos_hasta_periodo(coordinator, get_current_and_next_power_periods)
+    return _format_time_delta(coordinator, "pvpc_next_power_period_in", segundos)
 
 
 def _normalize_update_frequency(value: str | None) -> str:
@@ -191,16 +167,21 @@ def _format_time_delta(
     coordinator: ElecPricesDataUpdateCoordinator,
     sensor_key: str,
     delta_seconds: int,
-) -> str:
+) -> float:
+    """Cuenta atrás en horas (device_class duration, unidad h): «9 h 34 min» en vez de «09:34».
+
+    Hasta la v1.2.1 era un texto «HH:MM» que se leía como una hora del reloj. Con «cada hora»
+    se redondea hacia arriba a horas enteras, como antes. Con «cada minuto» se publica el punto
+    medio del minuto ((m + 0,5) / 60): el frontend de HA trunca los minutos de la parte decimal
+    tras redondear a la precisión mostrada (2 decimales), y con el valor exacto m/60 un
+    «59 min» se quedaba en «58 min».
+    """
     delta_seconds = max(delta_seconds, 0)
-    if _get_update_frequency(coordinator, sensor_key) != "minute":
-        hours, remainder = divmod(delta_seconds, 3600)
-        if remainder:
-            hours += 1
-        return f"{hours:02d}:00"
     hours, remainder = divmod(delta_seconds, 3600)
-    minutes = remainder // 60
-    return f"{hours:02d}:{minutes:02d}"
+    if _get_update_frequency(coordinator, sensor_key) != "minute":
+        return float(hours + 1 if remainder else hours)
+    minutos = hours * 60 + remainder // 60
+    return round((minutos + 0.5) / 60, 4)
 
 
 def _apply_update_frequency(
@@ -208,24 +189,11 @@ def _apply_update_frequency(
     frequency: str,
 ) -> PVPCAttributeSensorDescription:
     if frequency == "minute":
-        return replace(
-            description,
-            update_every_minute=True,
-            update_on_hour=False,
-        )
-    if frequency == "hourly":
-        return replace(
-            description,
-            update_every_minute=False,
-            update_on_hour=True,
-        )
+        return replace(description, update_every_minute=True)
+    if frequency == "hourly":  # basta el temporizador de cada hora del coordinador
+        return replace(description, update_every_minute=False)
     if frequency == "disabled":
-        return replace(
-            description,
-            update_every_minute=False,
-            update_on_hour=False,
-            entity_registry_enabled_default=False,
-        )
+        return replace(description, update_every_minute=False, entity_registry_enabled_default=False)
     return description
 
 
@@ -244,20 +212,21 @@ def _local_timezone(coordinator: ElecPricesDataUpdateCoordinator):
     return tz or dt_util.UTC
 
 
-def _price_range_for_timestamp(
-    current_prices: dict[datetime, float],
-    ts: datetime,
-    local_tz,
-) -> tuple[float, float] | None:
-    target_date = ts.astimezone(local_tz).date()
-    prices_for_date = [
-        price
-        for price_ts, price in current_prices.items()
-        if price_ts.astimezone(local_tz).date() == target_date
-    ]
-    if not prices_for_date:
-        return None
-    return min(prices_for_date), max(prices_for_date)
+def _rangos_por_dia(current_prices: dict[datetime, float], local_tz) -> dict[date, tuple[float, float]]:
+    """(mínimo, máximo) de cada día local."""
+    rangos: dict[date, tuple[float, float]] = {}
+    for ts, price in current_prices.items():
+        dia = ts.astimezone(local_tz).date()
+        minimo, maximo = rangos.get(dia, (price, price))
+        rangos[dia] = (min(minimo, price), max(maximo, price))
+    return rangos
+
+
+def _ratio_en_rango(price: float, rango: tuple[float, float]) -> float:
+    minimo, maximo = rango
+    if maximo == minimo:
+        return 0.6
+    return round((price - minimo) / (maximo - minimo), 2)
 
 
 def _price_ratio_for_timestamp(
@@ -266,21 +235,14 @@ def _price_ratio_for_timestamp(
     price: float,
     local_tz,
 ) -> float | None:
-    price_range = _price_range_for_timestamp(current_prices, ts, local_tz)
-    if not price_range:
-        return None
-    min_price, max_price = price_range
-    if max_price == min_price:
-        return 0.6
-    return round((price - min_price) / (max_price - min_price), 2)
+    rango = _rangos_por_dia(current_prices, local_tz).get(ts.astimezone(local_tz).date())
+    return _ratio_en_rango(price, rango) if rango else None
 
 
 def _next_price_candidate(
     coordinator: ElecPricesDataUpdateCoordinator,
 ) -> tuple[datetime, float] | None:
     current_prices = coordinator.data.sensors.get(KEY_PVPC, {})
-    if not current_prices:
-        return None
     now_utc = ensure_utc_time(dt_util.utcnow())
     current_hour = now_utc.replace(minute=0, second=0, microsecond=0)
     next_hour = current_hour + timedelta(hours=1)
@@ -305,104 +267,28 @@ def _next_price_value(
 def _next_target_price(
     coordinator: ElecPricesDataUpdateCoordinator,
 ) -> tuple[datetime, float, float] | None:
+    """La primera hora futura que llega al objetivo o, si no hay ninguna, la más barata."""
     current_prices = coordinator.data.sensors.get(KEY_PVPC, {})
-    if not current_prices:
-        _log_debug_once_per_update(
-            coordinator,
-            "no_pvpc_prices",
-            "No PVPC prices available; better-price sensors unavailable (entry_id=%s)",
-            coordinator.entry_id,
-        )
-        return None
     now_utc = ensure_utc_time(dt_util.utcnow())
-    target = normalize_better_price_target(coordinator.better_price_target)
-    max_ratio = _PRICE_LEVEL_TARGET_MAX.get(target)
-    if max_ratio is None:
-        _log_debug_once_per_update(
-            coordinator,
-            "bad_target",
-            "Unknown better price target '%s' (entry_id=%s)",
-            target,
-            coordinator.entry_id,
-        )
     local_tz = _local_timezone(coordinator)
-    candidates: list[tuple[datetime, float, float]] = []
-    if max_ratio is not None:
-        candidates = [
-            (ts, price, ratio)
-            for ts, price in current_prices.items()
-            if ts > now_utc
-            and (ratio := _price_ratio_for_timestamp(current_prices, ts, price, local_tz)) is not None
-            and ratio <= max_ratio
-        ]
-    if not candidates:
-        fallback_candidates = [
-            (ts, price, ratio)
-            for ts, price in current_prices.items()
-            if ts > now_utc
-            and (ratio := _price_ratio_for_timestamp(current_prices, ts, price, local_tz)) is not None
-        ]
-        if not fallback_candidates:
-            future_prices = sum(1 for ts in current_prices if ts > now_utc)
-            _log_debug_once_per_update(
-                coordinator,
-                "no_better_candidates",
-                (
-                    "No better-price candidates (target=%s max_ratio=%s "
-                    "future_prices=%d total_prices=%d entry_id=%s)"
-                ),
-                target,
-                f"{max_ratio:.2f}" if max_ratio is not None else "n/a",
-                future_prices,
-                len(current_prices),
-                coordinator.entry_id,
-            )
-            return None
-        fallback = min(fallback_candidates, key=lambda item: (item[1], item[0]))
-        _log_debug_once_per_update(
-            coordinator,
-            "fallback_best_price",
-            (
-                "Fallback to best available price (target=%s max_ratio=%s "
-                "ts=%s price=%.5f ratio=%.2f entry_id=%s)"
-            ),
-            target,
-            f"{max_ratio:.2f}" if max_ratio is not None else "n/a",
-            fallback[0].isoformat(),
-            fallback[1],
-            fallback[2],
-            coordinator.entry_id,
-        )
-        return fallback
-    next_target = min(candidates, key=lambda item: item[0])
-    if _LOGGER.isEnabledFor(logging.DEBUG):
-        soonest = sorted(candidates, key=lambda item: item[0])[:3]
-        sample = ", ".join(f"{ts.isoformat()}@{price:.5f}/{ratio:.2f}" for ts, price, ratio in soonest)
-        _log_debug_once_per_update(
-            coordinator,
-            "better_target",
-            (
-                "Better-price target=%s max_ratio=%.2f next=%s price=%.5f ratio=%.2f "
-                "candidates=%d sample=[%s] entry_id=%s"
-            ),
-            target,
-            max_ratio,
-            next_target[0].isoformat(),
-            next_target[1],
-            next_target[2],
-            len(candidates),
-            sample,
-            coordinator.entry_id,
-        )
-    return next_target
+    rangos = _rangos_por_dia(current_prices, local_tz)
+    futuras = [
+        (ts, price, _ratio_en_rango(price, rangos[ts.astimezone(local_tz).date()]))
+        for ts, price in current_prices.items()
+        if ts > now_utc
+    ]
+    if not futuras:
+        return None
+    max_ratio = _PRICE_LEVEL_TARGET_MAX[normalize_better_price_target(coordinator.better_price_target)]
+    en_objetivo = [c for c in futuras if c[2] <= max_ratio]
+    if en_objetivo:
+        return min(en_objetivo, key=lambda c: c[0])
+    return min(futuras, key=lambda c: (c[1], c[0]))
 
 
 def _better_price_value(
     coordinator: ElecPricesDataUpdateCoordinator,
 ) -> StateType:
-    current_prices = coordinator.data.sensors.get(KEY_PVPC, {})
-    if not current_prices:
-        return None
     next_target = _next_target_price(coordinator)
     if not next_target:
         return None
@@ -418,8 +304,6 @@ def _next_price_level(
         return None
     ts, price = next_price
     current_prices = coordinator.data.sensors.get(KEY_PVPC, {})
-    if not current_prices:
-        return None
     local_tz = _local_timezone(coordinator)
     price_ratio = _price_ratio_for_timestamp(current_prices, ts, price, local_tz)
     if price_ratio is None:
@@ -430,9 +314,6 @@ def _next_price_level(
 def _better_price_level(
     coordinator: ElecPricesDataUpdateCoordinator,
 ) -> str | None:
-    current_prices = coordinator.data.sensors.get(KEY_PVPC, {})
-    if not current_prices:
-        return None
     next_target = _next_target_price(coordinator)
     if not next_target:
         return None
@@ -485,24 +366,6 @@ def _api_source_label(coordinator: ElecPricesDataUpdateCoordinator) -> str:
 
 def _price_mode_label(coordinator: ElecPricesDataUpdateCoordinator) -> str:
     return coordinator.price_mode
-
-
-def _log_debug_once_per_update(
-    coordinator: ElecPricesDataUpdateCoordinator,
-    key: str,
-    message: str,
-    *args,
-) -> None:
-    if not _LOGGER.isEnabledFor(logging.DEBUG):
-        return
-    last_update = getattr(coordinator.data, "last_update", None)
-    if last_update is None:
-        last_update = dt_util.utcnow()
-    full_key = f"{key}:{coordinator.entry_id}"
-    if _DEBUG_LAST_UPDATE.get(full_key) == last_update:
-        return
-    _DEBUG_LAST_UPDATE[full_key] = last_update
-    _LOGGER.debug(message, *args)
 
 
 SENSOR_TYPES: tuple[SensorEntityDescription, ...] = (
@@ -560,6 +423,14 @@ REFERENCE_PRICE_SENSORS: dict[str, SensorEntityDescription] = {
         translation_key="precio_pvpc",
     ),
 }
+# Sensores «… en»: una duración en horas (HA la enseña como «9 h 34 min»), no una hora del reloj.
+# Sin state_class a propósito: una cuenta atrás no es una medida que merezca estadísticas.
+_CUENTA_ATRAS: dict[str, Any] = {
+    "device_class": SensorDeviceClass.DURATION,
+    "native_unit_of_measurement": UnitOfTime.HOURS,
+    "suggested_display_precision": 2,
+    "icon": "mdi:timer-sand",
+}
 # pylint: disable=unexpected-keyword-arg
 ATTRIBUTE_SENSOR_TYPES: tuple[PVPCAttributeSensorDescription, ...] = (
     PVPCAttributeSensorDescription(
@@ -599,28 +470,25 @@ ATTRIBUTE_SENSOR_TYPES: tuple[PVPCAttributeSensorDescription, ...] = (
         translation_key="periodo",
         attribute_key="period",
         icon="mdi:clock-outline",
-        update_on_hour=True,
     ),
     PVPCAttributeSensorDescription(
         key="pvpc_current_power_period",
         translation_key="periodo_potencia",
         attribute_key="power_period",
         icon="mdi:flash",
-        update_on_hour=True,
     ),
     PVPCAttributeSensorDescription(
         key="pvpc_next_power_period",
         translation_key="siguiente_periodo_potencia",
         attribute_key="next_power_period",
         icon="mdi:flash",
-        update_on_hour=True,
     ),
     PVPCAttributeSensorDescription(
         key="pvpc_next_power_period_in",
         translation_key="siguiente_periodo_potencia_en",
         value_fn=_format_time_to_next_power_period,
-        icon="mdi:timer-sand",
         update_every_minute=True,
+        **_CUENTA_ATRAS,
     ),
     PVPCAttributeSensorDescription(
         key="pvpc_available_power",
@@ -630,21 +498,19 @@ ATTRIBUTE_SENSOR_TYPES: tuple[PVPCAttributeSensorDescription, ...] = (
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:flash",
-        update_on_hour=True,
     ),
     PVPCAttributeSensorDescription(
         key="pvpc_next_period",
         translation_key="siguiente_periodo",
         attribute_key="next_period",
         icon="mdi:clock-outline",
-        update_on_hour=True,
     ),
     PVPCAttributeSensorDescription(
         key="pvpc_next_period_in",
         translation_key="siguiente_periodo_en",
         value_fn=_format_time_to_next_period,
-        icon="mdi:timer-sand",
         update_every_minute=True,
+        **_CUENTA_ATRAS,
     ),
     PVPCAttributeSensorDescription(
         key="pvpc_min_price",
@@ -672,7 +538,6 @@ ATTRIBUTE_SENSOR_TYPES: tuple[PVPCAttributeSensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=5,
         icon="mdi:arrow-collapse-down",
-        update_on_hour=True,
     ),
     PVPCAttributeSensorDescription(
         key="pvpc_next_price",
@@ -682,37 +547,33 @@ ATTRIBUTE_SENSOR_TYPES: tuple[PVPCAttributeSensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=5,
         icon="mdi:arrow-right-bold",
-        update_on_hour=True,
     ),
     PVPCAttributeSensorDescription(
         key="pvpc_next_price_in",
         translation_key="siguiente_precio_en",
         value_fn=_format_time_to_next_price,
         update_every_minute=True,
-        icon="mdi:clock-outline",
+        **_CUENTA_ATRAS,
     ),
     PVPCAttributeSensorDescription(
         key="pvpc_next_price_level",
         translation_key="nivel_siguiente_precio",
         value_fn=_next_price_level,
         device_class=SensorDeviceClass.ENUM,
-        update_every_minute=False,
         icon="mdi:scale-balance",
-        update_on_hour=True,
     ),
     PVPCAttributeSensorDescription(
         key="pvpc_time_to_next_best",
         translation_key="siguiente_mejor_precio_en",
         value_fn=_format_time_to_better_price,
         update_every_minute=True,
-        icon="mdi:clock-outline",
+        **_CUENTA_ATRAS,
     ),
     PVPCAttributeSensorDescription(
         key="pvpc_num_better_prices_ahead",
         translation_key="precios_mejores",
         value_fn=_num_better_prices_ahead,
         icon="mdi:counter",
-        update_on_hour=True,
     ),
     PVPCAttributeSensorDescription(
         key="pvpc_avg_price_today",
@@ -722,25 +583,20 @@ ATTRIBUTE_SENSOR_TYPES: tuple[PVPCAttributeSensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=5,
         icon="mdi:chart-line",
-        update_on_hour=True,
     ),
     PVPCAttributeSensorDescription(
         key="pvpc_price_ratio_category",
         translation_key="nivel_precio",
         value_fn=_price_ratio_category,
         device_class=SensorDeviceClass.ENUM,
-        update_every_minute=False,
         icon="mdi:scale-balance",
-        update_on_hour=True,
     ),
     PVPCAttributeSensorDescription(
         key="pvpc_next_best_price_level",
         translation_key="nivel_siguiente_mejor_precio",
         value_fn=_better_price_level,
         device_class=SensorDeviceClass.ENUM,
-        update_every_minute=False,
         icon="mdi:scale-balance",
-        update_on_hour=True,
     ),
 )
 
@@ -771,75 +627,19 @@ PRIVATE_API_ATTRIBUTE_SENSOR_TYPES: tuple[PVPCAttributeSensorDescription, ...] =
     ),
 )
 # pylint: enable=unexpected-keyword-arg
-_PRICE_SENSOR_ATTRIBUTES_MAP = {
-    "name": "data_name",
-    "price_position": "price_position",
-    "price_ratio": "price_ratio",
-    "max_price_at": "max_price_at",
-    "min_price_at": "min_price_at",
-    "next_best_at": "next_best_at",
-    "price_00h": "price_00h",
-    "price_01h": "price_01h",
-    "price_02h": "price_02h",
-    "price_02h_d": "price_02h_d",  # only on DST day change with 25h
-    "price_03h": "price_03h",
-    "price_04h": "price_04h",
-    "price_05h": "price_05h",
-    "price_06h": "price_06h",
-    "price_07h": "price_07h",
-    "price_08h": "price_08h",
-    "price_09h": "price_09h",
-    "price_10h": "price_10h",
-    "price_11h": "price_11h",
-    "price_12h": "price_12h",
-    "price_13h": "price_13h",
-    "price_14h": "price_14h",
-    "price_15h": "price_15h",
-    "price_16h": "price_16h",
-    "price_17h": "price_17h",
-    "price_18h": "price_18h",
-    "price_19h": "price_19h",
-    "price_20h": "price_20h",
-    "price_21h": "price_21h",
-    "price_22h": "price_22h",
-    "price_23h": "price_23h",
-    # only seen in the evening
-    "next_better_price (next day)": "next_better_price (next day)",
-    "hours_to_better_price (next day)": "hours_to_better_price (next day)",
-    "num_better_prices_ahead (next day)": "num_better_prices_ahead (next day)",
-    "price_position (next day)": "price_position (next day)",
-    "price_ratio (next day)": "price_ratio (next day)",
-    "max_price (next day)": "max_price (next day)",
-    "max_price_at (next day)": "max_price_at (next day)",
-    "min_price (next day)": "min_price (next day)",
-    "min_price_at (next day)": "min_price_at (next day)",
-    "next_best_at (next day)": "next_best_at (next day)",
-    "price_next_day_00h": "price_next_day_00h",
-    "price_next_day_01h": "price_next_day_01h",
-    "price_next_day_02h": "price_next_day_02h",
-    "price_next_day_02h_d": "price_next_day_02h_d",
-    "price_next_day_03h": "price_next_day_03h",
-    "price_next_day_04h": "price_next_day_04h",
-    "price_next_day_05h": "price_next_day_05h",
-    "price_next_day_06h": "price_next_day_06h",
-    "price_next_day_07h": "price_next_day_07h",
-    "price_next_day_08h": "price_next_day_08h",
-    "price_next_day_09h": "price_next_day_09h",
-    "price_next_day_10h": "price_next_day_10h",
-    "price_next_day_11h": "price_next_day_11h",
-    "price_next_day_12h": "price_next_day_12h",
-    "price_next_day_13h": "price_next_day_13h",
-    "price_next_day_14h": "price_next_day_14h",
-    "price_next_day_15h": "price_next_day_15h",
-    "price_next_day_16h": "price_next_day_16h",
-    "price_next_day_17h": "price_next_day_17h",
-    "price_next_day_18h": "price_next_day_18h",
-    "price_next_day_19h": "price_next_day_19h",
-    "price_next_day_20h": "price_next_day_20h",
-    "price_next_day_21h": "price_next_day_21h",
-    "price_next_day_22h": "price_next_day_22h",
-    "price_next_day_23h": "price_next_day_23h",
-}
+_ATRIBUTOS_PRECIO = frozenset(
+    {
+        "price_position",
+        "price_ratio",
+        "max_price_at",
+        "min_price_at",
+        "next_best_at",
+        "price_02h_d",  # only on DST day change with 25h
+        "price_next_day_02h_d",
+        *(f"price_{hora:02d}h" for hora in range(24)),
+        *(f"price_next_day_{hora:02d}h" for hora in range(24)),
+    }
+)
 
 
 async def async_setup_entry(
@@ -898,6 +698,16 @@ async def async_setup_entry(
         async_add_entities(entidades, config_subentry_id=subentry_id)
 
 
+def _dispositivo(coordinator: ElecPricesDataUpdateCoordinator) -> DeviceInfo:
+    return DeviceInfo(
+        configuration_url="https://api.esios.ree.es",
+        entry_type=DeviceEntryType.SERVICE,
+        identifiers={(DOMAIN, coordinator.entry_id)},
+        manufacturer="REE",
+        name=DEFAULT_NAME,
+    )
+
+
 class ElecPriceSensor(CoordinatorEntity[ElecPricesDataUpdateCoordinator], SensorEntity):
     """Class to hold the prices of electricity as a sensor."""
 
@@ -916,15 +726,7 @@ class ElecPriceSensor(CoordinatorEntity[ElecPricesDataUpdateCoordinator], Sensor
         self._attr_attribution = coordinator.api.attribution
         self._attr_unique_id = make_sensor_unique_id(unique_id, description.key)
         self.entity_id = entity_id_de(description.key)
-        self._attr_device_info = DeviceInfo(
-            configuration_url="https://api.esios.ree.es",
-            entry_type=DeviceEntryType.SERVICE,
-            identifiers={(DOMAIN, coordinator.entry_id)},
-            manufacturer="REE",
-            # Prefijo de los entity_id nuevos (sensor.pvpc_bono_social_*); las entidades
-            # migradas de PVPC Next conservan el suyo (sensor.esios_*).
-            name=DEFAULT_NAME,
-        )
+        self._attr_device_info = _dispositivo(coordinator)
 
     @property
     def available(self) -> bool:
@@ -957,24 +759,12 @@ class ElecPriceSensor(CoordinatorEntity[ElecPricesDataUpdateCoordinator], Sensor
             self.coordinator.api.update_active_sensors(sensor_key, True)
             self.async_on_remove(lambda: self.coordinator.api.update_active_sensors(sensor_key, False))
 
-        # Update 'state' value in hour changes
-        self.async_on_remove(
-            async_track_time_change(self.hass, self.update_current_price, second=[0], minute=[0])
-        )
         _LOGGER.debug(
             "Setup of ESIOS sensor %s (%s, unique_id: %s)",
             self.entity_description.key,
             self.entity_id,
             self._attr_unique_id,
         )
-
-    @callback
-    def update_current_price(self, now: datetime) -> None:
-        """Update the sensor state, by selecting the current price for this hour."""
-        sensor_key = self._effective_sensor_key
-        if self.coordinator.data is not None:
-            self.coordinator.api.process_state_and_attributes(self.coordinator.data, sensor_key, now)
-        self.async_write_ha_state()
 
     @property
     def native_value(self) -> StateType:
@@ -986,11 +776,7 @@ class ElecPriceSensor(CoordinatorEntity[ElecPricesDataUpdateCoordinator], Sensor
         """Return the state attributes."""
         sensor_key = self._effective_sensor_key
         sensor_attributes = self.coordinator.api.sensor_attributes.get(sensor_key, {})
-        attributes = {
-            _PRICE_SENSOR_ATTRIBUTES_MAP[key]: value
-            for key, value in sensor_attributes.items()
-            if key in _PRICE_SENSOR_ATTRIBUTES_MAP
-        }
+        attributes = {key: value for key, value in sensor_attributes.items() if key in _ATRIBUTOS_PRECIO}
         if self.entity_description.key == KEY_PVPC:
             attributes["mode"] = self.coordinator.price_mode
             attributes.update(self._colores())
@@ -1035,15 +821,7 @@ class PVPCAttributeSensor(CoordinatorEntity[ElecPricesDataUpdateCoordinator], Se
         self._attr_attribution = coordinator.api.attribution
         self._attr_unique_id = f"{unique_id}_{description.key}"
         self.entity_id = entity_id_de(description.key)
-        self._attr_device_info = DeviceInfo(
-            configuration_url="https://api.esios.ree.es",
-            entry_type=DeviceEntryType.SERVICE,
-            identifiers={(DOMAIN, coordinator.entry_id)},
-            manufacturer="REE",
-            # Prefijo de los entity_id nuevos (sensor.pvpc_bono_social_*); las entidades
-            # migradas de PVPC Next conservan el suyo (sensor.esios_*).
-            name=DEFAULT_NAME,
-        )
+        self._attr_device_info = _dispositivo(coordinator)
 
     @property
     def available(self) -> bool:
@@ -1058,23 +836,12 @@ class PVPCAttributeSensor(CoordinatorEntity[ElecPricesDataUpdateCoordinator], Se
         await super().async_added_to_hass()
         if self.entity_description.update_every_minute:
             self.async_on_remove(async_track_time_change(self.hass, self._update_on_time_change, second=[0]))
-        elif self.entity_description.update_on_hour:
-            self.async_on_remove(
-                async_track_time_change(self.hass, self._update_on_time_change, minute=[0], second=[0])
-            )
         if self.entity_description.key in UPDATE_FREQUENCY_BY_SENSOR:
             self._update_on_time_change(dt_util.utcnow())
 
     @callback
-    def _handle_coordinator_update(self) -> None:
-        """Refresh immediately when coordinator data updates."""
-        self.async_write_ha_state()
-
-    @callback
     def _update_on_time_change(self, now: datetime) -> None:
-        """Refresh state on time changes for time-based attributes."""
-        if self.entity_description.update_on_hour and self.coordinator.data is not None:
-            self.coordinator.api.process_state_and_attributes(self.coordinator.data, KEY_PVPC, now)
+        """Las cuentas atrás cambian cada minuto (lo de cada hora lo hace el coordinador)."""
         self.async_write_ha_state()
 
     @property
@@ -1085,4 +852,7 @@ class PVPCAttributeSensor(CoordinatorEntity[ElecPricesDataUpdateCoordinator], Se
         attributes = self.coordinator.api.sensor_attributes.get(KEY_PVPC, {})
         if self.entity_description.key == "pvpc_num_better_prices_ahead":
             return attributes.get(self.entity_description.attribute_key, 0)
+        sin_potencia = self.coordinator.potencia_contratada is None
+        if self.entity_description.key == "pvpc_available_power" and sin_potencia:
+            return None  # sin suministro no se conoce la potencia contratada: no se inventa
         return attributes.get(self.entity_description.attribute_key)

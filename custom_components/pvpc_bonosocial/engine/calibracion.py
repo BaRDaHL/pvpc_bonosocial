@@ -6,8 +6,12 @@ factura frente a 1,09 € del factor de la factura anterior (DISENO, estado de l
 
 - Con 3 o más periodos conciliados: mínimos cuadrados sobre los últimos 12.
 - Con 1 o 2: solo el factor (α = real / medido, γ = 0).
-- Se descartan las facturas con un cociente real/medido un 25 % distinto de la mediana.
+- Se descartan las facturas con un cociente real/medido un 25 % distinto de la mediana (con un
+  número par de facturas, la media de las dos centrales: dos facturas no se descartan entre sí
+  por ser una mayor que la otra; si aun así no queda ninguna, manda la última).
 - Si el ajuste sale absurdo (α fuera de 0,8-1,2 o γ fuera de ±300 W), se usa el factor.
+- Quién llama decide qué facturas entran: `facturacion.py` deja fuera las que el medidor no vio
+  enteras y las que no cuadran con él (cociente fuera de `ALFA_VALIDO`), con aviso.
 """
 
 from __future__ import annotations
@@ -46,8 +50,10 @@ def ajustar(periodos: Sequence[PeriodoCalibracion]) -> Ajuste | None:
         return None
     # Fuera las facturas que no cuadran con las demás (una mal metida, un cambio de medidor).
     cocientes = sorted(p.kwh_real / p.kwh_medido for p in recientes)
-    mediana = cocientes[len(cocientes) // 2]
-    recientes = [p for p in recientes if abs(p.kwh_real / p.kwh_medido / mediana - 1) <= MAX_DESVIO]
+    n = len(cocientes)
+    mediana = cocientes[n // 2] if n % 2 else (cocientes[n // 2 - 1] + cocientes[n // 2]) / 2
+    plausibles = [p for p in recientes if abs(p.kwh_real / p.kwh_medido / mediana - 1) <= MAX_DESVIO]
+    recientes = plausibles or recientes[-1:]
     if len(recientes) < MIN_PARA_AJUSTE:
         return _factor(recientes[-1:])
     x = [(p.kwh_medido, Decimal(p.horas)) for p in recientes]

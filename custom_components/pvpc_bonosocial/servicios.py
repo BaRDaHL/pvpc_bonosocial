@@ -10,25 +10,32 @@ from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, Supp
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.service import async_register_admin_service
 
 from .const import CONF_DESTINO, DOMAIN, SUBENTRY_RESUMEN
+from .validacion import MAX_KWH_FACTURA, MAX_TOTAL_FACTURA, errores_factura
 
 _LOGGER = logging.getLogger(__name__)
 
 SERVICIO_CONCILIAR = "conciliar_factura"
+_KWH = vol.All(vol.Coerce(int), vol.Range(min=0, max=MAX_KWH_FACTURA))
 ESQUEMA_CONCILIAR = vol.Schema(
     {
         vol.Required("suministro"): cv.string,
         vol.Required("inicio"): cv.date,
         vol.Required("fin"): cv.date,
         vol.Optional("emision"): cv.date,
-        vol.Required("kwh_p1"): vol.All(vol.Coerce(int), vol.Range(min=0)),
-        vol.Required("kwh_p2"): vol.All(vol.Coerce(int), vol.Range(min=0)),
-        vol.Required("kwh_p3"): vol.All(vol.Coerce(int), vol.Range(min=0)),
-        vol.Required("total"): vol.All(vol.Coerce(float), vol.Range(min=0)),
-        vol.Optional("kwh_bonificados"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+        vol.Required("kwh_p1"): _KWH,
+        vol.Required("kwh_p2"): _KWH,
+        vol.Required("kwh_p3"): _KWH,
+        vol.Required("total"): vol.All(vol.Coerce(float), vol.Range(min=0, max=MAX_TOTAL_FACTURA)),
+        vol.Optional("kwh_bonificados"): _KWH,
     }
 )
+_ERRORES_FACTURA = {
+    "importe_a_cero": "El total de la factura no puede ser cero",
+    "bonificados_mayor_que_consumo": "Los kWh bonificados no pueden superar al consumo",
+}
 
 
 def _subentrada_de(hass: HomeAssistant, device_id: str, atributo: str):
@@ -43,27 +50,18 @@ def _subentrada_de(hass: HomeAssistant, device_id: str, atributo: str):
     raise HomeAssistantError("Ese dispositivo no es un suministro de PVPC + Bono Social")
 
 
-def _facturacion(hass: HomeAssistant, device_id: str):
-    dispositivo = dr.async_get(hass).async_get(device_id)
-    if dispositivo is None:
-        raise HomeAssistantError(f"No existe el dispositivo {device_id}")
-    ids = {ident for dominio, ident in dispositivo.identifiers if dominio == DOMAIN}
-    for entry in hass.config_entries.async_loaded_entries(DOMAIN):
-        for subentry_id, facturacion in getattr(entry.runtime_data, "suministros", {}).items():
-            if subentry_id in ids:
-                return facturacion
-    raise HomeAssistantError("Ese dispositivo no es un suministro de PVPC + Bono Social")
-
-
 async def _async_conciliar(call: ServiceCall) -> None:
     d = call.data
-    facturacion = _facturacion(call.hass, d["suministro"])
+    facturacion = _subentrada_de(call.hass, d["suministro"], "suministros")
+    kwh = {"P1": d["kwh_p1"], "P2": d["kwh_p2"], "P3": d["kwh_p3"]}
+    if errores := errores_factura(kwh, d["total"], d.get("kwh_bonificados")):
+        raise HomeAssistantError(". ".join(_ERRORES_FACTURA[e] for e in errores.values()))
     try:
         await facturacion.async_conciliar(
             inicio=d["inicio"],
             fin=d["fin"],
             emision=d.get("emision"),
-            kwh={"P1": d["kwh_p1"], "P2": d["kwh_p2"], "P3": d["kwh_p3"]},
+            kwh=kwh,
             total=Decimal(str(d["total"])),
             bonificados=d.get("kwh_bonificados"),
         )
@@ -159,14 +157,17 @@ async def _async_comparar(call: ServiceCall) -> ServiceResponse:
 
 
 def registrar(hass: HomeAssistant) -> None:
-    hass.services.async_register(
+    # Solo administradores (y automatizaciones): conciliar reescribe la factura, la calibración y el
+    # coste del panel de Energía sin forma de deshacerlo, y comparar envía datos a la CNMC.
+    async_register_admin_service(
+        hass,
         DOMAIN,
         SERVICIO_COMPARAR,
         _async_comparar,
         schema=ESQUEMA_COMPARAR,
         supports_response=SupportsResponse.OPTIONAL,
     )
-    hass.services.async_register(DOMAIN, SERVICIO_CONCILIAR, _async_conciliar, schema=ESQUEMA_CONCILIAR)
+    async_register_admin_service(hass, DOMAIN, SERVICIO_CONCILIAR, _async_conciliar, schema=ESQUEMA_CONCILIAR)
     hass.services.async_register(
         DOMAIN,
         SERVICIO_RESUMEN,

@@ -45,6 +45,31 @@ const casos = [
   { nombre: "catalan", ancho: 500, q: "idioma=ca", precio: "0,120", textos: ["Factura del període en curs", "punta", "Hora actual", "Factura estimada"] },
   { nombre: "gallego", ancho: 500, q: "idioma=gl", precio: "0,120", textos: ["Factura do período en curso", "chan", "Hora actual"] },
   { nombre: "euskera", ancho: 500, q: "idioma=eu", precio: "0,120", textos: ["Aldi honetako faktura", "laua", "Uneko ordua", "Zenbatetsitako faktura"] },
+  // Legible a cualquier ancho: el texto de las gráficas no escala con la tarjeta (px reales).
+  ...[
+    { ancho: 278, min: 9, max: 13, viewBox: null },
+    { ancho: 405, min: 9, max: 13, viewBox: null },
+    { ancho: 524, min: 9, max: 13, viewBox: "0 0 480 190" }, // el tamaño de siempre, sin tocar
+    { ancho: 1064, min: 9, max: 13, viewBox: null },
+    { ancho: 2336, min: 9, max: 13, viewBox: null, altoMax: 1100 },
+  ].map((m) => ({
+    nombre: `legible_${m.ancho}`,
+    ancho: m.ancho,
+    q: "config=" + encodeURIComponent('{"grafica_facturas":true}'),
+    precio: "0,120",
+    textos: [],
+    legible: m,
+  })),
+  { nombre: "editor", ancho: 500, q: "", precio: "0,120", textos: [], editor: true },
+  // 12 facturas: las etiquetas de mes no se pisan (en catalán y gallego salía «nov. del 25»).
+  ...["es", "en", "ca", "gl", "eu"].map((idioma) => ({
+    nombre: `meses_${idioma}`,
+    ancho: 500,
+    q: `doce=1&idioma=${idioma}&config=` + encodeURIComponent('{"grafica_facturas":true,"facturas_meses":"12"}'),
+    precio: idioma === "en" ? "0.120" : "0,120",
+    textos: [],
+    solapes: 0,
+  })),
   // HA en hora peninsular y el navegador en otra zona: la hora en curso, «hoy» y «mañana» son
   // las de HA. 00:30 en Madrid = 23:30 del día anterior en Canarias y 22:30 en UTC.
   { nombre: "zona_canarias", ancho: 500, q: "zona=Europe/Madrid", zonaNavegador: "Atlantic/Canary", fijo: "2026-10-20T00:30:00+02:00", precio: "0,120", textos: ["20/10/2026", "21/10/2026", "(13/09 - 20/10)"] },
@@ -104,6 +129,35 @@ for (const c of casos) {
       tendencia: raiz?.querySelectorAll("line.tendencia").length ?? 0,
       bandas: raiz?.querySelectorAll("rect.banda-punta, rect.banda-llano").length ?? 0,
       ancho: document.documentElement.scrollWidth,
+      medidas: (() => {
+        const tarjeta = document.querySelector(etiqueta);
+        const px = (sel) => {
+          const e = raiz?.querySelector(sel);
+          if (!e) return null;
+          return parseFloat(getComputedStyle(e).fontSize) * e.ownerSVGElement.getScreenCTM().a;
+        };
+        const borde = raiz?.querySelector("ha-card")?.getBoundingClientRect().right ?? 0;
+        const derecha = Math.max(0, ...[...(raiz?.querySelectorAll(".detalle .valor, .detalle .horas") ?? [])].map((e) => e.getBoundingClientRect().right));
+        const textos = [...(raiz?.querySelectorAll(".grafica svg text.eje") ?? [])]
+          .filter((e) => (e.textContent || "").includes(":"))
+          .map((e) => e.getBoundingClientRect());
+        return {
+          eje: px(".grafica text.eje"),
+          importe: px("text.importe"),
+          alto: tarjeta.getBoundingClientRect().height,
+          holgura: borde - derecha,
+          solapesHoras: textos.filter((r, i) => i && r.left < textos[i - 1].right).length,
+          viewBox: raiz?.querySelector(".grafica svg")?.getAttribute("viewBox"),
+          lineasPrecio: (() => {
+            const p = raiz?.querySelector(".precio");
+            return p ? Math.round(p.getBoundingClientRect().height / parseFloat(getComputedStyle(p).lineHeight)) : 0;
+          })(),
+        };
+      })(),
+      solapes: (() => {
+        const textos = [...(raiz?.querySelectorAll(".facturas svg text.eje") ?? [])].map((e) => e.getBoundingClientRect());
+        return textos.filter((r, i) => i && r.left < textos[i - 1].right).length;
+      })(),
     };
   }, etiqueta);
   const mal = [...errores];
@@ -182,6 +236,50 @@ for (const c of casos) {
   if (c.importes !== undefined && info.importes !== c.importes) mal.push(`${info.importes} importes sobre las barras`);
   if (c.tendencia !== undefined && info.tendencia !== c.tendencia) mal.push(`${info.tendencia} líneas de tendencia`);
   if (!c.ventana && info.bandas !== 16) mal.push(`${info.bandas} franjas de punta/llano (deberían ser 16)`);
+  if (c.legible) {
+    const m = info.medidas;
+    for (const [nombre, v] of [["eje", m.eje], ["importe", m.importe]]) {
+      if (!(v >= c.legible.min && v <= c.legible.max * (nombre === "importe" ? 1.25 : 1)))
+        mal.push(`${nombre} a ${v?.toFixed(1)} px`);
+    }
+    if (m.holgura < 8) mal.push(`la columna de mañana queda a ${m.holgura.toFixed(1)} px del borde`);
+    if (m.solapesHoras) mal.push(`${m.solapesHoras} horas del eje se pisan`);
+    if (m.lineasPrecio > 1) mal.push(`el precio ocupa ${m.lineasPrecio} líneas`);
+    if (c.legible.viewBox && m.viewBox !== c.legible.viewBox) mal.push(`viewBox ${m.viewBox}`);
+    if (c.legible.altoMax && m.alto > c.legible.altoMax) mal.push(`tarjeta de ${m.alto} px de alto`);
+  }
+  if (c.editor) {
+    const r = await pag.evaluate(async () => {
+      const Tarjeta = customElements.get("pvpc-bono-social-card");
+      if (!Tarjeta.getConfigElement) return { sin: true };
+      const editor = await Tarjeta.getConfigElement();
+      editor.setConfig({ type: "custom:pvpc-bono-social-card", color_hoy: "#4269d0", color_manana: "rgb(1, 2, 3)", prevision: false });
+      editor.hass = document.querySelector("pvpc-bono-social-card").hass;
+      document.body.appendChild(editor);
+      await editor.updateComplete;
+      const form = editor.shadowRoot.querySelector("ha-form");
+      const data = form.data;
+      let emitida;
+      editor.addEventListener("config-changed", (ev) => (emitida = ev.detail.config));
+      form.dispatchEvent(new CustomEvent("value-changed", { detail: { value: { ...data, graph: false } } }));
+      return { data, emitida, etiqueta: form.computeLabel({ name: "graph" }) };
+    });
+    if (r.sin) mal.push("sin getConfigElement");
+    else {
+      const d = r.data;
+      if (JSON.stringify(d.color_hoy) !== "[66,105,208]") mal.push(`color_hoy ${JSON.stringify(d.color_hoy)}`);
+      if (JSON.stringify(d.color_manana) !== "[1,2,3]") mal.push(`color_manana ${JSON.stringify(d.color_manana)}`);
+      if (JSON.stringify(d.color_facturas) !== "[66,105,208]") mal.push(`color_facturas ${JSON.stringify(d.color_facturas)}`);
+      if (d.graph !== true || d.details !== true || d.bandas !== true) mal.push("interruptores apagados con la función activa");
+      if (d.prevision !== false) mal.push("no respeta lo que hay en el YAML");
+      if (d.entity !== "sensor.pvpc_bs_precio") mal.push(`sensor ${d.entity}`);
+      // Lo que no se ha tocado no se escribe en el YAML.
+      const esperada = { type: "custom:pvpc-bono-social-card", color_hoy: "#4269d0", color_manana: "rgb(1, 2, 3)", prevision: false, graph: false };
+      if (JSON.stringify(r.emitida) !== JSON.stringify(esperada)) mal.push(`config emitida ${JSON.stringify(r.emitida)}`);
+      if (r.etiqueta !== "Gráfica") mal.push(`etiqueta «${r.etiqueta}»`);
+    }
+  }
+  if (c.solapes !== undefined && info.solapes !== c.solapes) mal.push(`${info.solapes} etiquetas de mes se pisan`);
   if (info.ancho > c.ancho) mal.push(`se sale de la pantalla (${info.ancho} px)`);
   console.log(`${mal.length ? "✗" : "✓"} ${c.nombre}${mal.length ? ": " + mal.join("; ") : ""}`);
   fallos.push(...mal);

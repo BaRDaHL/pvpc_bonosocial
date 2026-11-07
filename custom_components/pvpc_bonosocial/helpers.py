@@ -8,6 +8,16 @@ from homeassistant.const import CONF_API_TOKEN
 from homeassistant.helpers.entity_registry import RegistryEntry
 from homeassistant.util import dt as dt_util
 
+from .const import (
+    ATTR_POWER_P1,
+    ATTR_POWER_P3,
+    CONF_POTENCIA_P1,
+    CONF_POTENCIA_P2,
+    LEGACY_ATTR_POWER,
+    LEGACY_ATTR_POWER_P2_P3,
+    LEGACY_ATTR_POWER_P3,
+    SUBENTRY_SUMINISTRO,
+)
 from .prices.aiopvpc.const import (
     ALL_SENSORS,
     KEY_ADJUSTMENT,
@@ -78,6 +88,26 @@ def primera_subentrada(entry: ConfigEntry, tipo: str) -> str | None:
     entity_id (chocarían cuando la primera vuelva a cargar).
     """
     return next((sid for sid, sub in entry.subentries.items() if sub.subentry_type == tipo), None)
+
+
+def potencia_contratada(entry: ConfigEntry) -> tuple[float, float] | None:
+    """(P1, P2) contratadas en kW para los sensores de precio (potencia disponible), o None.
+
+    Se piden una sola vez, al añadir el suministro: manda el primer suministro de la entrada. Si no
+    hay ninguno, vale la potencia que guardó un alta anterior a la v1.2.2 o una importación de PVPC
+    Next (en `data`; la migración 2.3 la consolida ahí). Sin nada de eso no se inventa: None.
+    """
+    primera = primera_subentrada(entry, SUBENTRY_SUMINISTRO)
+    if primera is not None:
+        datos = entry.subentries[primera].data
+        if datos.get(CONF_POTENCIA_P1) is not None and datos.get(CONF_POTENCIA_P2) is not None:
+            return float(datos[CONF_POTENCIA_P1]), float(datos[CONF_POTENCIA_P2])
+    config = config_entrada(entry)
+    p1 = config.get(ATTR_POWER_P1, config.get(LEGACY_ATTR_POWER))
+    p2 = config.get(ATTR_POWER_P3, config.get(LEGACY_ATTR_POWER_P2_P3, config.get(LEGACY_ATTR_POWER_P3)))
+    if p1 is None and p2 is None:
+        return None
+    return float(p1 if p1 is not None else p2), float(p2 if p2 is not None else p1)
 
 
 def make_sensor_unique_id(config_entry_id: str | None, sensor_key: str) -> str:

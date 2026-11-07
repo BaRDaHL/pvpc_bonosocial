@@ -65,7 +65,7 @@ from .engine import (
     estimar_periodo,
 )
 from .engine.arrastre import PeriodoBono, prorrata, saldo_arrastre
-from .engine.calibracion import PeriodoCalibracion, ajustar
+from .engine.calibracion import ALFA_VALIDO, PeriodoCalibracion, ajustar
 from .engine.marginal import precio_marginal
 from .estadistica import (
     async_escribir,
@@ -106,6 +106,7 @@ ISSUE_CNMC = "factura_no_cuadra"
 TOLERANCIA_CNMC = Decimal("0.10")  # € de diferencia que se dan por buenos (redondeos)
 ISSUE_SHELLY = "shelly_no_coincide"
 ISSUE_INCOMPLETO = "periodo_cerrado_incompleto"
+ISSUE_CALIBRACION = "factura_no_cuadra_medidor"
 # Días tras el cierre en los que un periodo cerrado con horas sin consumo se sigue recalculando
 # (Datadis puede llegar con días de retraso). Después se deja como está, marcado «incompleta».
 DIAS_RECALCULO_INCOMPLETA = 30
@@ -114,16 +115,14 @@ DIAS_RECALCULO_INCOMPLETA = 30
 # si faltan más de estas. Con una estadística externa (Datadis u otra importación, que llega con
 # retraso) basta con que falte una.
 UMBRAL_HORAS_INCOMPLETA = 24
+# Días que puede adelantarse la lectura real respecto al corte supuesto del periodo.
+MARGEN_LECTURA_DIAS = 7
 
 
 def corte_siguiente(inicio: date) -> date:
     """Corte previsto: el mismo día del mes siguiente (o el último día de ese mes)."""
     anio, mes = (inicio.year + 1, 1) if inicio.month == 12 else (inicio.year, inicio.month + 1)
     return date(anio, mes, min(inicio.day, calendar.monthrange(anio, mes)[1]))
-
-
-# Días que puede adelantarse la lectura real respecto al corte supuesto del periodo.
-MARGEN_LECTURA_DIAS = 7
 
 
 def corte_anterior(fin: date) -> date:
@@ -134,6 +133,24 @@ def corte_anterior(fin: date) -> date:
 
 def _inicio_local(dia: date) -> datetime:
     return datetime.combine(dia, time(0), REFERENCE_TZ)
+
+
+def _fechas(c: dict[str, Any]) -> tuple[date, date]:
+    """(inicio, fin) de un periodo cerrado tal como se guarda."""
+    return date.fromisoformat(c["inicio"]), date.fromisoformat(c["fin"])
+
+
+def _fila_periodo(inicio: date, fin: date, est: Estimacion, estado: str) -> dict[str, Any]:
+    """Lo común a toda fila de periodo cerrado: fechas, total, kWh por periodo y consumo entero."""
+    kwh = est.kwh_medidos
+    return {
+        "inicio": inicio.isoformat(),
+        "fin": fin.isoformat(),
+        "total": str(est.prevision.total),
+        "kwh": {p: str(v.quantize(Decimal("0.001"))) for p, v in kwh.items()},
+        "estado": estado,
+        "consumo": int(sum(kwh.values(), Decimal(0)).quantize(Decimal(1))),
+    }
 
 
 def suministro_de(datos: dict[str, Any]) -> Suministro:
@@ -236,12 +253,40 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
     def datos(self) -> dict[str, Any]:
         return dict(self.subentrada.data)
 
+    def _guardar(self) -> None:
+        """Escribe el estado en disco en 5 s (varios cambios seguidos van en una escritura)."""
+        self._store.async_delay_save(lambda: self._estado, 5)
+
+    def _aviso(
+        self,
+        clave: str,
+        placeholders: dict[str, str] | None,
+        *,
+        sufijo: str = "",
+        persistente: bool = False,
+    ) -> None:
+        """Crea (con `placeholders`) o quita (`None`) un aviso de Reparaciones de este suministro."""
+        issue_id = f"{clave}_{self.subentrada.subentry_id}{sufijo}"
+        if placeholders is None:
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+            return
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            issue_id,
+            is_fixable=False,
+            is_persistent=persistente,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key=clave,
+            translation_placeholders={"suministro": self.subentrada.title, **placeholders},
+        )
+
     async def async_cargar(self) -> None:
         self._estado = await self._store.async_load() or {}
         if "estadistica_id" not in self._estado:
             # Se fija al crear el suministro: renombrarlo no cambia su estadística.
             self._estado["estadistica_id"] = id_estadistica(self.subentrada.title)
-            self._store.async_delay_save(lambda: self._estado, 5)
+            self._guardar()
         self._aplicar_fin_ultima_factura()
 
     def _aplicar_fin_ultima_factura(self) -> None:
@@ -257,7 +302,7 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         fin = self.datos.get(CONF_FIN_ULTIMA_FACTURA)
         if "fin_aplicado" not in self._estado:  # Store de antes de este cambio: nada que aplicar
             self._estado["fin_aplicado"] = fin
-            self._store.async_delay_save(lambda: self._estado, 5)
+            self._guardar()
             return
         if fin == self._estado["fin_aplicado"]:
             return
@@ -284,7 +329,7 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
                 self._estado.pop("corte_manual")
             self._estado.pop("calculadas_revisadas", None)  # rellenar los huecos que queden antes
             self._escrito = None
-        self._store.async_delay_save(lambda: self._estado, 5)
+        self._guardar()
 
     # --- Shelly (opción C) -----------------------------------------------------------
 
@@ -322,15 +367,16 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         except Exception as exc:
             _LOGGER.warning("%s: no se pudo leer el Shelly %s (%s)", self.subentrada.title, ip, exc)
             self._estado["shelly_error"] = str(exc) or type(exc).__name__
-            self._store.async_delay_save(lambda: self._estado, 5)
+            self._guardar()
             return
-        horas = {**self.horas_shelly(), **horas_completas(texto)}
+        # Casi un año de intervalos de 10 minutos: analizarlo en el bucle de eventos lo bloquearía.
+        horas = {**self.horas_shelly(), **await self.hass.async_add_executor_job(horas_completas, texto)}
         self._estado["shelly_horas"] = {
             h.isoformat(): str(v) for h, v in sorted(recortar(horas, ahora).items())
         }
         self._estado["shelly_ultima"] = ahora.isoformat()
         self._estado["shelly_error"] = None
-        self._store.async_delay_save(lambda: self._estado, 5)
+        self._guardar()
         await self.async_request_refresh()
 
     def _corregir_con_shelly(
@@ -341,24 +387,13 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         shelly = {h: v for h, v in self.horas_shelly().items() if desde <= h < hasta}
         if not shelly:
             return consumo, 0
-        issue_id = f"{ISSUE_SHELLY}_{self.subentrada.subentry_id}"
         diferencia = desacuerdo(consumo, shelly, hasta)
         if diferencia > UMBRAL_DESACUERDO:
-            ir.async_create_issue(
-                self.hass,
-                DOMAIN,
-                issue_id,
-                is_fixable=False,
-                severity=ir.IssueSeverity.WARNING,
-                translation_key=ISSUE_SHELLY,
-                translation_placeholders={
-                    "suministro": self.subentrada.title,
-                    "ip": self.datos[CONF_SHELLY_IP],
-                    "diferencia": f"{diferencia * 100:.0f}",
-                },
+            self._aviso(
+                ISSUE_SHELLY, {"ip": self.datos[CONF_SHELLY_IP], "diferencia": f"{diferencia * 100:.0f}"}
             )
             return consumo, 0
-        ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+        self._aviso(ISSUE_SHELLY, None)
         return corregir(consumo, shelly)
 
     # --- comprobación de la factura con la CNMC ------------------------------------------
@@ -401,7 +436,7 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         previa = c.get("cnmc")
         if previa and not forzar and previa.get("estado") != "incompleta":
             return previa
-        inicio, fin = date.fromisoformat(c["inicio"]), date.fromisoformat(c["fin"])
+        inicio, fin = _fechas(c)
         desde, hasta = periodo_curva(inicio, fin, REFERENCE_TZ)
         desde, hasta = desde.astimezone(UTC), hasta.astimezone(UTC)
         horas_periodo = int((hasta - desde).total_seconds()) // 3600
@@ -431,7 +466,7 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         except CnmcNoResponde as exc:
             _LOGGER.warning("%s: el simulador de la CNMC no responde (%s)", self.subentrada.title, exc)
             c["cnmc_error"] = str(exc)[:200]
-            self._store.async_delay_save(lambda: self._estado, 5)
+            self._guardar()
             self.async_update_listeners()
             return None
         diferencia = (Decimal(c["total"]) - simulacion.total).quantize(Decimal("0.01"))
@@ -454,7 +489,7 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
             "horas_periodo": horas_periodo,
         }
         c.pop("cnmc_error", None)
-        self._store.async_delay_save(lambda: self._estado, 5)
+        self._guardar()
         self._avisar_cnmc(c)
         self.async_update_listeners()
         return c["cnmc"]
@@ -474,27 +509,23 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         return {t: v * factor.get(periodo[t], Decimal(1)) for t, v in horas.items()}
 
     def _avisar_cnmc(self, c: dict[str, Any]) -> None:
-        issue_id = f"{ISSUE_CNMC}_{self.subentrada.subentry_id}_{c['fin']}"
+        """Aviso persistente (uno por factura, se puede ignorar) si la factura no cuadra con la CNMC."""
         cnmc = c.get("cnmc") or {}
         if cnmc.get("estado") != "no_cuadra":
-            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+            self._aviso(ISSUE_CNMC, None, sufijo=f"_{c['fin']}")
             return
-        ir.async_create_issue(
-            self.hass,
-            DOMAIN,
-            issue_id,
-            is_fixable=False,
-            is_persistent=True,
-            severity=ir.IssueSeverity.WARNING,
-            translation_key=ISSUE_CNMC,
-            translation_placeholders={
-                "suministro": self.subentrada.title,
-                "inicio": date.fromisoformat(c["inicio"]).strftime("%d/%m/%Y"),
-                "fin": date.fromisoformat(c["fin"]).strftime("%d/%m/%Y"),
+        inicio, fin = _fechas(c)
+        self._aviso(
+            ISSUE_CNMC,
+            {
+                "inicio": inicio.strftime("%d/%m/%Y"),
+                "fin": fin.strftime("%d/%m/%Y"),
                 "factura": f"{Decimal(c['total']):.2f}".replace(".", ","),
                 "cnmc": f"{cnmc['total']:.2f}".replace(".", ","),
                 "diferencia": f"{abs(cnmc['diferencia']):.2f}".replace(".", ","),
             },
+            sufijo=f"_{c['fin']}",
+            persistente=True,
         )
 
     @property
@@ -511,7 +542,9 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
 
     # --- periodo --------------------------------------------------------------------
 
-    def _inicio_periodo(self) -> date | None:
+    @property
+    def inicio_periodo(self) -> date | None:
+        """Primer día (excluido) del periodo en curso: el último corte o el fin de la última factura."""
         guardado = self._estado.get("corte_actual")
         if guardado:
             return date.fromisoformat(guardado)
@@ -525,11 +558,11 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
             return await self._async_actualizar()
 
     async def _async_actualizar(self) -> DatosFacturacion:
-        inicio = self._inicio_periodo()
+        inicio = self.inicio_periodo
         if inicio is None:
-            self._avisar_sin_fecha(True)
+            self._aviso(ISSUE_SIN_FECHA, {})
             return DatosFacturacion(problema="sin_fecha", anterior=self._anterior())
-        self._avisar_sin_fecha(False)
+        self._aviso(ISSUE_SIN_FECHA, None)
         ahora = dt_util.now(REFERENCE_TZ)
         hoy = ahora.date()
 
@@ -549,6 +582,7 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         await self._async_escribir_coste(datos)
         await self._async_calcular_anteriores(ahora)
         self._avisar_huecos()
+        self._avisar_calibracion()
         await self._async_escribir_facturas()
         await async_revisar_panel(
             self.hass,
@@ -599,7 +633,7 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
             _LOGGER.exception("%s: no se pudo escribir la estadística de facturas", self.subentrada.title)
             return
         self._estado["facturas_escritas"] = firma
-        self._store.async_delay_save(lambda: self._estado, 5)
+        self._guardar()
 
     async def _async_calcular_anteriores(self, ahora: datetime) -> None:
         """Calcula hacia atrás los periodos anteriores a la primera factura conocida.
@@ -614,7 +648,7 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         if self._estado.get("calculadas_revisadas") == ahora.date().isoformat():
             return
         cerradas = self.cerradas
-        fin = date.fromisoformat(cerradas[0]["inicio"]) if cerradas else self._inicio_periodo()
+        fin = date.fromisoformat(cerradas[0]["inicio"]) if cerradas else self.inicio_periodo
         if fin is None:
             return
         for _ in range(MAX_CALCULADAS_POR_CICLO):
@@ -633,27 +667,16 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
                 return
             if datos.horas_sin_precio > horas // 50:
                 return  # el histórico de precios aún se está llenando
-            f = datos.estimacion.prevision
-            kwh = datos.estimacion.kwh_medidos
             calculadas = self._estado.get("cerradas", [])
-            calculadas.append(
-                {
-                    "inicio": inicio.isoformat(),
-                    "fin": fin.isoformat(),
-                    "total": str(f.total),
-                    "kwh": {p: str(v.quantize(Decimal("0.001"))) for p, v in kwh.items()},
-                    "estado": "calculada",
-                    "consumo": int(sum(kwh.values(), Decimal(0)).quantize(Decimal(1))),
-                }
-            )
+            calculadas.append(_fila_periodo(inicio, fin, datos.estimacion, "calculada"))
             calculadas.sort(key=lambda c: c["fin"])
             self._estado["cerradas"] = calculadas
-            self._store.async_delay_save(lambda: self._estado, 5)
+            self._guardar()
             fin = inicio
 
     def _marcar_calculadas(self, ahora: datetime) -> None:
         self._estado["calculadas_revisadas"] = ahora.date().isoformat()
-        self._store.async_delay_save(lambda: self._estado, 5)
+        self._guardar()
 
     def _coste_hoy_heredado(self) -> str | None:
         """entity_id del «coste hoy» de la v0.2 si este suministro lo heredó."""
@@ -672,13 +695,13 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
     async def async_fijar_corte(self, corte: date) -> None:
         """Fin del periodo en curso fijado por el usuario (fecha de lectura real de la COR)."""
         async with self._candado:
-            inicio = self._inicio_periodo()
+            inicio = self.inicio_periodo
             if inicio is None or not inicio < corte <= inicio + timedelta(days=62):
                 raise ValueError(
                     f"El fin del periodo debe estar entre {inicio} y {inicio and inicio + timedelta(days=62)}"
                 )
             self._estado["corte_manual"] = corte.isoformat()
-            self._store.async_delay_save(lambda: self._estado, 5)
+            self._guardar()
         await self.async_request_refresh()
 
     @property
@@ -686,16 +709,12 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         """Periodos cerrados (estimados o conciliados), del más antiguo al más reciente."""
         return list(self._estado.get("cerradas") or [])
 
-    @property
-    def inicio_periodo(self) -> date | None:
-        return self._inicio_periodo()
-
     def periodo_pendiente(self) -> tuple[date, date] | None:
         """Periodo que más probablemente falta por conciliar: el último cerrado sin factura real."""
         c = self._anterior()
         if c is None or c.get("estado") == "conciliada":
             return None
-        return date.fromisoformat(c["inicio"]), date.fromisoformat(c["fin"])
+        return _fechas(c)
 
     def _anterior_de(self, inicio: date) -> dict[str, Any] | None:
         """El periodo inmediatamente anterior al que empieza en `inicio` (el que acaba ese día).
@@ -718,7 +737,7 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         self._estado["corte_actual"] = corte.isoformat()
         if self._estado.get("corte_manual") and date.fromisoformat(self._estado["corte_manual"]) <= corte:
             self._estado.pop("corte_manual")
-        self._store.async_delay_save(lambda: self._estado, 5)
+        self._guardar()
         if fila.get("incompleta"):
             # Recién estimada: no se vuelve a calcular hasta la hora siguiente.
             self._estado["incompletas_revisadas"] = (
@@ -739,19 +758,13 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         est = datos.estimacion
         if est is None:
             return None
-        f = est.prevision
         fila: dict[str, Any] = {
-            "inicio": inicio.isoformat(),
-            "fin": corte.isoformat(),
+            **_fila_periodo(inicio, corte, est, "estimada"),
             "emision": est.emision.isoformat(),
-            "total": str(f.total),
-            "kwh": {p: str(v.quantize(Decimal("0.001"))) for p, v in est.kwh_medidos.items()},
-            "estado": "estimada",
             "horas_sin_consumo": datos.horas_sin_consumo,
             "prorrata": self._prorrata(inicio, corte),
-            "consumo": int(sum(est.kwh_medidos.values(), Decimal(0)).quantize(Decimal(1))),
             "bonificados": None,
-            "total_estimado": str(f.total),
+            "total_estimado": str(est.prevision.total),
             "kwh_medido_bruto": str(datos.kwh_medido_bruto.quantize(Decimal("0.001"))),
             "horas": datos.horas_medidas,
         }
@@ -767,17 +780,18 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
             return True
         return horas_sin_consumo > UMBRAL_HORAS_INCOMPLETA
 
+    def _a_medias(self, c: dict[str, Any]) -> bool:
+        """Periodo estimado cerrado al que faltan horas de consumo (su consumo real es mayor)."""
+        # Las guardadas antes del umbral (p. ej. 1 h con HA parado) se dan por enteras.
+        return bool(c.get("incompleta")) and self._incompleta(c.get("horas_sin_consumo", 0))
+
     def _incompletas(self, hoy: date) -> list[dict[str, Any]]:
         """Periodos estimados cerrados con horas sin consumo que aún se recalculan."""
         limite = (hoy - timedelta(days=DIAS_RECALCULO_INCOMPLETA)).isoformat()
         return [
             c
             for c in self.cerradas
-            if c.get("estado") == "estimada"
-            and c.get("incompleta")
-            and c["fin"] >= limite
-            # las guardadas antes del umbral (p. ej. 1 h con HA parado) dejan de avisar
-            and self._incompleta(c.get("horas_sin_consumo", 0))
+            if c.get("estado") == "estimada" and self._a_medias(c) and c["fin"] >= limite
         ]
 
     async def _async_recalcular_incompletas(self, ahora: datetime) -> None:
@@ -793,7 +807,7 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         if pendientes and self._estado.get("incompletas_revisadas") != hora:
             self._estado["incompletas_revisadas"] = hora
             for c in pendientes:
-                inicio, fin = date.fromisoformat(c["inicio"]), date.fromisoformat(c["fin"])
+                inicio, fin = _fechas(c)
                 try:
                     datos = await self._async_estimar(inicio, fin, ahora, cerrar=True)
                 except Exception:
@@ -818,7 +832,7 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
                 )
                 await self._async_reescribir_coste_cerrado(datos)
                 self._escrito = None  # el periodo en curso se reescribe sobre la suma nueva
-            self._store.async_delay_save(lambda: self._estado, 5)
+            self._guardar()
         self._avisar_incompletas(hoy)
 
     async def _async_reescribir_coste_cerrado(self, datos: DatosFacturacion) -> None:
@@ -832,20 +846,13 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
             _LOGGER.exception("%s: no se pudo reescribir la estadística de coste", self.subentrada.title)
 
     def _avisar_incompletas(self, hoy: date) -> None:
-        issue_id = f"{ISSUE_INCOMPLETO}_{self.subentrada.subentry_id}"
         pendientes = self._incompletas(hoy)
         if not pendientes:
-            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+            self._aviso(ISSUE_INCOMPLETO, None)
             return
-        ir.async_create_issue(
-            self.hass,
-            DOMAIN,
-            issue_id,
-            is_fixable=False,
-            severity=ir.IssueSeverity.WARNING,
-            translation_key=ISSUE_INCOMPLETO,
-            translation_placeholders={
-                "suministro": self.subentrada.title,
+        self._aviso(
+            ISSUE_INCOMPLETO,
+            {
                 "periodos": ", ".join(
                     f"{c['inicio']} → {c['fin']} ({c.get('horas_sin_consumo', 0)} h)" for c in pendientes
                 ),
@@ -877,29 +884,77 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         return prorrata(inicio, fin, inicial.limite_anual_kwh, self.historico.tarifas, limites)
 
     def _arrastre(self, inicio: date) -> int:
+        """kWh con descuento no consumidos en los periodos cerrados, disponibles desde `inicio`.
+
+        Las «calculada» (sin `prorrata`) no cuentan. De un periodo medido a medias solo se sabe que
+        consumió al menos lo medido: lo que se pasó del límite se descuenta del saldo (es real), pero
+        no deja sobrante (el consumo que falta no se midió, no es que no se gastara).
+        """
         if not self._con_bono_alguna_vez():
             return 0
-        periodos = [
-            PeriodoBono(
-                date.fromisoformat(c["inicio"]),
-                date.fromisoformat(c["fin"]),
-                int(c.get("prorrata", 0)),
-                int(c.get("consumo", 0)),
-                c.get("bonificados"),
-            )
-            for c in self._estado.get("cerradas", [])
-            if "prorrata" in c
-        ]
+        periodos = []
+        for c in self._estado.get("cerradas", []):
+            if "prorrata" not in c:
+                continue
+            prorrata_periodo, consumo = int(c.get("prorrata", 0)), int(c.get("consumo", 0))
+            if self._a_medias(c):
+                consumo = max(consumo, prorrata_periodo)  # sobrante 0; lo usado, como hasta ahora
+            periodos.append(PeriodoBono(*_fechas(c), prorrata_periodo, consumo, c.get("bonificados")))
         return saldo_arrastre(periodos, inicio, int(self.datos.get(CONF_ARRASTRE_INICIAL) or 0))
 
+    def _facturas_calibracion(self) -> tuple[list[PeriodoCalibracion], list[tuple[dict[str, Any], Decimal]]]:
+        """Facturas conciliadas que calibran y, aparte, las que no cuadran con el medidor.
+
+        Fuera sin aviso: las que no tienen curva del medidor y aquellas cuyo periodo el medidor no
+        vio entero (umbral de `_incompleta`): los kWh del contador son de todo el periodo y los del
+        medidor no, y el cociente saldría disparado (instalación nueva con la última factura: ≈ 1,3).
+        Fuera con aviso (`_avisar_calibracion`): las que, con la curva entera, dan un cociente
+        contador / medidor fuera de `ALFA_VALIDO` (factura mal introducida o medidor que no mide
+        todo el suministro). Así una factura mala nunca pesa en el ajuste y las buenas siguen
+        calibrando; vale también para las filas guardadas por versiones anteriores.
+        """
+        validas: list[PeriodoCalibracion] = []
+        descartadas: list[tuple[dict[str, Any], Decimal]] = []
+        for c in self._estado.get("cerradas", []):
+            if c.get("estado") != "conciliada" or not c.get("kwh_medido_bruto") or not c.get("horas"):
+                continue
+            if self._incompleta(c.get("horas_sin_consumo", 0)):
+                continue
+            p = PeriodoCalibracion(Decimal(c["consumo"]), Decimal(c["kwh_medido_bruto"]), int(c["horas"]))
+            if p.kwh_medido <= 0:
+                continue
+            cociente = p.kwh_real / p.kwh_medido
+            if ALFA_VALIDO[0] <= cociente <= ALFA_VALIDO[1]:
+                validas.append(p)
+            else:
+                descartadas.append((c, cociente))
+        return validas, descartadas
+
     def ajuste(self) -> Ajuste | None:
-        """Calibración del medidor con las facturas conciliadas."""
-        periodos = [
-            PeriodoCalibracion(Decimal(c["consumo"]), Decimal(c["kwh_medido_bruto"]), int(c["horas"]))
-            for c in self._estado.get("cerradas", [])
-            if c.get("estado") == "conciliada" and c.get("kwh_medido_bruto") and c.get("horas")
-        ]
-        return ajustar(periodos)
+        """Calibración del medidor con las facturas conciliadas que cuadran con él."""
+        return ajustar(self._facturas_calibracion()[0])
+
+    def _avisar_calibracion(self) -> None:
+        """Aviso (uno por suministro, mientras dure) con las facturas que no cuadran con el medidor."""
+        descartadas = self._facturas_calibracion()[1]
+        if not descartadas:
+            self._aviso(ISSUE_CALIBRACION, None)
+            return
+
+        def _coma(v: Decimal, cifras: str) -> str:
+            return f"{v:{cifras}}".replace(".", ",")
+
+        self._aviso(
+            ISSUE_CALIBRACION,
+            {
+                "facturas": ", ".join(
+                    f"{_fechas(c)[0]:%d/%m/%Y} → {_fechas(c)[1]:%d/%m/%Y} (×{_coma(q, '.2f')})"
+                    for c, q in descartadas
+                ),
+                "minimo": _coma(ALFA_VALIDO[0], ".1f"),
+                "maximo": _coma(ALFA_VALIDO[1], ".1f"),
+            },
+        )
 
     @property
     def precision(self) -> dict[str, Any]:
@@ -927,7 +982,7 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         con_bono = self._con_bono_alguna_vez()
         out = []
         for c in self.cerradas:
-            inicio, fin = date.fromisoformat(c["inicio"]), date.fromisoformat(c["fin"])
+            inicio, fin = _fechas(c)
             total = Decimal(c["total"])
             sin_bono: Decimal | None = total
             if con_bono:
@@ -1005,7 +1060,7 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         horas = int((hasta - desde).total_seconds()) // 3600
 
         cerradas = self._estado.get("cerradas", [])
-        actual = self._inicio_periodo()
+        actual = self.inicio_periodo
         # El periodo que acababa donde empieza el actual (su fin era el corte supuesto).
         ultima = next((c for c in cerradas if actual and c["fin"] == actual.isoformat()), None)
         previa = next((c for c in cerradas if c["fin"] == fin.isoformat()), None)
@@ -1029,9 +1084,7 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
             {
                 "inicio": inicio.isoformat(),
                 "fin": fin.isoformat(),
-                "emision": (
-                    emision or fin + timedelta(days=int(self.datos.get(CONF_DIAS_EMISION, 5)))
-                ).isoformat(),
+                "emision": (emision or fin + timedelta(days=self._dias_emision())).isoformat(),
                 "total": str(total),
                 "kwh": {p: str(v) for p, v in kwh.items()},
                 "estado": "conciliada",
@@ -1041,6 +1094,9 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
                 "total_estimado": previa.get("total_estimado") if previa else None,
                 "kwh_medido_bruto": str(sum(consumo.values(), Decimal(0))),
                 "horas": horas if consumo else 0,
+                # Horas del periodo sin dato del medidor: si son muchas (medidor más nuevo que la
+                # factura, Datadis a medias), la factura no sirve para calibrar.
+                "horas_sin_consumo": horas - len(consumo),
             }
         )
         cerradas.sort(key=lambda c: c["fin"])
@@ -1058,6 +1114,7 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         await self._async_reescribir_periodo(desde, hasta, consumo, total)
         self._escrito = None
         self._avisar_incompletas(dt_util.now(REFERENCE_TZ).date())  # la real sustituye a la estimada
+        self._avisar_calibracion()
 
     async def _async_reescribir_periodo(
         self, desde: datetime, hasta: datetime, consumo: dict[datetime, Decimal], total: Decimal
@@ -1083,21 +1140,6 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         except Exception:
             _LOGGER.exception("%s: no se pudo reescribir la estadística de coste", self.subentrada.title)
 
-    def _avisar_sin_fecha(self, falta: bool) -> None:
-        issue_id = f"{ISSUE_SIN_FECHA}_{self.subentrada.subentry_id}"
-        if not falta:
-            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
-            return
-        ir.async_create_issue(
-            self.hass,
-            DOMAIN,
-            issue_id,
-            is_fixable=False,
-            severity=ir.IssueSeverity.WARNING,
-            translation_key=ISSUE_SIN_FECHA,
-            translation_placeholders={"suministro": self.subentrada.title},
-        )
-
     def huecos(self) -> list[tuple[date, date]]:
         """Días sin factura entre dos periodos cerrados consecutivos: (fin de uno, inicio del otro)."""
         cerradas = self.cerradas
@@ -1108,23 +1150,9 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
         ]
 
     def _avisar_huecos(self) -> None:
-        issue_id = f"{ISSUE_HUECO}_{self.subentrada.subentry_id}"
         huecos = self.huecos()
-        if not huecos:
-            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
-            return
-        ir.async_create_issue(
-            self.hass,
-            DOMAIN,
-            issue_id,
-            is_fixable=False,
-            severity=ir.IssueSeverity.WARNING,
-            translation_key=ISSUE_HUECO,
-            translation_placeholders={
-                "suministro": self.subentrada.title,
-                "huecos": ", ".join(f"{a.isoformat()} → {b.isoformat()}" for a, b in huecos),
-            },
-        )
+        texto = ", ".join(f"{a.isoformat()} → {b.isoformat()}" for a, b in huecos)
+        self._aviso(ISSUE_HUECO, {"huecos": texto} if huecos else None)
 
     async def _async_estimar(
         self,
@@ -1186,7 +1214,7 @@ class FacturacionSuministro(DataUpdateCoordinator[DatosFacturacion]):
                 inicio=inicio,
                 corte=corte,
                 hoy=min(ahora.date(), corte) if not cerrar else corte + timedelta(days=1),
-                dias_hasta_emision=int(self.datos.get(CONF_DIAS_EMISION, DEFAULT_DIAS_EMISION)),
+                dias_hasta_emision=self._dias_emision(),
                 suministro=inicial,
                 cambios_suministro=cambios,
                 medidas=medidas,

@@ -1,6 +1,6 @@
 {
   "name": "pvpc-bono-social-card",
-  "version": "1.2.0",
+  "version": "1.2.2",
   "private": true,
   "description": "Tarjeta de Lovelace de PVPC + Bono Social (se empaqueta en custom_components/pvpc_bonosocial/frontend/).",
   "license": "MIT",

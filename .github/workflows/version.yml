@@ -21,13 +21,14 @@ jobs:
   version:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ inputs.etiqueta || github.ref }}
       - name: La etiqueta coincide con el manifest.json
+        env:
+          ETIQUETA: ${{ inputs.etiqueta || github.event.release.tag_name || github.ref_name }}
         run: |
           VERSION=$(jq -r .version custom_components/pvpc_bonosocial/manifest.json)
-          ETIQUETA="${{ inputs.etiqueta || github.event.release.tag_name || github.ref_name }}"
           if [ "v$VERSION" != "$ETIQUETA" ]; then
             echo "::error::La etiqueta $ETIQUETA no coincide con la versión $VERSION del manifest.json"
             exit 1
@@ -43,7 +44,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ inputs.etiqueta || github.event.release.tag_name }}
       - name: Empaquetar custom_components/pvpc_bonosocial
@@ -54,4 +55,5 @@ jobs:
       - name: Adjuntar a la release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ inputs.etiqueta || github.event.release.tag_name }}" pvpc_bonosocial.zip --clobber
+          ETIQUETA: ${{ inputs.etiqueta || github.event.release.tag_name }}
+        run: gh release upload "$ETIQUETA" pvpc_bonosocial.zip --clobber

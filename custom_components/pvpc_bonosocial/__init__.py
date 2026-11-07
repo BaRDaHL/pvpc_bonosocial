@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timedelta
 
 from homeassistant.config_entries import ConfigSubentry
-from homeassistant.const import CONF_API_TOKEN, CONF_NAME, Platform
+from homeassistant.const import CONF_API_TOKEN, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
@@ -16,12 +16,7 @@ from homeassistant.util import dt as dt_util
 
 from .comparador import Comparador
 from .const import (
-    ATTR_BETTER_PRICE_TARGET,
     ATTR_ENABLE_PRIVATE_API,
-    ATTR_NEXT_BEST_IN_UPDATE,
-    ATTR_NEXT_PERIOD_IN_UPDATE,
-    ATTR_NEXT_POWER_PERIOD_IN_UPDATE,
-    ATTR_NEXT_PRICE_IN_UPDATE,
     ATTR_POWER_P1,
     ATTR_POWER_P3,
     ATTR_PRICE_MODE,
@@ -35,9 +30,6 @@ from .const import (
     DOMAIN,
     ENTRY_VERSION,
     LEGACY_ATTR_ENABLE_INJECTION_PRICE,
-    LEGACY_ATTR_POWER,
-    LEGACY_ATTR_POWER_P2_P3,
-    LEGACY_ATTR_POWER_P3,
     SUBENTRY_DATADIS,
     SUBENTRY_SUMINISTRO,
     UPDATE_FREQUENCY_BY_SENSOR,
@@ -64,7 +56,6 @@ from .tarjeta import async_quitar as async_quitar_tarjeta
 from .tarjeta import async_registrar as async_registrar_tarjeta
 
 _LOGGER = logging.getLogger(__name__)
-_DEPENDENCY_LOGGERS: tuple[str, ...] = ("custom_components.pvpc_bonosocial.prices.aiopvpc",)
 
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.DATE, Platform.BUTTON]
 ISSUE_TERRITORIO = "facturacion_no_soportada"
@@ -88,18 +79,8 @@ async def _async_tarjeta(hass: HomeAssistant) -> None:
         _LOGGER.exception("No se pudo registrar la tarjeta de PVPC + Bono Social")
 
 
-def _sync_dependency_log_levels() -> None:
-    """Align dependency logger levels with integration logger level."""
-    integration_level = _LOGGER.getEffectiveLevel()
-    for logger_name in _DEPENDENCY_LOGGERS:
-        dependency_logger = logging.getLogger(logger_name)
-        if dependency_logger.level == logging.NOTSET or dependency_logger.level > integration_level:
-            dependency_logger.setLevel(integration_level)
-
-
 async def async_setup_entry(hass: HomeAssistant, entry: PVPCConfigEntry) -> bool:
     """Set up pvpc hourly pricing from a config entry."""
-    _sync_dependency_log_levels()
     await _async_tarjeta(hass)
     if origen := entry.data.get(CONF_IMPORTAR):
         # Antes de leer la configuración y de cargar las plataformas (DISENO §9.2).
@@ -118,24 +99,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: PVPCConfigEntry) -> bool
     if enable_private_api is None:
         enable_private_api = bool(api_token) if api_token else DEFAULT_ENABLE_PRIVATE_API
     use_private_api = bool(api_token) and enable_private_api
-    power_p1 = config.get(ATTR_POWER_P1, config.get(LEGACY_ATTR_POWER))
-    power_p3 = config.get(
-        ATTR_POWER_P3,
-        config.get(LEGACY_ATTR_POWER_P2_P3, config.get(LEGACY_ATTR_POWER_P3)),
-    )
-    better_price_target = config.get(ATTR_BETTER_PRICE_TARGET)
-    next_price_in_update = config.get(ATTR_NEXT_PRICE_IN_UPDATE, DEFAULT_UPDATE_FREQUENCY)
-    next_best_in_update = config.get(ATTR_NEXT_BEST_IN_UPDATE, DEFAULT_UPDATE_FREQUENCY)
-    next_period_in_update = config.get(ATTR_NEXT_PERIOD_IN_UPDATE, DEFAULT_UPDATE_FREQUENCY)
-    next_power_period_in_update = config.get(ATTR_NEXT_POWER_PERIOD_IN_UPDATE, DEFAULT_UPDATE_FREQUENCY)
-    if next_price_in_update not in UPDATE_FREQUENCY_OPTIONS:
-        next_price_in_update = DEFAULT_UPDATE_FREQUENCY
-    if next_best_in_update not in UPDATE_FREQUENCY_OPTIONS:
-        next_best_in_update = DEFAULT_UPDATE_FREQUENCY
-    if next_period_in_update not in UPDATE_FREQUENCY_OPTIONS:
-        next_period_in_update = DEFAULT_UPDATE_FREQUENCY
-    if next_power_period_in_update not in UPDATE_FREQUENCY_OPTIONS:
-        next_power_period_in_update = DEFAULT_UPDATE_FREQUENCY
     sensor_keys = get_enabled_sensor_keys(
         using_private_api=use_private_api,
         entries=er.async_entries_for_config_entry(entity_registry, entry.entry_id),
@@ -146,35 +109,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: PVPCConfigEntry) -> bool
     if use_private_api and (price_mode == "indexed" or (price_mode == "pvpc" and show_reference_price)):
         sensor_keys.add(KEY_ADJUSTMENT)
     coordinator = ElecPricesDataUpdateCoordinator(hass, entry, sensor_keys, use_private_api)
-    _LOGGER.debug(
-        "PVPC Next config entry_id=%s unique_id=%s name=%s tariff=%s timezone=%s "
-        "power_p1=%s power_p3=%s better_price_target=%s "
-        "price_mode=%s show_reference_price=%s "
-        "enable_private_api=%s next_price_in_update=%s next_best_in_update=%s "
-        "next_period_in_update=%s next_power_period_in_update=%s "
-        "coordinator_update_interval=%s "
-        "use_private_api=%s api_token_set=%s sensor_keys=%s entry_version=%s",
-        entry.entry_id,
-        entry.unique_id,
-        config.get(CONF_NAME),
-        config.get(ATTR_TARIFF),
-        hass.config.time_zone,
-        power_p1,
-        power_p3,
-        better_price_target,
-        price_mode,
-        show_reference_price,
-        enable_private_api,
-        next_price_in_update,
-        next_best_in_update,
-        next_period_in_update,
-        next_power_period_in_update,
-        coordinator.update_interval,
-        use_private_api,
-        bool(api_token),
-        sorted(sensor_keys),
-        entry.version,
-    )
     await coordinator.async_cargar_historico()
     try:
         await coordinator.async_config_entry_first_refresh()
@@ -197,6 +131,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: PVPCConfigEntry) -> bool
     # Recarga al cambiar las opciones o al añadir, modificar o quitar un suministro. Es el
     # único mecanismo de recarga: HA no admite update listeners con OptionsFlowWithReload.
     entry.async_on_unload(entry.add_update_listener(_async_entrada_actualizada))
+    entry.async_on_unload(
+        async_track_time_change(hass, coordinator.async_al_empezar_hora, minute=0, second=0)
+    )
     _apply_update_frequency_disables(entity_registry, entry, config)
     async_revisar_pvpc_next(hass, entry)
     return True
@@ -379,17 +316,10 @@ def _apply_update_frequency_disables(
     config: dict,
 ) -> None:
     """Disable/enable minute-update sensors based on options."""
-    entity_entries = er.async_entries_for_config_entry(entity_registry, entry.entry_id)
-    if not entity_entries:
-        return
-    for entity_entry in entity_entries:
+    for entity_entry in er.async_entries_for_config_entry(entity_registry, entry.entry_id):
         unique_id = entity_entry.unique_id
-        if not unique_id:
-            continue
-        matched = False
         for sensor_key, option_key in UPDATE_FREQUENCY_BY_SENSOR.items():
             if unique_id.endswith(f"_{sensor_key}"):
-                matched = True
                 frequency = config.get(option_key, DEFAULT_UPDATE_FREQUENCY)
                 if frequency not in UPDATE_FREQUENCY_OPTIONS:
                     frequency = DEFAULT_UPDATE_FREQUENCY
@@ -405,8 +335,6 @@ def _apply_update_frequency_disables(
                         disabled_by=None,
                     )
                 break
-        if not matched:
-            continue
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: PVPCConfigEntry) -> bool:
@@ -433,6 +361,8 @@ async def async_migrate_entry(hass: HomeAssistant, entry: PVPCConfigEntry) -> bo
         return await async_migrar_v02(hass, entry)
     if entry.version == ENTRY_VERSION and entry.minor_version < 2:
         _migrar_token_a_data(hass, entry)
+    if entry.version == ENTRY_VERSION and entry.minor_version < 3:
+        _migrar_potencia_a_data(hass, entry)
     return True
 
 
@@ -452,3 +382,23 @@ def _migrar_token_a_data(hass: HomeAssistant, entry: PVPCConfigEntry) -> None:
         if token:
             data[CONF_API_TOKEN] = token
     hass.config_entries.async_update_entry(entry, data=data, options=options, minor_version=2)
+
+
+def _migrar_potencia_a_data(hass: HomeAssistant, entry: PVPCConfigEntry) -> None:
+    """2.2 → 2.3: la potencia de la entrada deja de pedirse; la que valía pasa a `data`.
+
+    Hasta la v1.2.1 la potencia se pedía dos veces: en el alta (y en «Configurar», que la guardaba
+    en `options` tapando la de `data`) y al añadir el suministro. Desde la v1.2.2 solo se pide en
+    el suministro, y «Configurar» ya no escribe `power_p1`/`power_p3`: si se dejaran en `options`,
+    al guardar las opciones sin ellas la entrada volvería a la potencia del alta. Se conserva la
+    que de verdad se usaba (la de `options`, si existía) en `data`, como reserva para una entrada
+    sin suministro; con suministro manda la del suministro (helpers.potencia_contratada).
+    """
+    data = dict(entry.data)
+    options = dict(entry.options)
+    for clave in (ATTR_POWER_P1, ATTR_POWER_P3):
+        if clave in options:
+            valor = options.pop(clave)
+            if valor is not None:
+                data[clave] = valor
+    hass.config_entries.async_update_entry(entry, data=data, options=options, minor_version=3)

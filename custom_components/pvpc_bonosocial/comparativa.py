@@ -132,10 +132,13 @@ class Comparativa:
     ventana: Ventana
     kwh_anuales: dict[str, int]
     alternativas: tuple[Alternativa, ...]  # mercado libre, de la más barata a la más cara
-    pvpc_cnmc: Decimal | None  # estimación de la CNMC para el PVPC (sin bono)
+    pvpc_cnmc: Decimal | None  # la CNMC: el PVPC (sin bono) con los precios del último año
     total_ofertas: int
     grandes_ausentes: tuple[str, ...]
     avisos: tuple[str, ...] = field(default_factory=tuple)
+    # La CNMC da dos PVPC: el «Histórico» (último año, tipo PVPC) y su previsión para el año que
+    # viene (tipo COR), que es la que encabeza su web.
+    pvpc_cnmc_prevision: Decimal | None = None
     veredicto: str | None = None
 
     @property
@@ -195,7 +198,10 @@ def consulta_anual(ventana: Ventana) -> dict[str, int]:
 def comparar(ventana: Ventana, ofertas: Sequence[OfertaCnmc]) -> Comparativa:
     pagado = ventana.referencia_anual
     libres = [o for o in ofertas if not o.es_pvpc]
-    pvpc = next((o for o in ofertas if o.es_pvpc), None)
+    pvpc = next((o for o in ofertas if o.es_pvpc and o.tipo == "PVPC"), None) or next(
+        (o for o in ofertas if o.es_pvpc), None
+    )
+    prevision = next((o for o in ofertas if o.es_pvpc and o is not pvpc and o.tipo != "PVPC"), None)
     alternativas = tuple(
         Alternativa(o, _euros(pagado - o.importe_primer_anio), _euros(pagado - o.importe_segundo_anio))
         for o in sorted(libres, key=lambda o: (o.importe_primer_anio, o.id))
@@ -228,6 +234,7 @@ def comparar(ventana: Ventana, ofertas: Sequence[OfertaCnmc]) -> Comparativa:
         kwh_anuales=consulta_anual(ventana),
         alternativas=alternativas,
         pvpc_cnmc=pvpc.importe_primer_anio if pvpc else None,
+        pvpc_cnmc_prevision=prevision.importe_primer_anio if prevision else None,
         total_ofertas=len(libres),
         grandes_ausentes=ausentes,
         avisos=tuple(avisos),

@@ -873,6 +873,24 @@
         "notificacion": {
           "name": "Notificación persistente",
           "description": "Deja el resultado (o el error) en una notificación persistente."
+        },
+        "enviar": {
+          "name": "Enviar al destino del suministro",
+          "description": "Envía el resultado al destino de las opciones del suministro (con su filtro de ahorro). Desactívalo para comparar sin enviar."
+        }
+      }
+    },
+    "enviar_comparativa": {
+      "name": "Enviar la comparativa",
+      "description": "Reenvía la última comparativa de tarifas guardada (sin volver a consultar a la CNMC) al destino indicado o al de las opciones del suministro.",
+      "fields": {
+        "suministro": {
+          "name": "Suministro",
+          "description": "Dispositivo del suministro."
+        },
+        "destino": {
+          "name": "Destino",
+          "description": "Entidad de notificación (por ejemplo, un chat de Telegram). Si no se indica, la de las opciones del suministro."
         }
       }
     }

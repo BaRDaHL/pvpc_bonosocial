@@ -147,6 +147,67 @@ class OfertaCnmc:
         return self.tipo == "PVPC" or "referencia" in self.comercializadora.lower()
 
 
+URL_FICHA = "https://comparador.cnmc.gob.es/comparador/detalle/"
+URL_LISTADO = "https://comparador.cnmc.gob.es/comparador/listado/"
+
+
+def _potencia_ficha(kw: Decimal) -> str:
+    """La potencia como la escribe el comparador en sus enlaces: 3 decimales sin el punto, 5 cifras."""
+    texto = f"{float(kw):.3f}".replace(".", "")
+    return (texto if kw >= 10 else "0" + texto).ljust(5, "0")
+
+
+def _cifras(c: ConsultaCnmc, inicio: str, id_oferta: int) -> str:
+    """Enlace a la ficha de la oferta en el comparador de la CNMC, con el consumo de la consulta.
+
+    La web de la CNMC lleva en la ruta los datos del formulario como un número decimal largo
+    (en hexadecimal): campos de ancho fijo en el orden de su formulario. Aquí solo varían el código
+    postal, las potencias, los kWh por periodo y el identificador de la oferta; el resto son sus
+    valores por defecto (sin factura, sin autoconsumo, revisión de precios indiferente). Comprobado
+    el 8-nov-2026 contra el código de su web: si la CNMC cambia el formato, el enlace deja de abrir
+    la ficha y lleva a su portada, nada más.
+    """
+    k = [int(c.kwh.get(p, 0)) for p in ("P1", "P2", "P3")]
+    total = sum(k)
+    p1, p2 = c.potencia_p1_kw, c.potencia_p2_kw
+    cifras = (
+        inicio  # electricidad + tarifa (listado) o índice de su menú (ficha) + permanencia/servicios
+        + c.codigo_postal
+        + "".join(_potencia_ficha(p) for p in (p1, p1, p2, p1, p1, p1, p1))
+        + str(total).zfill(6)
+        + "".join(str(x).zfill(6) for x in (*k, 0, 0, 0))
+        + "0006000"  # gas (no se usa): el valor por defecto de su formulario
+        + str(int(id_oferta)).zfill(6)
+        + "0000"  # sin curva de consumo
+        + "1"  # vivienda
+        + str(total).zfill(6)
+        + "0006000"
+        + "0" * 391  # datos de factura y de QR: vacíos
+        + "13"  # perfil de consumo: el mismo que la consulta (con 00 su web avisa de «perfil no disponible»)
+        + "0000"  # CUPS
+        + "2"  # revisión de precios: indiferente
+        + "0" * 6  # energía autoconsumida
+        + "0" * 7  # auditoría QR
+        + "0" * 26  # fechas del QR
+        + _potencia_ficha(p1)  # potencia de autoconsumo (la del formulario)
+        + "0"  # sin autoconsumo
+    )
+    hexa = format(int(cifras), "x")
+    return ("0" + hexa if len(hexa) % 2 else hexa).upper()
+
+
+def enlace_ficha(c: ConsultaCnmc, id_oferta: int) -> str:
+    """Ficha de una oferta: «1» electricidad, «4» tarifa 2.0TD, «3» indiferentes (como su botón
+    «Ver oferta» del listado; con «0» la ficha sale sin tarifa y a 0 €). Comprobado el 8-nov-2026."""
+    return URL_FICHA + _cifras(c, "143", id_oferta)
+
+
+def enlace_listado(c: ConsultaCnmc) -> str:
+    """Listado de ofertas del comparador con los datos de la consulta: «1» electricidad, «4» 2.0TD,
+    «3» permanencia y servicios indiferentes; sin oferta (000000). Comprobado contra su web el 8-nov-2026."""
+    return URL_LISTADO + _cifras(c, "143", 0)
+
+
 def parametros(c: ConsultaCnmc) -> dict[str, str]:
     """Parámetros de la petición: modo anual, vivienda, 2.0TD, sin filtros."""
     p1, p2, p3 = (int(c.kwh.get(k, 0)) for k in ("P1", "P2", "P3"))

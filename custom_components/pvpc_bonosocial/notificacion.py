@@ -194,25 +194,28 @@ def clave_chat_telegram(version: str = HA_VERSION) -> str:
 async def async_mandar(
     hass: HomeAssistant,
     destino: str,
-    titulo: str,
+    titulo: str | None,
     cuerpo: str,
     telegram: tuple[str, Any] | None,
+    *,
+    parse_mode: str = "markdown",
 ) -> None:
-    """Envía un texto a una entidad `notify` (Markdown si es un chat de Telegram)."""
+    """Envía un texto a una entidad `notify` (Markdown si es un chat de Telegram; sin título, el
+    cuerpo ya lo lleva con su formato)."""
     if telegram is not None:
         bot, chat = telegram
-        await hass.services.async_call(
-            "telegram_bot",
-            "send_message",
-            {
-                "config_entry_id": bot,
-                clave_chat_telegram(): [chat],
-                "title": titulo,
-                "message": cuerpo,
-                "parse_mode": "markdown",
-            },
-            blocking=True,
-        )
+        datos = {
+            "config_entry_id": bot,
+            clave_chat_telegram(): [chat],
+            "message": cuerpo,
+            "parse_mode": parse_mode,
+        }
+        if titulo:
+            datos["title"] = titulo
+        if parse_mode == "markdownv2":
+            # Mensajes con enlaces (comparativa): sin la tarjeta de vista previa de la web al final.
+            datos["disable_web_page_preview"] = True
+        await hass.services.async_call("telegram_bot", "send_message", datos, blocking=True)
     else:
         await hass.services.async_call(
             "notify",

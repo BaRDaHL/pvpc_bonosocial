@@ -873,6 +873,24 @@
         "notificacion": {
           "name": "Persistent notification",
           "description": "Leaves the result (or the error) in a persistent notification."
+        },
+        "enviar": {
+          "name": "Send to the supply target",
+          "description": "Sends the result to the target in the supply options (with its savings filter). Turn off to compare without sending."
+        }
+      }
+    },
+    "enviar_comparativa": {
+      "name": "Send the comparison",
+      "description": "Resends the last saved tariff comparison (without asking the CNMC again) to the given target or the one in the supply options.",
+      "fields": {
+        "suministro": {
+          "name": "Supply",
+          "description": "Supply device."
+        },
+        "destino": {
+          "name": "Target",
+          "description": "Notification entity (for example, a Telegram chat). If not given, the one in the supply options."
         }
       }
     }

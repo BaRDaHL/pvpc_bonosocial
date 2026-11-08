@@ -15,7 +15,7 @@
 
 import { LitElement, css, html, nothing, svg } from "lit";
 
-const VERSION = "1.2.2";
+const VERSION = "1.2.3";
 const ETIQUETA = "pvpc-bono-social-card";
 const COLORES = ["var(--pvpc-bs-verde)", "var(--pvpc-bs-amarillo)", "var(--pvpc-bs-naranja)", "var(--pvpc-bs-rojo)"];
 const COLOR_PERIODO = { P1: 3, P2: 2, P3: 0 };
@@ -61,6 +61,63 @@ const TEXTOS = {
     hora_actual: "Hora actual",
     periodos: { P1: "punta", P2: "llano", P3: "valle" },
     sin_entidad: "No se encuentra el sensor de precio de PVPC + Bono Social",
+    comp: {
+      boton: "Comparar tarifas",
+      comparando: "Comparando…",
+      titulo: "Comparativa de tarifas",
+      ultima: "Última comparación",
+      facturas: (n) => (n === 1 ? "1 factura" : `${n} facturas`),
+      dias: (n) => `${n} días`,
+      ofertas: (n) => `${n} ofertas de la CNMC`,
+      tu_tarifa: "Tu tarifa actual",
+      pvpc_bono: "PVPC con bono social",
+      pvpc: "PVPC sin bono",
+      al_anio: "/año",
+      primer_anio: "1.er año",
+      sin_permanencia: "sin permanencia",
+      permanencia: "permanencia",
+      nuevos: "solo nuevos clientes",
+      verde: "verde",
+      mas: "más",
+      menos: "menos",
+      espera: "Consultando la CNMC con tus facturas. Puede tardar unos segundos…",
+      error: "No se ha podido comparar",
+      sin_datos: "Aún no hay ninguna comparativa.",
+      estados: {
+        sin_codigo_postal: "Falta el código postal del suministro (opciones del suministro).",
+        sin_datos: "No hay facturas suficientes para comparar.",
+        cnmc_no_responde: "El comparador de la CNMC no responde; inténtalo más tarde.",
+      },
+      veredictos: {
+        quedarse_con_bono: ["Sigue con PVPC + bono social", "Con tu bono, el PVPC sigue siendo lo más barato: la mejor oferta libre te costaría {x} más al año."],
+        libre_aunque_pierde_bono: ["Hay una oferta más barata", "La mejor oferta libre sale {x} más barata al año que lo que pagas con bono, aunque lo perderías. Comprueba las condiciones antes de cambiar."],
+        mercado_libre: ["Puedes ahorrar", "Con la mejor oferta te ahorrarías {x} al año."],
+        quedarse: ["Sigue con tu tarifa", "Ninguna oferta mejora lo que pagas: la mejor te costaría {x} más al año."],
+      },
+      avisos: {
+        pierde_bono: "Con otra comercializadora pierdes el bono social.",
+        bono_perdido: "Ya no tienes bono social: se compara con lo que pagarías sin él.",
+        bono_nuevo: "Parte de lo pagado no llevaba el bono que tienes ahora: el ahorro real sería menor.",
+        cobertura_incompleta: "No están en el comparador: {ausentes}.",
+        datos_extrapolados: "Solo hay {dias} días de facturas: lo pagado y el consumo se han llevado a un año.",
+        facturas_estimadas: "Hay facturas estimadas: concilia las reales para afinar.",
+        sin_ofertas: "La CNMC no ha devuelto ofertas para tu código postal.",
+      },
+      cerrar: "Cerrar la comparativa",
+      confirmar: "Los precios son los que publica la CNMC y pueden estar desfasados: confírmalos con la comercializadora antes de contratar.",
+      ficha: "Ficha de la oferta en la CNMC (con la web de la comercializadora)",
+      cnmc: "Ver todas las ofertas en el comparador de la CNMC",
+      cnmc_datos: (n) => `${n ? `Las ${n} ofertas` : "Todas las ofertas"}, calculadas con tu consumo y tu potencia`,
+      pvpc_cnmc: (x, p, b) =>
+        b
+          ? `PVPC según la CNMC: ${x} sin bono con los precios del último año · previsión próximo año: ${p} sin bono, ≈${b} con tu bono`
+          : p
+            ? `PVPC sin bono según la CNMC: ${x} con los precios del último año · previsión próximo año: ${p}`
+            : `PVPC sin bono según la CNMC: ${x} con los precios del último año`,
+      enviar: (a) => `Enviar a ${a}`,
+      enviando: "Enviando…",
+      enviado: "Enviada ✓",
+    },
   },
   en: {
     titulo: "Electricity price",
@@ -80,6 +137,63 @@ const TEXTOS = {
     hora_actual: "Current hour",
     periodos: { P1: "peak", P2: "standard", P3: "off-peak" },
     sin_entidad: "PVPC + Bono Social price sensor not found",
+    comp: {
+      boton: "Compare tariffs",
+      comparando: "Comparing…",
+      titulo: "Tariff comparison",
+      ultima: "Last comparison",
+      facturas: (n) => (n === 1 ? "1 bill" : `${n} bills`),
+      dias: (n) => `${n} days`,
+      ofertas: (n) => `${n} CNMC offers`,
+      tu_tarifa: "Your current tariff",
+      pvpc_bono: "PVPC with social bonus",
+      pvpc: "PVPC without bonus",
+      al_anio: "/year",
+      primer_anio: "1st year",
+      sin_permanencia: "no minimum stay",
+      permanencia: "minimum stay",
+      nuevos: "new customers only",
+      verde: "green",
+      mas: "more",
+      menos: "less",
+      espera: "Asking the CNMC with your bills. It may take a few seconds…",
+      error: "The comparison failed",
+      sin_datos: "No comparison yet.",
+      estados: {
+        sin_codigo_postal: "The supply has no postal code (supply options).",
+        sin_datos: "Not enough bills to compare.",
+        cnmc_no_responde: "The CNMC comparator is not responding; try again later.",
+      },
+      veredictos: {
+        quedarse_con_bono: ["Stay on PVPC + social bonus", "With your bonus, PVPC is still the cheapest: the best free-market offer would cost you {x} more per year."],
+        libre_aunque_pierde_bono: ["There is a cheaper offer", "The best free-market offer is {x} per year cheaper than what you pay with the bonus, although you would lose it. Check the conditions before switching."],
+        mercado_libre: ["You can save", "With the best offer you would save {x} per year."],
+        quedarse: ["Keep your tariff", "No offer beats what you pay: the best would cost you {x} more per year."],
+      },
+      avisos: {
+        pierde_bono: "Switching retailer loses the social bonus.",
+        bono_perdido: "You no longer have the social bonus: compared with what you would pay without it.",
+        bono_nuevo: "Part of what you paid did not have your current bonus: real savings would be smaller.",
+        cobertura_incompleta: "Not in the comparator: {ausentes}.",
+        datos_extrapolados: "Only {dias} days of bills: payments and consumption extrapolated to a year.",
+        facturas_estimadas: "Some bills are estimates: reconcile the real ones to refine.",
+        sin_ofertas: "The CNMC returned no offers for your postal code.",
+      },
+      cerrar: "Close the comparison",
+      confirmar: "Prices are those published by the CNMC and may be out of date: confirm them with the retailer before signing up.",
+      ficha: "Offer details at the CNMC (with the retailer website)",
+      cnmc: "See all offers in the CNMC comparator",
+      cnmc_datos: (n) => `${n ? `All ${n} offers` : "All offers"}, calculated with your consumption and power`,
+      pvpc_cnmc: (x, p, b) =>
+        b
+          ? `PVPC according to the CNMC: ${x} without bonus at last year's prices · next year's forecast: ${p} without bonus, ≈${b} with your bonus`
+          : p
+            ? `PVPC without bonus according to the CNMC: ${x} at last year's prices · next year's forecast: ${p}`
+            : `PVPC without bonus according to the CNMC: ${x} at last year's prices`,
+      enviar: (a) => `Send to ${a}`,
+      enviando: "Sending…",
+      enviado: "Sent ✓",
+    },
   },
   // Catalán, gallego y euskera: solo los textos que se pintan (los que falten salen en español).
   ca: {
@@ -287,6 +401,7 @@ function entidadPrecio(hass) {
 const POR_DEFECTO = {
   current: true,
   details: true,
+  extremos: "columnas",
   graph: true,
   next_day: true,
   factura: "header",
@@ -327,6 +442,9 @@ class PvpcBonoSocialCard extends LitElement {
     _cursor: { state: true },
     _facturas: { state: true },
     _ventana: { state: true },
+    _anexo: { state: true },
+    _envio: { state: true },
+    comparando: { attribute: false },
     _anchoUtil: { state: true },
   };
 
@@ -513,6 +631,17 @@ class PvpcBonoSocialCard extends LitElement {
             ? html`<div class="factura abajo estrecha">${factura}</div>`
             : nothing}
           ${this._config.grafica_facturas ? this._graficaFacturas() : nothing}
+          ${this.enVentana && buscarEntidad(this.hass, "button.pvpc_bs_comparar_tarifas")
+            ? html`<div class="comparar">
+                <button
+                  class="btn-comparar"
+                  ?disabled=${this.comparando}
+                  @click=${() => this.dispatchEvent(new CustomEvent("pvpc-bs-comparar", { bubbles: true, composed: true }))}
+                >
+                  ${this.comparando ? t.comp.comparando : t.comp.boton}
+                </button>
+              </div>`
+            : nothing}
         </div>
       </ha-card>
       ${this._ventana ? this._dialogo() : nothing}
@@ -555,11 +684,16 @@ class PvpcBonoSocialCard extends LitElement {
       ventana: false,
     };
     return html`<dialog
-      class="ventana"
-      @close=${() => (this._ventana = false)}
+      class="ventana ${this._anexo ? "con-anexo" : ""}"
+      @close=${() => {
+        this._ventana = false;
+        this._anexo = null;
+      }}
       @click=${(ev) => ev.target === ev.currentTarget && this._cerrarVentana()}
+      @pvpc-bs-comparar=${() => this._comparar()}
     >
       <div class="ventana-cuerpo">
+        <div class="ventana-principal">
         <div class="ventana-cabecera">
           <button class="cerrar" aria-label=${this._t.cerrar} @click=${() => this._cerrarVentana()}>
             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -568,9 +702,170 @@ class PvpcBonoSocialCard extends LitElement {
           </button>
           <div class="ventana-titulo">${this._config.title || "PVPC + Bono Social"}</div>
         </div>
-        <pvpc-bono-social-card .configVentana=${completa} .hass=${this.hass}></pvpc-bono-social-card>
+        <pvpc-bono-social-card
+          .configVentana=${completa}
+          .hass=${this.hass}
+          .comparando=${this._anexo?.estado === "cargando"}
+        ></pvpc-bono-social-card>
+        </div>
+        ${this._anexo ? this._anexoComparativa() : nothing}
       </div>
     </dialog>`;
+  }
+
+  // --- comparativa de tarifas (anexo de la ventana) -------------------------------------
+
+  /** Compara las tarifas del suministro (sin enviar al destino) y abre el anexo con el resultado. */
+  async _comparar() {
+    if (this._anexo?.estado === "cargando") return;
+    const boton = buscarEntidad(this.hass, "button.pvpc_bs_comparar_tarifas");
+    if (!boton) return;
+    this._anexo = { estado: "cargando" };
+    this._envio = null;
+    try {
+      // El servicio espera a la CNMC: cuando vuelve, el sensor ya tiene la comparativa nueva.
+      // Desde la tarjeta ni notificación de HA ni destino (Telegram…): para eso está «Enviar».
+      const suministro = this.hass.entities?.[boton]?.device_id;
+      if (suministro) {
+        await this.hass.callService("pvpc_bonosocial", "comparar_tarifas", { suministro, enviar: false, notificacion: false });
+      } else {
+        await this.hass.callService("button", "press", { entity_id: boton });
+      }
+      this._anexo = { estado: "ok" };
+    } catch (error) {
+      this._anexo = { estado: "error", mensaje: error?.message || String(error) };
+    }
+    await this.updateComplete;
+    this.renderRoot.querySelector(".anexo")?.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
+  }
+
+  _anexoComparativa() {
+    const c = this._t.comp;
+    const cerrar = html`<button class="cerrar" aria-label=${c.cerrar} @click=${() => (this._anexo = null)}>
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"></path>
+      </svg>
+    </button>`;
+    const cabecera = html`<div class="anexo-cabecera"><div class="ventana-titulo">${c.titulo}</div>${cerrar}</div>`;
+    if (this._anexo.estado === "cargando") {
+      return html`<aside class="anexo">${cabecera}<div class="anexo-espera"><span class="girando"></span>${c.espera}</div></aside>`;
+    }
+    const id = buscarEntidad(this.hass, "sensor.pvpc_bs_mejor_alternativa");
+    const sensor = id && this.hass.states[id];
+    const r = sensor?.attributes || {};
+    if (this._anexo.estado === "error" || (r.estado && r.estado !== "ok")) {
+      const mensaje = c.estados[r.estado] || this._anexo.mensaje || c.error;
+      return html`<aside class="anexo">${cabecera}<div class="anexo-aviso error">⚠️ ${c.error}: ${mensaje}</div></aside>`;
+    }
+    const ofertas = Array.isArray(r.ofertas) ? r.ofertas : [];
+    if (!sensor || !ofertas.length && !r.veredicto) {
+      return html`<aside class="anexo">${cabecera}<div class="anexo-aviso">${c.sin_datos}</div></aside>`;
+    }
+    const avisos = Array.isArray(r.avisos) ? r.avisos : [];
+    // Con bono se compara con lo pagado; si se ha perdido, con lo que se pagaría sin él.
+    const sinBono = avisos.includes("bono_perdido") || !["quedarse_con_bono", "libre_aunque_pierde_bono"].includes(r.veredicto);
+    const base = avisos.includes("bono_perdido") ? r.pagado_sin_bono_anual : r.pagado_anual;
+    const eur = (x) => `${this._num(x, 2)} €`;
+    const fecha = typeof r.fecha === "string" ? `${r.fecha.slice(8, 10)}/${r.fecha.slice(5, 7)} ${r.fecha.slice(11, 16)}` : "";
+    const p = r.periodo || {};
+    const resumen = [
+      fecha && `${c.ultima}: ${fecha}`,
+      p.facturas_conciliadas !== undefined && `${c.facturas(p.facturas_conciliadas + (p.facturas_estimadas || 0))}${p.dias ? ` (${c.dias(p.dias)})` : ""}`,
+      r.total_ofertas !== undefined && c.ofertas(r.total_ofertas),
+    ].filter(Boolean).join(" · ");
+    const mejor = ofertas[0];
+    const veredicto = c.veredictos[r.veredicto];
+    const bueno = ["quedarse_con_bono", "quedarse"].includes(r.veredicto);
+    const etiquetas = (o) =>
+      [o.oferta, o.permanencia ? c.permanencia : c.sin_permanencia, o.solo_nuevos_clientes && c.nuevos, o.verde && c.verde]
+        .filter(Boolean)
+        .join(" · ");
+    const textoAviso = (a) =>
+      (c.avisos[a] || "")
+        .replace("{ausentes}", (r.grandes_ausentes || []).join(", "))
+        .replace("{dias}", p.dias ?? "");
+    return html`<aside class="anexo">
+      ${cabecera}
+      <div class="anexo-resumen">${resumen}</div>
+      ${veredicto && mejor
+        ? html`<div class="anexo-veredicto ${bueno ? "bueno" : "ahorro"}">
+            <b>${bueno ? "✅" : "💡"} ${veredicto[0]}</b>
+            <div>${veredicto[1].replace("{x}", eur(Math.abs(mejor.ahorro_anual)))}</div>
+          </div>`
+        : nothing}
+      <div class="anexo-fila tuya">
+        <div><div class="n">${c.tu_tarifa}</div><div class="o">${sinBono ? c.pvpc : c.pvpc_bono}</div></div>
+        <div class="i">${eur(base)}${c.al_anio}</div>
+      </div>
+      ${ofertas.slice(0, 5).map(
+        (o) => html`<div class="anexo-fila">
+          <div>
+            ${o.enlace
+              ? html`<a class="n enlace" href=${o.enlace} target="_blank" rel="noopener noreferrer" title=${c.ficha}
+                  >${o.comercializadora} ↗</a
+                >`
+              : html`<div class="n">${o.comercializadora}</div>`}
+            <div class="o">${etiquetas(o)}</div>
+          </div>
+          <div>
+            <div class="i">${eur(o.importe_primer_anio)}</div>
+            <div class="d ${o.ahorro_anual >= 0 ? "menos" : "mas"}">
+              ${o.ahorro_anual >= 0 ? "−" : "+"}${eur(Math.abs(o.ahorro_anual))}
+            </div>
+          </div>
+        </div>`,
+      )}
+      <div class="anexo-fila">
+        <div>
+          <a
+            class="n enlace"
+            href=${r.enlace_listado || "https://comparador.cnmc.gob.es/"}
+            target="_blank"
+            rel="noopener noreferrer"
+            >${c.cnmc} ↗</a
+          >
+          <div class="o">${r.enlace_listado ? c.cnmc_datos(r.total_ofertas) : ""}</div>
+        </div>
+      </div>
+      ${r.pvpc_cnmc != null
+        ? html`<div class="anexo-pvpc">
+            ${c.pvpc_cnmc(
+              eur(r.pvpc_cnmc),
+              r.pvpc_cnmc_prevision != null ? eur(r.pvpc_cnmc_prevision) : null,
+              r.pvpc_cnmc_prevision_bono != null ? eur(r.pvpc_cnmc_prevision_bono) : null,
+            )}
+          </div>`
+        : nothing}
+      ${avisos.filter((a) => c.avisos[a]).map((a) => html`<div class="anexo-nota">⚠️ ${textoAviso(a)}</div>`)}
+      <div class="anexo-nota">ℹ️ ${c.confirmar}</div>
+      ${r.destino ? html`<div class="anexo-pie">${this._botonEnviar(id, r.destino)}</div>` : nothing}
+    </aside>`;
+  }
+
+  /** «Enviar a Telegram»: reenvía la comparativa guardada al destino de las opciones del suministro. */
+  _botonEnviar(idSensor, destino) {
+    const c = this._t.comp;
+    const nombre = /telegram/i.test(destino)
+      ? "Telegram"
+      : this.hass.states[destino]?.attributes?.friendly_name || destino;
+    const dispositivo = this.hass.entities?.[idSensor]?.device_id;
+    if (!dispositivo) return nothing;
+    const enviar = async () => {
+      this._envio = "enviando";
+      try {
+        await this.hass.callService("pvpc_bonosocial", "enviar_comparativa", { suministro: dispositivo });
+        this._envio = "ok";
+      } catch (error) {
+        this._envio = error?.message || String(error);
+      }
+    };
+    const texto = this._envio === "enviando" ? c.enviando : this._envio === "ok" ? c.enviado : c.enviar(nombre);
+    return html`<div class="comparar">
+        <button class="btn-comparar" ?disabled=${this._envio === "enviando" || this._envio === "ok"} @click=${enviar}>${texto}</button>
+      </div>
+      ${this._envio && !["enviando", "ok"].includes(this._envio)
+        ? html`<div class="anexo-aviso error">⚠️ ${this._envio}</div>`
+        : nothing}`;
   }
 
   /** Cinco decimales como la tarjeta antigua: los tres primeros grandes y los dos últimos pequeños. */
@@ -638,7 +933,11 @@ class PvpcBonoSocialCard extends LitElement {
     return html`<svg class="tri" viewBox="0 0 24 24" aria-hidden="true"><path d=${TRIANGULO[tipo]} fill=${color}></path></svg>`;
   }
 
-  /** Mínimo y máximo de cada día, como en la tarjeta antigua: hoy a la izquierda y mañana a la derecha. */
+  /**
+   * Mínimo y máximo de cada día. `extremos: columnas` (por defecto, como en la tarjeta antigua):
+   * hoy a la izquierda y mañana a la derecha. `extremos: filas`: un día por fila, el mínimo a la
+   * izquierda y el máximo a la derecha, y mañana debajo de hoy.
+   */
   _detalles(hoy, manana, inyeccion) {
     const t = this._t;
     const linea = (tipo, color, punto) =>
@@ -655,10 +954,15 @@ class PvpcBonoSocialCard extends LitElement {
       const e = extremos(puntos);
       return html`<div class="columna">${linea(`min${hueco}`, color, e?.min)}${linea(`max${hueco}`, color, e?.max)}</div>`;
     };
-    // Sin precios de mañana (se publican hacia las 20:30) la columna de mañana no sale.
+    const fila = (puntos, color, hueco = "") => {
+      const e = extremos(puntos);
+      return html`<div class="fila">${linea(`min${hueco}`, color, e?.min)}${linea(`max${hueco}`, color, e?.max)}</div>`;
+    };
+    const parte = this._config.extremos === "filas" ? fila : columna;
+    // Sin precios de mañana (se publican hacia las 20:30) la columna o la fila de mañana no sale.
     const bloque = (h, m, hueco) =>
-      html`<div class="detalles">
-        ${columna(h, this._cHoy, hueco)}${m.length ? columna(m, this._cManana, hueco) : nothing}
+      html`<div class="detalles ${this._config.extremos === "filas" ? "en-filas" : ""}">
+        ${parte(h, this._cHoy, hueco)}${m.length ? parte(m, this._cManana, hueco) : nothing}
       </div>`;
     return html`${bloque(hoy, manana)}${inyeccion ? bloque(inyeccion.hoy, inyeccion.manana, "_hueco") : nothing}`;
   }
@@ -857,10 +1161,14 @@ class PvpcBonoSocialCard extends LitElement {
     const resto = [...actual.querySelectorAll(".precio-iny, .factura.arriba")];
     for (const e of [precio, ...resto]) if (e) e.style.marginRight = "";
     const columnas = this.renderRoot.querySelectorAll(".detalles .columna");
+    // En filas, la referencia es la columna de los máximos (a la derecha de cada fila).
+    const maximos = this.renderRoot.querySelectorAll(".detalles .fila > .detalle:last-child");
     const icono = this.renderRoot.querySelector(".cabecera .icono");
-    if (columnas.length < 2 || !actual.offsetParent) return;
+    // Solo con dos días (hoy y mañana), como en columnas: con uno solo la cabecera va al borde.
+    const referencia = columnas.length >= 2 ? [columnas[1]] : maximos.length >= 2 ? [...maximos] : [];
+    if (!referencia.length || !actual.offsetParent) return;
     const derecha = Math.max(
-      ...[...columnas[1].querySelectorAll(".valor, .horas")].map((e) => e.getBoundingClientRect().right),
+      ...referencia.flatMap((c) => [...c.querySelectorAll(".valor, .horas")].map((e) => e.getBoundingClientRect().right)),
     );
     if (!Number.isFinite(derecha)) return;
     // Sin pisar el icono: lo que más se mueva, como mucho hasta 12 px de él.
@@ -1121,6 +1429,16 @@ class PvpcBonoSocialCard extends LitElement {
       flex-direction: column;
       gap: 8px;
       justify-self: center;
+    }
+    /* En filas: un día por fila, mínimo a la izquierda y máximo a la derecha. Las dos columnas
+       miden lo que su dato más largo, para que los triángulos de hoy y mañana queden alineados. */
+    .detalles.en-filas {
+      grid-template-columns: repeat(2, max-content);
+      justify-content: space-around;
+      row-gap: 8px;
+    }
+    .fila {
+      display: contents;
     }
     .detalle {
       display: flex;
@@ -1394,6 +1712,168 @@ class PvpcBonoSocialCard extends LitElement {
     .ventana-cuerpo {
       background: var(--card-background-color, var(--ha-card-background, #fff));
     }
+    /* Comparativa: anexo a la derecha de la ventana; en pantallas estrechas, debajo. */
+    dialog.ventana.con-anexo {
+      width: min(1060px, calc(100vw - 32px));
+    }
+    dialog.con-anexo .ventana-cuerpo {
+      display: grid;
+      grid-template-columns: minmax(0, 560px) minmax(0, 1fr);
+      /* Las dos columnas igual de altas: «Enviar» queda a la altura de «Comparar tarifas» y solo
+         baja si el anexo necesita más líneas. */
+      align-items: stretch;
+    }
+    @media (max-width: 900px) {
+      dialog.con-anexo .ventana-cuerpo {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+    .anexo {
+      display: flex;
+      flex-direction: column;
+      padding: 12px 18px 16px;
+      border-left: 1px solid var(--divider-color, rgba(127, 127, 127, 0.25));
+      font-size: 0.95em;
+    }
+    @media (max-width: 900px) {
+      .anexo {
+        border-left: none;
+        border-top: 1px solid var(--divider-color, rgba(127, 127, 127, 0.25));
+      }
+    }
+    .anexo-pvpc {
+      padding: 8px 0 2px;
+      font-size: 0.8em;
+      font-style: italic;
+      color: var(--secondary-text-color);
+    }
+    .anexo-pie {
+      margin-top: auto;
+      /* Mismo tamaño que «Comparar tarifas» (el anexo va al 0,95). */
+      font-size: calc(1em / 0.95);
+    }
+    .anexo-cabecera {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 40px;
+    }
+    .anexo-resumen {
+      font-size: 0.8em;
+      color: var(--secondary-text-color);
+      margin: 2px 0 12px;
+    }
+    .anexo-veredicto {
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+      line-height: 1.4;
+    }
+    .anexo-veredicto b {
+      display: block;
+      font-size: 1.05em;
+      margin-bottom: 2px;
+    }
+    .anexo-veredicto.bueno {
+      background: rgba(67, 160, 71, 0.15);
+      border: 1px solid rgba(67, 160, 71, 0.5);
+    }
+    .anexo-veredicto.ahorro {
+      background: rgba(255, 179, 0, 0.14);
+      border: 1px solid rgba(255, 179, 0, 0.5);
+    }
+    .anexo-fila {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--divider-color, rgba(127, 127, 127, 0.2));
+    }
+    .anexo-fila .n {
+      font-weight: 600;
+    }
+    .enlace {
+      color: inherit;
+      text-decoration: none;
+    }
+    .enlace:hover {
+      text-decoration: underline;
+      color: var(--primary-color, #03a9f4);
+    }
+    a.n.enlace {
+      display: inline-block;
+    }
+    .anexo-fila .o {
+      font-size: 0.8em;
+      color: var(--secondary-text-color);
+    }
+    .anexo-fila .i {
+      text-align: right;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .anexo-fila .d {
+      text-align: right;
+      font-size: 0.8em;
+      white-space: nowrap;
+    }
+    .anexo-fila .d.mas {
+      color: var(--error-color, #e57373);
+    }
+    .anexo-fila .d.menos,
+    .anexo-fila.tuya .i {
+      color: var(--success-color, #43a047);
+    }
+    .anexo-nota {
+      font-size: 0.78em;
+      color: var(--secondary-text-color);
+      margin-top: 8px;
+      line-height: 1.35;
+    }
+    .anexo-aviso,
+    .anexo-espera {
+      padding: 16px 0;
+      color: var(--secondary-text-color);
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .anexo-aviso.error {
+      color: var(--error-color, #e57373);
+    }
+    .girando {
+      width: 18px;
+      height: 18px;
+      flex: none;
+      border: 2px solid var(--divider-color, rgba(127, 127, 127, 0.4));
+      border-top-color: var(--primary-color, #03a9f4);
+      border-radius: 50%;
+      animation: girar 0.9s linear infinite;
+    }
+    @keyframes girar {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+    .comparar {
+      display: flex;
+      justify-content: center;
+      margin: 14px 0 4px;
+    }
+    .btn-comparar {
+      border: none;
+      border-radius: 18px;
+      padding: 8px 18px;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      background: var(--primary-color, #03a9f4);
+      color: var(--text-primary-color, #fff);
+    }
+    .btn-comparar:disabled {
+      opacity: 0.6;
+      cursor: progress;
+    }
     :host([en-ventana]) ha-card {
       box-shadow: none;
       border: none;
@@ -1439,6 +1919,13 @@ function esquemaEditor(idioma) {
       type: "grid",
       name: "",
       schema: interruptores("factura_actual", "factura_anterior", "prevision", "current", "details", "graph", "next_day", "ventana"),
+    },
+    {
+      name: "extremos",
+      selector: opciones([
+        ["columnas", "Columnas / Columns"],
+        ["filas", "Filas / Rows"],
+      ]),
     },
     {
       name: "colores",
@@ -1580,6 +2067,7 @@ const ETIQUETAS_EDITOR = {
   prevision: "Factura estimada al cierre / Estimated bill",
   current: "Precio actual / Current price",
   details: "Mínimos y máximos / Min and max",
+  extremos: "Mínimo y máximo diarios / Daily min and max",
   graph: "Gráfica / Chart",
   ventana: "Ventana con todo al pulsar el icono / Full view on icon tap",
   next_day: "Mañana / Tomorrow",

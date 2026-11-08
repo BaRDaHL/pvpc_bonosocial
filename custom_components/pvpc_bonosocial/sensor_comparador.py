@@ -15,7 +15,7 @@ from homeassistant.core import callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .comparador import Comparador, senal
-from .const import SUBENTRY_SUMINISTRO
+from .const import CONF_COMPARADOR_DESTINO, SUBENTRY_SUMINISTRO
 from .helpers import primera_subentrada
 from .sensor_suministro import EUR, dispositivo, entity_id_suministro
 
@@ -60,6 +60,8 @@ class MejorAlternativa(SensorEntity):
             **r,
             "estado": self.comparador.estado,
             "ultimo_intento": self.comparador.ultimo_intento,
+            # Para la tarjeta: el botón «Enviar» solo sale si hay a dónde enviarla.
+            "destino": self.comparador.facturacion.datos.get(CONF_COMPARADOR_DESTINO),
         }
 
 

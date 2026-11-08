@@ -19,6 +19,7 @@ porque aiohttp no admite dos rutas GET iguales; el recurso se crea o se actualiz
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 from pathlib import Path
@@ -34,7 +35,14 @@ CLAVE = "pvpc_bonosocial_tarjeta"
 
 
 def _version() -> str:
-    return json.loads((Path(__file__).parent / "manifest.json").read_text(encoding="utf-8"))["version"]
+    """Versión de la integración y huella del `.js`: el navegador (y la app) cargan la tarjeta nueva
+    en cuanto cambia el fichero, aunque la versión sea la misma (si no, la sirven de su caché)."""
+    version = json.loads((Path(__file__).parent / "manifest.json").read_text(encoding="utf-8"))["version"]
+    try:
+        huella = hashlib.sha256(ARCHIVO.read_bytes()).hexdigest()[:8]
+    except OSError:
+        return version
+    return f"{version}-{huella}"
 
 
 async def async_registrar(hass: HomeAssistant) -> bool:

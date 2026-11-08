@@ -93,3 +93,20 @@ comparar_tarifas:
       default: true
       selector:
         boolean:
+    enviar:
+      required: false
+      default: true
+      selector:
+        boolean:
+enviar_comparativa:
+  fields:
+    suministro:
+      required: true
+      selector:
+        device:
+          integration: pvpc_bonosocial
+    destino:
+      required: false
+      selector:
+        entity:
+          domain: notify

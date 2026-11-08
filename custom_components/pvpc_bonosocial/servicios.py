@@ -143,6 +143,7 @@ ESQUEMA_COMPARAR = vol.Schema(
         vol.Required("suministro"): cv.string,
         vol.Optional("destino"): cv.entity_domain("notify"),
         vol.Optional("notificacion", default=True): cv.boolean,
+        vol.Optional("enviar", default=True): cv.boolean,
     }
 )
 
@@ -151,9 +152,24 @@ async def _async_comparar(call: ServiceCall) -> ServiceResponse:
     """Comparativa de tarifas del suministro (DISENO §8 bis)."""
     comparador = _subentrada_de(call.hass, call.data["suministro"], "comparadores")
     resultado = await comparador.async_comparar(
-        destino=call.data.get("destino"), notificar=call.data["notificacion"]
+        destino=call.data.get("destino"), notificar=call.data["notificacion"], enviar=call.data["enviar"]
     )
     return resultado if call.return_response else None
+
+
+SERVICIO_ENVIAR_COMPARATIVA = "enviar_comparativa"
+ESQUEMA_ENVIAR_COMPARATIVA = vol.Schema(
+    {
+        vol.Required("suministro"): cv.string,
+        vol.Optional("destino"): cv.entity_domain("notify"),
+    }
+)
+
+
+async def _async_enviar_comparativa(call: ServiceCall) -> None:
+    """Reenvía la última comparativa del suministro (sin volver a consultar a la CNMC)."""
+    comparador = _subentrada_de(call.hass, call.data["suministro"], "comparadores")
+    await comparador.async_enviar(call.data.get("destino"))
 
 
 def registrar(hass: HomeAssistant) -> None:
@@ -168,6 +184,13 @@ def registrar(hass: HomeAssistant) -> None:
         supports_response=SupportsResponse.OPTIONAL,
     )
     async_register_admin_service(hass, DOMAIN, SERVICIO_CONCILIAR, _async_conciliar, schema=ESQUEMA_CONCILIAR)
+    async_register_admin_service(
+        hass,
+        DOMAIN,
+        SERVICIO_ENVIAR_COMPARATIVA,
+        _async_enviar_comparativa,
+        schema=ESQUEMA_ENVIAR_COMPARATIVA,
+    )
     hass.services.async_register(
         DOMAIN,
         SERVICIO_RESUMEN,

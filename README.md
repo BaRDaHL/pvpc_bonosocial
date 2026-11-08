@@ -12,6 +12,7 @@
 <a href="https://hacs.xyz"><img src="https://img.shields.io/badge/HACS-Default-41BDF5.svg" alt="HACS"></a>
 <img src="https://img.shields.io/badge/Home%20Assistant-2025.11%2B-blue" alt="Home Assistant 2025.11+">
 <a href="LICENSE"><img src="https://img.shields.io/github/license/BaRDaHL/pvpc_bonosocial" alt="License"></a>
+<a href="https://buymeacoffee.com/bardahl"><img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black" alt="Buy me a coffee"></a>
 </p>
 
 <p align="center">
@@ -73,6 +74,10 @@ Step-by-step guides are in the **[Wiki](https://github.com/BaRDaHL/pvpc_bonosoci
 ### Help wanted
 
 I can only test with my own data (one supplier, a 1st-gen Shelly EM, a Datadis account that returns nothing). If you have **PDF bills from another regulated supplier**, a **Shelly Gen2/Gen3** meter or a **Datadis account with data**, see [Volunteers](https://github.com/BaRDaHL/pvpc_bonosocial/wiki/Volunteers). Never post personal data in a public issue.
+
+### Support
+
+It is free and always will be. If it saves you money or time, you can [buy me a coffee ☕](https://buymeacoffee.com/bardahl): it pays for the hours of testing against real bills.
 
 > Unofficial tool. The bill that counts is your supplier's; this integration estimates it and tells you before it arrives.
 
@@ -138,6 +143,10 @@ La tarjeta que se instala (`custom_components/pvpc_bonosocial/frontend/pvpc-bono
 ### Se buscan voluntarios
 
 Solo puedo probar con mis datos (una comercializadora, un Shelly EM de 1.ª generación y una cuenta de Datadis que no devuelve nada). Si tienes **facturas en PDF de otra comercializadora de referencia**, un **Shelly Gen2/Gen3** o una **cuenta de Datadis con datos**, mira [Voluntarios](https://github.com/BaRDaHL/pvpc_bonosocial/wiki/ES-Voluntarios). Nunca subas datos personales a una incidencia pública.
+
+### Apoya el proyecto
+
+Es gratis y lo seguirá siendo. Si te ahorra dinero o tiempo, puedes [invitarme a un café ☕](https://buymeacoffee.com/bardahl): paga las horas de pruebas con facturas reales.
 
 > Herramienta no oficial. La factura que vale es la de tu comercializadora; esta integración la estima y te avisa antes de que llegue.
 

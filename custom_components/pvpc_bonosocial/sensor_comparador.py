@@ -2,7 +2,7 @@
 
 Estado: ahorro anual estimado (primer año) de la mejor oferta de mercado libre frente a lo
 pagado en los últimos 12 meses; negativo si todas salen más caras. Atributos: la comparativa
-guardada (lo pagado, sin bono, las 5 mejores ofertas y los avisos).
+guardada (lo pagado, sin bono, las mejores ofertas —la tarjeta enseña 4 y Telegram 3— y los avisos).
 """
 
 from __future__ import annotations

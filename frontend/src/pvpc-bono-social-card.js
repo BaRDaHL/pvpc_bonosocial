@@ -15,7 +15,7 @@
 
 import { LitElement, css, html, nothing, svg } from "lit";
 
-const VERSION = "1.2.3";
+const VERSION = "1.2.4";
 const ETIQUETA = "pvpc-bono-social-card";
 const COLORES = ["var(--pvpc-bs-verde)", "var(--pvpc-bs-amarillo)", "var(--pvpc-bs-naranja)", "var(--pvpc-bs-rojo)"];
 const COLOR_PERIODO = { P1: 3, P2: 2, P3: 0 };
@@ -73,16 +73,14 @@ const TEXTOS = {
       pvpc_bono: "PVPC con bono social",
       pvpc: "PVPC sin bono",
       al_anio: "/año",
-      primer_anio: "1.er año",
       sin_permanencia: "sin permanencia",
       permanencia: "permanencia",
       nuevos: "solo nuevos clientes",
       verde: "verde",
-      mas: "más",
-      menos: "menos",
       espera: "Consultando la CNMC con tus facturas. Puede tardar unos segundos…",
       error: "No se ha podido comparar",
       sin_datos: "Aún no hay ninguna comparativa.",
+      sin_suministro: "No se encuentra el suministro de la comparativa",
       estados: {
         sin_codigo_postal: "Falta el código postal del suministro (opciones del suministro).",
         sin_datos: "No hay facturas suficientes para comparar.",
@@ -149,16 +147,14 @@ const TEXTOS = {
       pvpc_bono: "PVPC with social bonus",
       pvpc: "PVPC without bonus",
       al_anio: "/year",
-      primer_anio: "1st year",
       sin_permanencia: "no minimum stay",
       permanencia: "minimum stay",
       nuevos: "new customers only",
       verde: "green",
-      mas: "more",
-      menos: "less",
       espera: "Asking the CNMC with your bills. It may take a few seconds…",
       error: "The comparison failed",
       sin_datos: "No comparison yet.",
+      sin_suministro: "The supply for the comparison cannot be found",
       estados: {
         sin_codigo_postal: "The supply has no postal code (supply options).",
         sin_datos: "Not enough bills to compare.",
@@ -404,6 +400,7 @@ const POR_DEFECTO = {
   extremos: "columnas",
   graph: true,
   next_day: true,
+  extremos_manana: true,
   factura: "header",
   factura_actual: true,
   factura_anterior: true,
@@ -416,7 +413,8 @@ const POR_DEFECTO = {
   grafica_facturas: false,
   facturas_meses: "6",
   facturas_importe: true,
-  ventana: true,
+  grosor: "2.5",
+  excedentes_grafica: true,
 };
 
 /** La configuración con los valores por defecto y las opciones de la tarjeta antigua (`show_*`). */
@@ -430,7 +428,10 @@ function conDefectos(config) {
     if (typeof config[vieja] === "boolean" && !(nueva in config)) antigua[nueva] = config[vieja];
   }
   if (typeof config.show_only_today === "boolean" && !("next_day" in config)) antigua.next_day = !config.show_only_today;
-  return { ...POR_DEFECTO, ...antigua, ...config };
+  const c = { ...POR_DEFECTO, ...antigua, ...config };
+  // Antes «mañana» era uno solo para la gráfica y los mínimos y máximos: sin la clave nueva, se respeta.
+  if (!("extremos_manana" in config) && c.next_day === false) c.extremos_manana = false;
+  return c;
 }
 
 // --- tarjeta ----------------------------------------------------------------------------
@@ -460,20 +461,28 @@ class PvpcBonoSocialCard extends LitElement {
       entity_factura_actual: buscarEntidad(hass, "sensor.pvpc_bs_factura_actual") || "sensor.pvpc_bs_factura_actual",
       entity_factura_anterior:
         buscarEntidad(hass, "sensor.pvpc_bs_factura_anterior") || "sensor.pvpc_bs_factura_anterior",
+      // Lo que sale al añadir una tarjeta nueva (las ya puestas siguen con POR_DEFECTO, como siempre).
+      title: "PVPC",
       current: true,
+      icon_color: "price",
       factura: "header",
+      factura_anterior: false,
       factura_actual: true,
-      factura_anterior: true,
       prevision: true,
-      grafica_facturas: true,
-      facturas_meses: "6",
-      facturas_importe: true,
-      ventana: true,
       details: true,
-      next_day: true,
+      extremos_manana: true,
+      extremos: "columnas",
       graph: true,
+      next_day: true,
+      excedentes_grafica: false,
       bandas: true,
+      titulo_grafica: "",
+      grosor: "1.5",
       colores: "fijo",
+      grafica_facturas: false,
+      facturas_importe: true,
+      facturas_tendencia: true,
+      facturas_meses: "12",
       grid_options: { columns: "full", rows: "auto" },
     };
   }
@@ -503,9 +512,7 @@ class PvpcBonoSocialCard extends LitElement {
   }
 
   get _t() {
-    const idioma = (this.hass?.locale?.language || this.hass?.language || "es").slice(0, 2);
-    if (COOFICIALES.includes(idioma)) return { ...TEXTOS.es, ...TEXTOS[idioma] };
-    return TEXTOS[idioma] || TEXTOS.en;
+    return textosDe(this.hass);
   }
 
   /** Idioma para `Intl`: en catalán, gallego y euskera, con el español de respaldo (si el
@@ -580,15 +587,22 @@ class PvpcBonoSocialCard extends LitElement {
     }
     const a = estado.attributes || {};
     const hoy = serie(a);
-    const manana = this._config.next_day ? serie(a, true) : [];
+    const mananaTodo = serie(a, true);
+    // «Mostrar mañana» va por separado en la gráfica (next_day) y en los mínimos y máximos.
+    const manana = this._config.next_day ? mananaTodo : [];
+    const mananaExtremos = this._config.extremos_manana !== false ? mananaTodo : [];
     const coloresHoy = Array.isArray(a.colores_hoy) && a.colores_hoy.length === hoy.length ? a.colores_hoy : coloresPorRango(hoy);
     const coloresManana =
-      Array.isArray(a.colores_manana) && a.colores_manana.length === manana.length
+      Array.isArray(a.colores_manana) && a.colores_manana.length === mananaTodo.length
         ? a.colores_manana
-        : coloresPorRango(manana);
+        : coloresPorRango(mananaTodo);
     const ahora = posicionActual(hoy, reloj, zona);
     const iny = this._config.entity_injection && this.hass.states[this._config.entity_injection];
-    const inyeccion = iny ? { hoy: serie(iny.attributes), manana: this._config.next_day ? serie(iny.attributes, true) : [] } : null;
+    const injManana = iny ? serie(iny.attributes, true) : [];
+    const inyeccion = iny ? { hoy: serie(iny.attributes), manana: this._config.next_day ? injManana : [] } : null;
+    const inyeccionExtremos = iny
+      ? { hoy: inyeccion.hoy, manana: this._config.extremos_manana !== false ? injManana : [] }
+      : null;
     // Periodo de cada hora de hoy; en fines de semana y festivos (todo valle) no se marca.
     const periodos =
       this._config.bandas !== false &&
@@ -602,8 +616,7 @@ class PvpcBonoSocialCard extends LitElement {
     return html`
       <ha-card>
         <div class="contenedor">
-          ${this._config.current
-            ? html`<div class="cabecera">
+          ${html`<div class="cabecera">
                 ${this._conVentana
                   ? html`<button class="abrir" aria-label=${t.abrir} @click=${() => this._abrirVentana()}>
                       ${this._icono(ahora >= 0 ? coloresHoy[ahora] : undefined)}
@@ -611,23 +624,32 @@ class PvpcBonoSocialCard extends LitElement {
                   : this._icono(ahora >= 0 ? coloresHoy[ahora] : undefined)}
                 <div class="nombre">${this._config.title || ""}</div>
                 <div class="actual">
-                  <div class="precio">
+                  ${/* Sin «Precio actual» el precio se pinta invisible: ocupa su sitio y la factura no se mueve. */ ""}
+                  <div class="precio ${this._config.current ? "" : "oculto"}" aria-hidden=${this._config.current ? "false" : "true"}>
                     ${Number.isFinite(precio) ? this._precioGrande(precio) : "—"}
                     <span class="unidad"><span class="euro">€</span>/kWh</span>
                   </div>
                   ${iny && Number.isFinite(Number(iny.state))
-                    ? html`<div class="precio-iny">${this._num(Number(iny.state), 5)} €/kWh</div>`
+                    ? html`<div class="precio-iny ${this._config.current ? "" : "oculto"}" aria-hidden=${this._config.current ? "false" : "true"}>
+                        ${this._precioIny(Number(iny.state))}
+                      </div>`
                     : nothing}
                   ${posicion === "header" && factura ? html`<div class="factura arriba">${factura}</div>` : nothing}
                 </div>
-              </div>`
+              </div>`}
+          ${this._config.details
+            ? this._detalles(hoy, mananaExtremos, inyeccionExtremos)
+            : html`<div class="referencia" aria-hidden="true">${this._detalles(hoy, [], null)}</div>`}
+          ${this._config.graph
+            ? this._grafica(hoy, manana, coloresHoy, coloresManana, ahora, periodos, this._config.excedentes_grafica === false ? null : inyeccion)
             : nothing}
-          ${this._config.details ? this._detalles(hoy, manana, inyeccion) : nothing}
-          ${this._config.graph ? this._grafica(hoy, manana, coloresHoy, coloresManana, ahora, periodos, inyeccion) : nothing}
-          ${factura && (posicion === "below_chart" || (posicion === "header" && !this._config.current))
+          ${factura && posicion === "below_chart"
             ? html`<div class="factura abajo">${factura}</div>`
             : nothing}
-          ${factura && posicion === "header" && this._config.current
+          ${factura && posicion === "below_chart_right"
+            ? html`<div class="factura abajo derecha">${factura}</div>`
+            : nothing}
+          ${factura && posicion === "header"
             ? html`<div class="factura abajo estrecha">${factura}</div>`
             : nothing}
           ${this._config.grafica_facturas ? this._graficaFacturas() : nothing}
@@ -651,7 +673,8 @@ class PvpcBonoSocialCard extends LitElement {
   // --- ventana con la tarjeta completa (al pulsar el icono) ----------------------------
 
   get _conVentana() {
-    return this._config.ventana !== false && !this.enVentana;
+    // Siempre: la ventana trae la comparativa de tarifas (una config antigua con ventana: false no la quita).
+    return !this.enVentana;
   }
 
   /** La tarjeta dentro de la ventana: lo mismo con todo activado. */
@@ -681,7 +704,9 @@ class PvpcBonoSocialCard extends LitElement {
       factura_anterior: true,
       prevision: true,
       grafica_facturas: true,
-      ventana: false,
+      extremos_manana: true,
+      // El título ya va en la barra de la ventana: dentro no se repite.
+      title: "",
     };
     return html`<dialog
       class="ventana ${this._anexo ? "con-anexo" : ""}"
@@ -726,11 +751,9 @@ class PvpcBonoSocialCard extends LitElement {
       // El servicio espera a la CNMC: cuando vuelve, el sensor ya tiene la comparativa nueva.
       // Desde la tarjeta ni notificación de HA ni destino (Telegram…): para eso está «Enviar».
       const suministro = this.hass.entities?.[boton]?.device_id;
-      if (suministro) {
-        await this.hass.callService("pvpc_bonosocial", "comparar_tarifas", { suministro, enviar: false, notificacion: false });
-      } else {
-        await this.hass.callService("button", "press", { entity_id: boton });
-      }
+      // Sin el dispositivo no se pulsa el botón: enviaría al destino, y desde aquí no se envía nada.
+      if (!suministro) throw new Error(this._t.comp.sin_suministro);
+      await this.hass.callService("pvpc_bonosocial", "comparar_tarifas", { suministro, enviar: false, notificacion: false });
       this._anexo = { estado: "ok" };
     } catch (error) {
       this._anexo = { estado: "error", mensaje: error?.message || String(error) };
@@ -758,8 +781,12 @@ class PvpcBonoSocialCard extends LitElement {
       return html`<aside class="anexo">${cabecera}<div class="anexo-aviso error">⚠️ ${c.error}: ${mensaje}</div></aside>`;
     }
     const ofertas = Array.isArray(r.ofertas) ? r.ofertas : [];
-    if (!sensor || !ofertas.length && !r.veredicto) {
+    if (!sensor || !r.fecha) {
       return html`<aside class="anexo">${cabecera}<div class="anexo-aviso">${c.sin_datos}</div></aside>`;
+    }
+    if (!ofertas.length) {
+      // Comparativa hecha, pero la CNMC no ha devuelto ninguna oferta libre.
+      return html`<aside class="anexo">${cabecera}<div class="anexo-aviso">${c.avisos.sin_ofertas}</div></aside>`;
     }
     const avisos = Array.isArray(r.avisos) ? r.avisos : [];
     // Con bono se compara con lo pagado; si se ha perdido, con lo que se pagaría sin él.
@@ -797,7 +824,7 @@ class PvpcBonoSocialCard extends LitElement {
         <div><div class="n">${c.tu_tarifa}</div><div class="o">${sinBono ? c.pvpc : c.pvpc_bono}</div></div>
         <div class="i">${eur(base)}${c.al_anio}</div>
       </div>
-      ${ofertas.slice(0, 5).map(
+      ${ofertas.slice(0, 4).map(
         (o) => html`<div class="anexo-fila">
           <div>
             ${o.enlace
@@ -871,7 +898,26 @@ class PvpcBonoSocialCard extends LitElement {
   /** Cinco decimales como la tarjeta antigua: los tres primeros grandes y los dos últimos pequeños. */
   _precioGrande(precio) {
     const texto = this._num(precio, 5);
-    return html`${texto.slice(0, -2)}<span class="cola">${texto.slice(-2)}</span>`;
+    // La coma en su propio span: el precio de excedentes se alinea con ella.
+    const i = texto.search(/[^-\d]/);
+    const grande = texto.slice(0, -2);
+    return i < 0
+      ? html`${grande}<span class="cola">${texto.slice(-2)}</span>`
+      : html`${grande.slice(0, i)}<span class="coma">${grande[i]}</span>${grande.slice(i + 1)}<span class="cola"
+            >${texto.slice(-2)}</span
+          >`;
+  }
+
+  /** Precio de excedentes en piezas: su coma y su «€» se colocan bajo los del precio grande. */
+  _precioIny(valor) {
+    const texto = this._num(valor, 5);
+    const i = texto.search(/[^-\d]/);
+    const ent = i < 0 ? texto : texto.slice(0, i);
+    const coma = i < 0 ? "" : texto[i];
+    const dec = i < 0 ? "" : texto.slice(i + 1);
+    return html`<span class="iny-ent">${ent}</span><span class="iny-coma">${coma}</span><span class="iny-dec"
+        >${dec}</span
+      ><span class="iny-hueco"> </span><span class="iny-euro">€</span>/kWh`;
   }
 
   _icono(codigo) {
@@ -962,9 +1008,21 @@ class PvpcBonoSocialCard extends LitElement {
     // Sin precios de mañana (se publican hacia las 20:30) la columna o la fila de mañana no sale.
     const bloque = (h, m, hueco) =>
       html`<div class="detalles ${this._config.extremos === "filas" ? "en-filas" : ""}">
-        ${parte(h, this._cHoy, hueco)}${m.length ? parte(m, this._cManana, hueco) : nothing}
+        ${parte(h, this._cHoy, hueco)}${m.length
+          ? parte(m, this._cManana, hueco)
+          : this._config.extremos === "filas"
+            ? nothing
+            : this._columnaFantasma(linea, hueco)}
       </div>`;
     return html`${bloque(hoy, manana)}${inyeccion ? bloque(inyeccion.hoy, inyeccion.manana, "_hueco") : nothing}`;
+  }
+
+  /** Sin mañana, una columna invisible en su sitio: la cabecera se alinea igual con o sin mañana. */
+  _columnaFantasma(linea, hueco) {
+    const muestra = { precio: -0.00001, hora: 0 };
+    return html`<div class="columna fantasma" aria-hidden="true">
+      ${linea(`min${hueco}`, this._cManana, muestra)}${linea(`max${hueco}`, this._cManana, muestra)}
+    </div>`;
   }
 
   _factura() {
@@ -987,10 +1045,11 @@ class PvpcBonoSocialCard extends LitElement {
     }
     // 2. Periodo en curso (lo gastado hasta hoy) y 3. factura estimada al cierre (opcional)
     const actual = idActual && this.hass.states[idActual];
-    if (this._config.factura_actual && actual && Number.isFinite(Number(actual.state))) {
+    // Cada línea con su interruptor: la estimada sale aunque la de «en curso» esté apagada.
+    if (actual && Number.isFinite(Number(actual.state))) {
       const a = actual.attributes || {};
       const hoyIso = fechaIso(new Date(), zonaDeHA(this.hass));
-      if (typeof a.acumulado === "number") {
+      if (this._config.factura_actual && typeof a.acumulado === "number") {
         lineas.push(linea(t.en_curso, periodo(a.inicio, hoyIso), a.acumulado));
       }
       if (this._config.prevision !== false) {
@@ -1036,8 +1095,8 @@ class PvpcBonoSocialCard extends LitElement {
         .map((p, i) => `${i ? "V" : `M${x0(0).toFixed(1)},`}${y(p.precio).toFixed(1)}H${x0(i + 1).toFixed(1)}`)
         .join("");
     const tramo = (puntos, colores, i) =>
-      svg`<line class="tramo" x1=${x0(i)} x2=${x0(i + 1)} y1=${y(puntos[i].precio)} y2=${y(puntos[i].precio)}
-        stroke=${COLORES[colores[i] ?? 0]}></line>`;
+      svg`<line class="tramo" x1=${x0(i)} x2=${x0(i + 1)}
+        y1=${y(puntos[i].precio)} y2=${y(puntos[i].precio)} stroke=${COLORES[colores[i] ?? 0]}></line>`;
     const marca = (puntos, color, cual) => {
       const e = extremos(puntos);
       const i = puntos.indexOf(e[cual]);
@@ -1050,7 +1109,10 @@ class PvpcBonoSocialCard extends LitElement {
     const cursor = this._cursor;
     const punto = (puntos, color, i, clase) =>
       svg`<circle class=${clase} cx=${x(i)} cy=${y(puntos[i].precio)} r="3" fill=${color}></circle>`;
-    const porPrecio = this._config.colores === "precio";
+    // «precio»: hoy por precio; «precio_manana»: mañana por precio. Una config antigua con
+    // «precio_ambos» (ya no existe) se trata como «precio».
+    const porPrecio = this._config.colores === "precio" || this._config.colores === "precio_ambos";
+    const mananaPorPrecio = this._config.colores === "precio_manana";
     // «00:00» mide unas 27 unidades: con poco ancho, una etiqueta cada 6 h (la rejilla sigue igual).
     const horasPorEtiqueta = cadaCuantas(hueco * 3, 28);
 
@@ -1061,6 +1123,7 @@ class PvpcBonoSocialCard extends LitElement {
         <svg
           viewBox="0 0 ${ancho} ${alto}"
           role="img"
+          style="--grosor: ${this._config.grosor === "1.5" ? 1.5 : 2.5}"
           aria-label=${t.titulo}
           @pointermove=${(ev) => this._mover(ev, ancho, m, n)}
           @pointerleave=${() => (this._cursor = undefined)}
@@ -1089,10 +1152,14 @@ class PvpcBonoSocialCard extends LitElement {
           )}
           ${series.map(
             (s) =>
-              svg`<path class="serie ${s.punteada ? "punteada" : ""}" d=${escalones(s.puntos)}
-                stroke=${porPrecio && s.puntos === hoy ? "var(--secondary-text-color)" : s.color}></path>`,
+              svg`<path class="serie ${s.punteada ? "punteada" : ""}"
+                d=${escalones(s.puntos)}
+                stroke=${(porPrecio && s.puntos === hoy) || (mananaPorPrecio && s.puntos === manana)
+                  ? "var(--secondary-text-color)"
+                  : s.color}></path>`,
           )}
           ${porPrecio ? hoy.map((_, i) => tramo(hoy, coloresHoy, i)) : nothing}
+          ${mananaPorPrecio ? manana.map((_, i) => tramo(manana, coloresManana, i)) : nothing}
           ${series.flatMap((s) => [marca(s.puntos, s.color, "max"), marca(s.puntos, s.color, "min")])}
           ${cursor !== undefined ? svg`<line class="cursor" x1=${x(cursor)} x2=${x(cursor)} y1=${m.arr} y2=${alto - m.aba}></line>` : nothing}
           ${cursor !== undefined && cursor < hoy.length ? punto(hoy, cHoy, cursor, "p-hoy") : nothing}
@@ -1114,7 +1181,7 @@ class PvpcBonoSocialCard extends LitElement {
             : html`<span
                   ><i class="bolita" style="background:${porPrecio ? MULTICOLOR : cHoy}"></i>${this._fecha(0)}</span
                 >${manana.length
-                  ? html`<span><i class="bolita" style="background:${cManana}"></i>${this._fecha(1)}</span>`
+                  ? html`<span><i class="bolita" style="background:${mananaPorPrecio ? MULTICOLOR : cManana}"></i>${this._fecha(1)}</span>`
                   : nothing}${ahora >= 0 ? html`<span class="l-ahora">${t.hora_actual}</span>` : nothing}${periodos
                   ? html`<span class="l-punta">${t.periodos.P1}</span><span class="l-llano">${t.periodos.P2}</span>`
                   : nothing}`}
@@ -1158,19 +1225,61 @@ class PvpcBonoSocialCard extends LitElement {
     const actual = this.renderRoot?.querySelector(".cabecera .actual");
     if (!actual) return;
     const precio = actual.querySelector(".precio");
-    const resto = [...actual.querySelectorAll(".precio-iny, .factura.arriba")];
-    for (const e of [precio, ...resto]) if (e) e.style.marginRight = "";
+    const resto = [...actual.querySelectorAll(".factura.arriba")];
+    const iny = actual.querySelector(".precio-iny");
+    for (const e of [precio, iny, ...resto]) if (e) e.style.marginRight = "";
+    const abajoDerecha = this.renderRoot.querySelector(".factura.derecha");
+    if (abajoDerecha) abajoDerecha.style.marginRight = "";
+    const hueco = iny?.querySelector(".iny-hueco");
+    if (hueco) hueco.style.width = "";
     const columnas = this.renderRoot.querySelectorAll(".detalles .columna");
     // En filas, la referencia es la columna de los máximos (a la derecha de cada fila).
     const maximos = this.renderRoot.querySelectorAll(".detalles .fila > .detalle:last-child");
     const icono = this.renderRoot.querySelector(".cabecera .icono");
-    // Solo con dos días (hoy y mañana), como en columnas: con uno solo la cabecera va al borde.
-    const referencia = columnas.length >= 2 ? [columnas[1]] : maximos.length >= 2 ? [...maximos] : [];
-    if (!referencia.length || !actual.offsetParent) return;
-    const derecha = Math.max(
-      ...referencia.flatMap((c) => [...c.querySelectorAll(".valor, .horas")].map((e) => e.getBoundingClientRect().right)),
-    );
-    if (!Number.isFinite(derecha)) return;
+    // Ancho reservado para un valor: el más ancho que haya o «-0,00000 €/kWh», lo que sea mayor. Así
+    // la cabecera no baila al quitar mañana ni cuando mañana trae un precio negativo.
+    const anchoValores = (c) => {
+      const valores = [...c.querySelectorAll(".valor, .horas")];
+      const muestra = c.querySelector(".valor");
+      let ancho = Math.max(0, ...valores.map((e) => e.getBoundingClientRect().width));
+      if (muestra) {
+        const sonda = muestra.cloneNode(false);
+        sonda.textContent = `-${this._num(0, 5)} €/kWh`;
+        sonda.style.cssText = "position:absolute;visibility:hidden;white-space:nowrap";
+        muestra.parentElement.appendChild(sonda);
+        ancho = Math.max(ancho, sonda.getBoundingClientRect().width);
+        sonda.remove();
+      }
+      return ancho;
+    };
+    let derecha;
+    if (columnas.length >= 2) {
+      // La 2.ª columna (mañana o, sin mañana, la fantasma) va centrada en su mitad de la rejilla y
+      // mide lo que su texto: con valores distintos cambia de ancho y de sitio. La referencia es su
+      // borde derecho con el ancho reservado («-0,00000 €/kWh»), medido desde el centro de esa
+      // mitad: así es la misma con mañana, sin mañana o sin mínimos y máximos.
+      const col = columnas[1];
+      const rejilla = col.parentElement.getBoundingClientRect();
+      const hueco = parseFloat(getComputedStyle(col.parentElement).columnGap) || 0;
+      const mitad = (rejilla.width - hueco) / 2;
+      const centro = rejilla.left + mitad + hueco + mitad / 2;
+      const valor = col.querySelector(".valor")?.getBoundingClientRect().width ?? 0;
+      const ancho = col.getBoundingClientRect().width + Math.max(0, anchoValores(col) - valor);
+      derecha = centro + ancho / 2;
+    } else if (maximos.length) {
+      // En filas, la misma vertical que en columnas (centro de la 2.ª mitad de la rejilla más la
+      // mitad del ancho reservado de un mínimo/máximo): cambiar la disposición no mueve la cabecera.
+      const d = maximos[0];
+      const caja = d.closest(".detalles");
+      const rejilla = caja.getBoundingClientRect();
+      const hueco = parseFloat(getComputedStyle(caja).columnGap) || 0;
+      const mitad = (rejilla.width - hueco) / 2;
+      const centro = rejilla.left + mitad + hueco + mitad / 2;
+      const valor = d.querySelector(".valor")?.getBoundingClientRect().width ?? 0;
+      const ancho = d.getBoundingClientRect().width + Math.max(0, anchoValores(d) - valor);
+      derecha = centro + ancho / 2;
+    }
+    if (!Number.isFinite(derecha) || !actual.offsetParent) return;
     // Sin pisar el icono: lo que más se mueva, como mucho hasta 12 px de él.
     const tope = (e) =>
       icono ? e.getBoundingClientRect().left - icono.getBoundingClientRect().right - 12 : Infinity;
@@ -1180,13 +1289,45 @@ class PvpcBonoSocialCard extends LitElement {
     };
     const euro = precio?.querySelector(".euro");
     if (euro) mover(precio, euro.getBoundingClientRect().right - derecha);
-    for (const e of resto) mover(e, e.getBoundingClientRect().right - derecha);
+    // Lo de debajo del precio, en la vertical del «€» ya colocado (el icono puede haberlo frenado).
+    const objetivo = euro ? euro.getBoundingClientRect().right : derecha;
+    for (const e of resto) mover(e, e.getBoundingClientRect().right - objetivo);
+    this._alinearIny(precio, iny);
+    // La factura bajo la gráfica a la derecha, en la misma vertical que tendría arriba.
+    const abajo = this.renderRoot.querySelector(".factura.derecha");
+    if (abajo) {
+      abajo.style.marginRight = "";
+      const m = abajo.getBoundingClientRect().right - objetivo;
+      if (m > 0) abajo.style.marginRight = `${m}px`;
+    }
+  }
+
+  /** Coma del precio de excedentes bajo la coma grande y su «€» bajo el «€» de «€/kWh». */
+  _alinearIny(precio, iny) {
+    const comaG = precio?.querySelector(".coma");
+    const euroG = precio?.querySelector(".euro");
+    const comaP = iny?.querySelector(".iny-coma");
+    const euroP = iny?.querySelector(".iny-euro");
+    const hueco = iny?.querySelector(".iny-hueco");
+    if (!comaG || !euroG || !comaP || !euroP || !hueco) return;
+    const x = (e) => e.getBoundingClientRect();
+    // 1) El hueco entre decimales y «€», para que coma→€ mida lo mismo que en el precio grande.
+    hueco.style.width = "0px";
+    const falta = x(euroG).left - x(comaG).left - (x(euroP).left - x(comaP).left);
+    hueco.style.width = `${Math.max(0, falta)}px`;
+    // 2) Todo el bloque a la izquierda hasta que su «€» quede bajo el grande (y así también la coma).
+    // Puede ser negativo (unos px a la derecha): «/kWh» pequeño es algo más ancho que el del precio.
+    const m = x(euroP).left - x(euroG).left;
+    if (Math.abs(m) > 0.1) iny.style.marginRight = `${m}px`;
   }
 
   updated(cambios) {
     super.updated?.(cambios);
-    this._medirAncho();
-    this._alinearFactura();
+    // Medir y alinear solo cuando cambian los datos o el tamaño (no con el cursor ni el anexo).
+    if (["hass", "_config", "_anchoUtil", "_facturas"].some((k) => cambios.has(k))) {
+      this._medirAncho();
+      this._alinearFactura();
+    }
     if (cambios.has("_ventana") && this._ventana) {
       const dialogo = this.renderRoot.querySelector("dialog.ventana");
       if (dialogo && !dialogo.open) dialogo.showModal();
@@ -1362,6 +1503,13 @@ class PvpcBonoSocialCard extends LitElement {
       --pvpc-bs-naranja: var(--warning-color, #fb8c00);
       --pvpc-bs-rojo: var(--error-color, #e53935);
     }
+    /* Sin mínimos y máximos: su rejilla, invisible y sin alto, solo para alinear la cabecera igual. */
+    .referencia {
+      height: 0;
+      overflow: hidden;
+      visibility: hidden;
+      margin-top: -12px;
+    }
     .contenedor {
       container-type: inline-size;
       padding: 16px;
@@ -1407,6 +1555,9 @@ class PvpcBonoSocialCard extends LitElement {
       line-height: 1.1;
       color: var(--primary-text-color);
     }
+    .iny-hueco {
+      display: inline-block;
+    }
     .precio-iny {
       font-size: 0.9em;
       color: var(--secondary-text-color);
@@ -1416,13 +1567,16 @@ class PvpcBonoSocialCard extends LitElement {
     }
     .unidad {
       font-size: 0.45em;
-      color: var(--secondary-text-color);
+      color: var(--primary-text-color);
     }
     /* Hoy centrado en la mitad izquierda y mañana en la derecha (aunque mañana no esté). */
     .detalles {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 4px 12px;
+    }
+    .columna.fantasma {
+      visibility: hidden;
     }
     .columna {
       display: flex;
@@ -1513,16 +1667,19 @@ class PvpcBonoSocialCard extends LitElement {
       fill: var(--secondary-text-color);
       font-size: 10px;
     }
+    /* Grosor de las líneas (opción «grosor»: 1,5 o 2,5). */
     .serie {
       fill: none;
-      stroke-width: 2.5;
+      stroke-width: var(--grosor, 2.5);
     }
+    /* Excedentes: mismo grosor que hoy y mañana, en puntos redondos (hueco proporcional). */
     .serie.punteada {
-      stroke-width: 1.5;
-      stroke-dasharray: 2 3;
+      stroke-width: var(--grosor, 2.5);
+      stroke-dasharray: 0.1 calc(var(--grosor, 2.5) * 2);
+      stroke-linecap: round;
     }
     .tramo {
-      stroke-width: 3;
+      stroke-width: calc(var(--grosor, 2.5) + 0.5);
       stroke-linecap: square;
     }
     .titulo-seccion {
@@ -1629,6 +1786,19 @@ class PvpcBonoSocialCard extends LitElement {
       align-items: flex-end;
       text-align: right;
       margin-top: 6px;
+    }
+    /* Bajo la gráfica (izquierda o derecha) y en pantallas estrechas: mismo tamaño que en la cabecera. */
+    .factura.abajo {
+      font-size: 0.85em;
+    }
+    .precio.oculto,
+    .precio-iny.oculto {
+      visibility: hidden;
+    }
+    /* A la derecha, además, en la vertical de los € de la cabecera. */
+    .factura.derecha {
+      align-items: flex-end;
+      text-align: right;
     }
     .factura.estrecha {
       display: none;
@@ -1896,77 +2066,121 @@ function enSuIdioma(etiqueta, idioma) {
   return ["es", ...COOFICIALES].includes(idioma) ? es : (en ?? es);
 }
 
-function esquemaEditor(idioma) {
+/**
+ * Esquema del editor: secciones plegables (ha-form «expandable» con `flatten`, así las claves siguen
+ * siendo las mismas del YAML) y, con los datos actuales, sin lo que depende de algo apagado.
+ */
+function esquemaEditor(idioma, d = {}) {
   const opciones = (lista) => ({
     select: {
       mode: "dropdown",
       options: lista.map(([value, label]) => ({ value, label: enSuIdioma(label, idioma) })),
     },
   });
-  const interruptores = (...nombres) => nombres.map((name) => ({ name, selector: { boolean: {} } }));
+  const si = (nombre) => ({ name: nombre, selector: { boolean: {} } });
+  const seccion = (clave, icon, expanded, campos) => ({
+    type: "expandable",
+    name: "",
+    flatten: true,
+    title: enSuIdioma(SECCIONES_EDITOR[clave], idioma),
+    icon,
+    expanded,
+    schema: campos.filter(Boolean),
+  });
+  const conFactura = d.factura !== "hidden";
+  const conGrafica = d.graph !== false;
+  const conManana = (conGrafica && d.next_day !== false) || (d.details !== false && d.extremos_manana !== false);
+  const conFacturas = Boolean(d.grafica_facturas);
   return [
-    { name: "entity", selector: { entity: { domain: "sensor" } } },
-    { name: "title", selector: { text: {} } },
-    {
-      name: "factura",
-      selector: opciones([
-        ["below_chart", "Bajo la gráfica / Below the chart"],
-        ["header", "Arriba / In the header"],
-        ["hidden", "Oculta / Hidden"],
-      ]),
-    },
-    {
-      type: "grid",
-      name: "",
-      schema: interruptores("factura_actual", "factura_anterior", "prevision", "current", "details", "graph", "next_day", "ventana"),
-    },
-    {
-      name: "extremos",
-      selector: opciones([
-        ["columnas", "Columnas / Columns"],
-        ["filas", "Filas / Rows"],
-      ]),
-    },
-    {
-      name: "colores",
-      selector: opciones([
-        ["fijo", "Un color por día / One colour per day"],
-        ["precio", "Hoy por precio / Today by price"],
-      ]),
-    },
-    {
-      type: "grid",
-      name: "",
-      schema: [
-        { name: "color_hoy", selector: { color_rgb: {} } },
-        { name: "color_manana", selector: { color_rgb: {} } },
-        ...interruptores("bandas"),
-      ],
-    },
-    { name: "entity_injection", selector: { entity: { domain: "sensor" } } },
-    {
-      name: "icon_color",
-      selector: opciones([
-        ["price", "Por precio / By price"],
-        ["period", "Por periodo P1-P3 / By period"],
-        ["fijo", "Azul fijo / Fixed blue"],
-      ]),
-    },
-    {
-      type: "grid",
-      name: "",
-      schema: [
-        ...interruptores("grafica_facturas", "facturas_importe", "facturas_tendencia"),
-        { name: "facturas_meses", selector: opciones(["3", "5", "6", "9", "12"].map((v) => [v, v])) },
-        { name: "color_facturas", selector: { color_rgb: {} } },
-      ],
-    },
-    { name: "titulo_grafica", selector: { text: {} } },
-    { name: "titulo_facturas", selector: { text: {} } },
-    { name: "entity_factura_actual", selector: { entity: { domain: "sensor" } } },
-    { name: "entity_factura_anterior", selector: { entity: { domain: "sensor" } } },
+    seccion("cabecera", "mdi:page-layout-header", false, [
+      si("current"),
+      {
+        name: "icon_color",
+        selector: opciones([
+          ["price", "Por precio / By price"],
+          ["period", "Por periodo P1-P3 / By period"],
+          ["fijo", "Azul fijo / Fixed blue"],
+        ]),
+      },
+      { name: "title", selector: { text: {} } },
+    ]),
+    seccion("factura", "mdi:receipt-text-outline", false, [
+      conFactura && si("factura_anterior"),
+      conFactura && si("factura_actual"),
+      conFactura && si("prevision"),
+      {
+        name: "factura",
+        selector: opciones([
+          ["header", "Arriba, junto al precio / Top, next to the price"],
+          ["below_chart", "Bajo la gráfica, a la izquierda / Below the chart, left"],
+          ["below_chart_right", "Bajo la gráfica, a la derecha / Below the chart, right"],
+          ["hidden", "No mostrar / Don't show"],
+        ]),
+      },
+    ]),
+    seccion("extremos", "mdi:arrow-up-down", false, [
+      si("details"),
+      d.details !== false && si("extremos_manana"),
+      // Afecta a los mínimos y máximos y a la gráfica: solo se oculta si los dos están apagados.
+      // Solo si la integración tiene el sensor de excedentes (API privada de ESIOS) o ya está puesto.
+      (d.details !== false || conGrafica) && (d.hay_excedentes || d.entity_injection) && si("mostrar_excedentes"),
+      d.details !== false && {
+        name: "extremos",
+        selector: opciones([
+          ["columnas", "Columnas: hoy | mañana / Columns: today | tomorrow"],
+          ["filas", "Filas: un día por fila / Rows: one day per row"],
+        ]),
+      },
+    ]),
+    seccion("grafica", "mdi:chart-line", false, [
+      si("graph"),
+      conGrafica && si("next_day"),
+      conGrafica && d.entity_injection && si("excedentes_grafica"),
+      conGrafica && si("bandas"),
+      conGrafica && { name: "titulo_grafica", selector: { text: {} } },
+      conGrafica && {
+        name: "grosor",
+        selector: opciones([
+          ["1.5", "Fino (1,5) / Thin (1.5)"],
+          ["2.5", "Normal (2,5) / Normal (2.5)"],
+        ]),
+      },
+      conGrafica && {
+        name: "colores",
+        selector: opciones([
+          ["fijo", "Un color por día / One colour per day"],
+          ["precio", "Hoy por precio / Today by price"],
+          d.next_day !== false && ["precio_manana", "Mañana por precio / Tomorrow by price"],
+        ].filter(Boolean)),
+      },
+      conGrafica && { name: "color_hoy", selector: { color_rgb: {} } },
+      conManana && { name: "color_manana", selector: { color_rgb: {} } },
+    ]),
+    seccion("facturas", "mdi:chart-bar", false, [
+      si("grafica_facturas"),
+      conFacturas && si("facturas_importe"),
+      conFacturas && si("facturas_tendencia"),
+      conFacturas && { name: "facturas_meses", selector: opciones(["3", "5", "6", "9", "12"].map((v) => [v, v])) },
+      conFacturas && { name: "titulo_facturas", selector: { text: {} } },
+      conFacturas && { name: "color_facturas", selector: { color_rgb: {} } },
+    ]),
+    seccion("avanzado", "mdi:tune-variant", false, [
+      { name: "entity", selector: { entity: { domain: "sensor" } } },
+      { name: "entity_factura_actual", selector: { entity: { domain: "sensor" } } },
+      { name: "entity_factura_anterior", selector: { entity: { domain: "sensor" } } },
+      { name: "entity_injection", selector: { entity: { domain: "sensor" } } },
+    ]),
   ];
 }
+
+const SECCIONES_EDITOR = {
+  cabecera: "Cabecera / Header",
+  factura: "Importes de la factura / Bill amounts",
+  extremos: "Mínimos y máximos / Min and max",
+  grafica: "Gráfica de precios / Price chart",
+  facturas: "Facturas / Bills",
+  avanzado: "Avanzado / Advanced",
+};
 
 /** [r, g, b] de un color de la configuración (el selector de color solo entiende eso). */
 function aRgb(valor, defecto) {
@@ -2002,7 +2216,20 @@ function datosEditor(config, hass) {
     color_facturas: aRgb(c.color_facturas ?? c.color_hoy, COLOR_HOY),
     facturas_meses: String(c.facturas_meses),
     grafica_facturas: Boolean(c.grafica_facturas),
+    mostrar_excedentes: Boolean(c.entity_injection),
+    // No es una opción: dice al editor si hay sensor de excedentes que ofrecer.
+    hay_excedentes: Boolean(buscarEntidad(hass, "sensor.pvpc_bs_precio_excedentes")),
+    // Lo que se ve de verdad: «PVPC» / «Facturas» si no se ha escrito nada; vacío = sin título.
+    titulo_grafica: c.titulo_grafica ?? "PVPC",
+    titulo_facturas: c.titulo_facturas ?? textosDe(hass).facturas,
   };
+}
+
+/** Los textos de la tarjeta en el idioma de HA (como `_t`). */
+function textosDe(hass) {
+  const idioma = (hass?.locale?.language || hass?.language || "es").slice(0, 2);
+  if (COOFICIALES.includes(idioma)) return { ...TEXTOS.es, ...TEXTOS[idioma] };
+  return TEXTOS[idioma] || TEXTOS.en;
 }
 
 /** HA carga ha-form con los editores de sus tarjetas: si no está, se le pide uno que lo use. */
@@ -2033,11 +2260,13 @@ class PvpcBonoSocialCardEditor extends LitElement {
 
   render() {
     if (!this._config || !this.hass) return nothing;
+    const datos = datosEditor(this._config, this.hass);
     return html`<ha-form
       .hass=${this.hass}
-      .data=${datosEditor(this._config, this.hass)}
-      .schema=${esquemaEditor(this._idioma)}
-      .computeLabel=${(s) => (ETIQUETAS_EDITOR[s.name] ? enSuIdioma(ETIQUETAS_EDITOR[s.name], this._idioma) : s.name)}
+      .data=${datos}
+      .schema=${esquemaEditor(this._idioma, datos)}
+      .computeLabel=${(s) => (ETIQUETAS_EDITOR[s.name] ? enSuIdioma(ETIQUETAS_EDITOR[s.name], this._idioma) : s.title ?? s.name)}
+      .computeHelper=${(s) => (AYUDAS_EDITOR[s.name] ? enSuIdioma(AYUDAS_EDITOR[s.name], this._idioma) : "")}
       @value-changed=${this._alCambiar}
     ></ha-form>`;
   }
@@ -2049,10 +2278,20 @@ class PvpcBonoSocialCardEditor extends LitElement {
     const antes = datosEditor(this._config, this.hass);
     const config = { ...this._config };
     for (const clave of new Set([...Object.keys(nuevos), ...Object.keys(antes)])) {
+      if (clave === "hay_excedentes") continue;
       if (JSON.stringify(nuevos[clave]) === JSON.stringify(antes[clave])) continue;
-      if (nuevos[clave] === undefined) delete config[clave];
+      if (clave === "mostrar_excedentes") {
+        // No es una opción de la tarjeta: pone o quita el sensor de excedentes de la integración.
+        if (nuevos[clave]) config.entity_injection = buscarEntidad(this.hass, "sensor.pvpc_bs_precio_excedentes");
+        else delete config.entity_injection;
+        continue;
+      }
+      // Un título borrado es «sin título», no «el de siempre».
+      if (["title", "titulo_grafica", "titulo_facturas"].includes(clave) && nuevos[clave] === undefined) config[clave] = "";
+      else if (nuevos[clave] === undefined) delete config[clave];
       else config[clave] = nuevos[clave];
     }
+    if (!config.entity_injection) delete config.entity_injection;
     this._config = config;
     this.dispatchEvent(new CustomEvent("config-changed", { detail: { config }, bubbles: true, composed: true }));
   }
@@ -2060,32 +2299,69 @@ class PvpcBonoSocialCardEditor extends LitElement {
 
 const ETIQUETAS_EDITOR = {
   entity: "Sensor de precio / Price sensor",
-  title: "Título / Title",
-  factura: "Factura / Bill",
-  factura_actual: "Factura en curso / Current bill",
-  factura_anterior: "Factura anterior / Previous bill",
-  prevision: "Factura estimada al cierre / Estimated bill",
+  title: "Título de la tarjeta / Card title",
+  factura: "Posición en la tarjeta / Position on the card",
+  factura_actual: "Factura periodo en curso / Current bill",
+  factura_anterior: "Factura periodo anterior / Previous bill",
+  prevision: "Factura estimada / Estimated bill",
   current: "Precio actual / Current price",
-  details: "Mínimos y máximos / Min and max",
-  extremos: "Mínimo y máximo diarios / Daily min and max",
-  graph: "Gráfica / Chart",
-  ventana: "Ventana con todo al pulsar el icono / Full view on icon tap",
-  next_day: "Mañana / Tomorrow",
+  details: "Mostrar mínimos y máximos / Show min and max",
+  extremos: "Disposición / Layout",
+  graph: "Mostrar la gráfica / Show the chart",
+  next_day: "Mostrar mañana / Show tomorrow",
+  extremos_manana: "Mostrar mañana / Show tomorrow",
   icon_color: "Color del icono / Icon colour",
   colores: "Colores de la gráfica / Chart colours",
+  grosor: "Grosor de las líneas / Line width",
   color_hoy: "Color de hoy / Today's colour",
   color_manana: "Color de mañana / Tomorrow's colour",
   bandas: "Punta y llano sombreados / Shade peak hours",
-  entity_injection: "Sensor de precio de excedentes (opcional) / Injection price sensor (optional)",
-  grafica_facturas: "Gráfica de facturas / Bills chart",
-  facturas_importe: "Importe sobre cada barra / Amount above bars",
+  entity_injection: "Sensor de precio de excedentes / Surplus price sensor",
+  mostrar_excedentes: "Mostrar precios de los excedentes / Show surplus prices",
+  excedentes_grafica: "Mostrar excedentes / Show surplus",
+  grafica_facturas: "Mostrar facturas / Show bills",
+  facturas_importe: "Importe sobre las barras / Amount above bars",
   facturas_tendencia: "Línea de tendencia / Trend line",
-  facturas_meses: "Cuántas facturas / How many bills",
+  facturas_meses: "Cantidad de facturas / Number of bills",
   color_facturas: "Color de las barras / Bar colour",
   titulo_grafica: "Título de la gráfica de precios / Price chart title",
-  titulo_facturas: "Título de la gráfica de facturas / Bills chart title",
+  titulo_facturas: "Título de la gráfica / Chart title",
   entity_factura_actual: "Sensor de factura en curso / Current bill sensor",
   entity_factura_anterior: "Sensor de factura anterior / Previous bill sensor",
+};
+
+/** Una línea de ayuda bajo cada campo del editor. */
+const AYUDAS_EDITOR = {
+  current: "Precio de esta hora, en grande; el icono sigue / This hour's price, in large type; the icon stays",
+  icon_color: "Por precio: verde barato, rojo caro / By price: green cheap, red expensive",
+  title: "Bórralo para dejar la tarjeta sin título / Clear it to leave the card untitled",
+  factura: "Dónde van las líneas de factura / Where the bill lines go",
+  factura_anterior: "Último periodo cerrado / Last closed period",
+  factura_actual: "Lo gastado en el periodo hasta hoy / Spent so far this period",
+  prevision: "Lo que se prevé pagar al cerrar el periodo / Expected total at the end of the period",
+  details: "Hora más barata y más cara de hoy y de mañana / Cheapest and most expensive hour today and tomorrow",
+  extremos: "Columnas: hoy a la izquierda y mañana a la derecha. Filas: hoy arriba y mañana debajo / Columns: today left, tomorrow right. Rows: today above, tomorrow below",
+  graph: "Precio de cada hora en escalones / Hourly price as steps",
+  next_day: "Solo en la gráfica, cuando ya hay precios (sobre las 20:30) / Chart only, once prices are out (around 20:30)",
+  extremos_manana: "Mínimo y máximo de mañana, cuando ya hay precios (sobre las 20:30) / Tomorrow's min and max, once prices are out (around 20:30)",
+  titulo_grafica: "Bórralo para dejar la gráfica sin título / Clear it to leave the chart untitled",
+  grosor: "De hoy, mañana y excedentes / Today, tomorrow and surplus",
+  colores: "«Por precio» colorea cada hora del día elegido según lo cara que es / «By price» colours each hour of that day by how expensive it is",
+  color_hoy: "La línea y los triángulos de hoy / Today's line and triangles",
+  color_manana: "La línea y los triángulos de mañana / Tomorrow's line and triangles",
+  facturas_importe: "El importe de cada factura encima de su barra / Each bill's amount above its bar",
+  facturas_meses: "Cuántas facturas cerradas se ven, las más recientes / How many closed bills are shown, the latest",
+  color_facturas: "El color de las barras / The bar colour",
+  bandas: "Fondo de color en las horas punta y llano de los laborables / Shaded peak and standard hours on working days",
+  entity_injection: "Se elige solo con «Mostrar precios de los excedentes» / Set by «Show surplus prices»",
+  mostrar_excedentes: "Activa los excedentes en la tarjeta (triángulos huecos); necesita la API privada de ESIOS / Enables surplus on the card (hollow triangles); needs the ESIOS private API",
+  excedentes_grafica: "Su precio en punteado en la gráfica / Its price, dotted, on the chart",
+  grafica_facturas: "Barras con las últimas facturas cerradas / Bars with the latest closed bills",
+  facturas_tendencia: "Línea discontinua con la tendencia / Dashed trend line",
+  titulo_facturas: "Bórralo para dejar la gráfica sin título / Clear it to leave the chart untitled",
+  entity: "Se detecta sola; cámbialo solo si tienes varias entradas / Detected automatically; change it only with several entries",
+  entity_factura_actual: "Se detecta solo / Detected automatically",
+  entity_factura_anterior: "Se detecta solo / Detected automatically",
 };
 
 if (!customElements.get(ETIQUETA)) {

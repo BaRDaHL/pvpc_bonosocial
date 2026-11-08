@@ -5,7 +5,7 @@
 <p align="center">
 <b>Precios horarios del PVPC y tu factura de la luz, al céntimo, con o sin bono social, en Home Assistant.</b><br>
 <sub>Spanish PVPC hourly prices and your electricity bill, to the cent, with or without the social bonus.</sub><br>
-<a href="https://github.com/BaRDaHL/pvpc_bonosocial/wiki/ES-Inicio">Wiki</a>
+<a href="https://github.com/BaRDaHL/pvpc_bonosocial/wiki">Wiki</a>
 </p>
 
 <p align="center">
@@ -17,13 +17,13 @@
 </p>
 
 <p align="center">
-<img src="https://raw.githubusercontent.com/wiki/BaRDaHL/pvpc_bonosocial/images/card-small-light-v2.png" width="40%" alt="Tarjeta, tema claro / Card, light theme">
-<img src="https://raw.githubusercontent.com/wiki/BaRDaHL/pvpc_bonosocial/images/card-small-dark-v2.png" width="40%" alt="Tarjeta, tema oscuro / Card, dark theme">
+<img src="https://raw.githubusercontent.com/wiki/BaRDaHL/pvpc_bonosocial/images/card-v3-light.png" width="40%" alt="Tarjeta, tema claro / Card, light theme">
+<img src="https://raw.githubusercontent.com/wiki/BaRDaHL/pvpc_bonosocial/images/card-v3-dark.png" width="40%" alt="Tarjeta, tema oscuro / Card, dark theme">
 </p>
 
 <p align="center">
-<img src="https://raw.githubusercontent.com/wiki/BaRDaHL/pvpc_bonosocial/images/compare-card-light.png" width="49%" alt="Comparativa de tarifas en la tarjeta, tema claro / Tariff comparison in the card, light theme">
-<img src="https://raw.githubusercontent.com/wiki/BaRDaHL/pvpc_bonosocial/images/compare-card-dark.png" width="49%" alt="Comparativa de tarifas en la tarjeta, tema oscuro / Tariff comparison in the card, dark theme">
+<img src="https://raw.githubusercontent.com/wiki/BaRDaHL/pvpc_bonosocial/images/compare-card-v3-light.png" width="49%" alt="Comparativa de tarifas en la tarjeta, tema claro / Tariff comparison in the card, light theme">
+<img src="https://raw.githubusercontent.com/wiki/BaRDaHL/pvpc_bonosocial/images/compare-card-v3-dark.png" width="49%" alt="Comparativa de tarifas en la tarjeta, tema oscuro / Tariff comparison in the card, dark theme">
 </p>
 
 <p align="center">
@@ -47,9 +47,9 @@ Conoce **tu factura de la luz antes de que llegue**: precios horarios del PVPC *
 - 📊 **Coste real en el panel de Energía**, con impuestos y fijos, corregido al llegar la factura.
 - 📄 **Sube el PDF de la factura**: se lee en local, recalibra el medidor y el saldo del bono.
 - 🔍 **Segunda opinión de la CNMC** de cada factura (opcional), con aviso en Reparaciones si no cuadra.
-- 💶 **Compara tarifas** con el comparador oficial de la CNMC usando lo que *de verdad* pagaste y consumiste. Desde la tarjeta, con las 5 mejores ofertas, enlace a la ficha de cada una y al listado completo de la CNMC con tus datos, y la previsión del PVPC para el año que viene.
+- 💶 **Compara tarifas** con el comparador oficial de la CNMC usando lo que *de verdad* pagaste y consumiste. Desde la tarjeta, con las 4 mejores ofertas, enlace a la ficha de cada una y al listado completo de la CNMC con tus datos, y la previsión del PVPC para el año que viene.
 - 📱 **Resumen diario de precios** por Telegram (necesita la integración [Telegram bot](https://www.home-assistant.io/integrations/telegram_bot/) configurada en Home Assistant) o cualquier notificación.
-- 🃏 **Tarjeta propia**: precios de hoy y mañana, la factura, la evolución de tus facturas y la comparativa de tarifas.
+- 🃏 **Tarjeta propia**: precios de hoy y mañana, la factura, la evolución de tus facturas y la comparativa de tarifas, con un editor visual por secciones.
 - 🔌 **Datadis**: lecturas oficiales del contador (opcional).
 - 🔒 **Privada**: funciona en local; a la CNMC van datos mínimos y anónimos, solo si lo activas.
 - 📚 **Al día**: cada valor regulado cita su fuente y sus fechas de vigencia; el BOE se revisa cada semana.
@@ -72,7 +72,7 @@ Está en la tienda oficial de **HACS**: no hace falta añadir ningún repositori
 
 ### Documentación
 
-Todas las guías, paso a paso, en la **[wiki](https://github.com/BaRDaHL/pvpc_bonosocial/wiki/ES-Inicio)**. Para empezar: [instalación](https://github.com/BaRDaHL/pvpc_bonosocial/wiki/ES-Instalacion) · [suministro](https://github.com/BaRDaHL/pvpc_bonosocial/wiki/ES-Suministro) · [tarjeta](https://github.com/BaRDaHL/pvpc_bonosocial/wiki/ES-Tarjeta) · [comparar tarifas](https://github.com/BaRDaHL/pvpc_bonosocial/wiki/ES-Comparar-tarifas).
+Todas las guías, paso a paso, en la **[wiki](https://github.com/BaRDaHL/pvpc_bonosocial/wiki)**. Para empezar: [instalación](https://github.com/BaRDaHL/pvpc_bonosocial/wiki/ES-Instalacion) · [suministro](https://github.com/BaRDaHL/pvpc_bonosocial/wiki/ES-Suministro) · [tarjeta](https://github.com/BaRDaHL/pvpc_bonosocial/wiki/ES-Tarjeta) · [comparar tarifas](https://github.com/BaRDaHL/pvpc_bonosocial/wiki/ES-Comparar-tarifas).
 
 ### Comparativa con otras integraciones
 
@@ -107,9 +107,9 @@ Know **your electricity bill before it arrives**: PVPC hourly prices *plus* the 
 - 📊 **Real cost in the Energy dashboard**, with taxes and fixed charges, corrected when the bill arrives.
 - 📄 **Upload the PDF bill**: read locally, recalibrates the meter and the bonus balance.
 - 🔍 **CNMC second opinion** of every bill (optional), with a Repairs notice if it does not match.
-- 💶 **Compare tariffs** with the official CNMC comparator using what you *actually* paid and consumed. From the card, with the top 5 offers, links to each offer sheet and to the full CNMC list with your data, and the PVPC forecast for next year.
+- 💶 **Compare tariffs** with the official CNMC comparator using what you *actually* paid and consumed. From the card, with the top 4 offers, links to each offer sheet and to the full CNMC list with your data, and the PVPC forecast for next year.
 - 📱 **Daily price summary** on Telegram (needs the [Telegram bot](https://www.home-assistant.io/integrations/telegram_bot/) integration set up in Home Assistant) or any notification.
-- 🃏 **Built-in card**: today's and tomorrow's prices, the bill, your bills over time and the tariff comparison.
+- 🃏 **Built-in card**: today's and tomorrow's prices, the bill, your bills over time and the tariff comparison, with a visual editor in sections.
 - 🔌 **Datadis** official readings (optional).
 - 🔒 **Private**: runs locally; minimal anonymous data to the CNMC, only if you enable it.
 - 📚 **Up to date**: every regulated value cites its source and validity dates; the BOE is checked weekly.

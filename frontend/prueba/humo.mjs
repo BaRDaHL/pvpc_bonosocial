@@ -26,9 +26,15 @@ const servidor = createServer(async (req, res) => {
 await new Promise((r) => servidor.listen(0, "127.0.0.1", r));
 const base = `http://127.0.0.1:${servidor.address().port}/pagina.html`;
 
+
 const casos = [
   { nombre: "claro", ancho: 500, q: "" , precio: "0,120", textos: ["PVPC", "Factura periodo en curso", "punta", "14:00 - 15:00", "Hora actual", "(12/08 - 13/09)", "Factura estimada (13/09 - 13/10): 98,20"] },
+  { nombre: "tarjeta_nueva", ancho: 500, q: "stub=1", precio: "0,120", textos: ["PVPC", "Factura periodo en curso", "Factura estimada"], sin: ["(12/08 - 13/09)"] },
   { nombre: "oscuro", ancho: 500, q: "oscuro=1", precio: "0,120", textos: ["20:00 - 21:00"] },
+  { nombre: "factura_derecha", ancho: 500, q: "config=" + encodeURIComponent('{"factura":"below_chart_right"}'), precio: "0,120", textos: ["Factura periodo en curso", "Factura estimada"] },
+  { nombre: "manana_por_precio", ancho: 500, q: "config=" + encodeURIComponent('{"colores":"precio_manana"}'), precio: "0,120", textos: ["Hora actual"] },
+  { nombre: "sin_manana_extremos", ancho: 500, q: "config=" + encodeURIComponent('{"extremos_manana":false}'), precio: "0,120", textos: ["14:00 - 15:00"], triangulos: 2 },
+  { nombre: "sin_precio_actual", ancho: 500, q: "config=" + encodeURIComponent('{"current":false}'), precio: "0,120", textos: ["Factura periodo en curso"] },
   { nombre: "excedentes", ancho: 500, q: "config=" + encodeURIComponent('{"entity_injection":"sensor.pvpc_bs_precio_excedentes"}'), precio: "-0,00106", textos: [] },
   { nombre: "colores_propios", ancho: 500, q: "config=" + encodeURIComponent('{"color_hoy":[255,0,0],"color_manana":"rgb(0, 255, 0)","entity_injection":"sensor.pvpc_bs_precio_excedentes"}'), precio: "0,120", textos: [], color: ["rgb(255, 0, 0)", "rgb(0, 255, 0)"] },
   { nombre: "sin_prevision", ancho: 500, q: "config=" + encodeURIComponent('{"prevision":false}'), precio: "0,120", textos: ["Factura periodo en curso"], sin: ["Factura estimada"] },
@@ -76,6 +82,19 @@ const casos = [
   { nombre: "zona_utc", ancho: 500, q: "zona=Europe/Madrid", zonaNavegador: "UTC", fijo: "2026-10-20T00:30:00+02:00", precio: "0,120", textos: ["20/10/2026", "21/10/2026"] },
   // Y al revés: HA en Canarias y el navegador en Madrid (10:30 en Madrid = 09:30 en Canarias).
   { nombre: "zona_ha_canarias", ancho: 500, q: "zona=Atlantic/Canary", zonaNavegador: "Europe/Madrid", fijo: "2026-10-20T10:30:00+02:00", precio: "0,120", textos: [] },
+  // Cada línea de factura con su interruptor, en las 8 combinaciones.
+  ...[0, 1, 2, 3, 4, 5, 6, 7].map((k) => {
+    const [ant, cur, est] = [k & 4, k & 2, k & 1].map(Boolean);
+    const nombres = [["Factura periodo anterior", ant], ["Factura periodo en curso", cur], ["Factura estimada", est]];
+    return {
+      nombre: `factura_${+ant}${+cur}${+est}`,
+      ancho: 500,
+      q: "config=" + encodeURIComponent(JSON.stringify({ factura_anterior: ant, factura_actual: cur, prevision: est })),
+      precio: "0,120",
+      textos: nombres.filter(([, v]) => v).map(([n]) => n),
+      sin: nombres.filter(([, v]) => !v).map(([n]) => n),
+    };
+  }),
 ];
 const navegador = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
 const fallos = [];
@@ -104,7 +123,7 @@ for (const c of casos) {
       texto: raiz?.textContent.replace(/\s+/g, " ") ?? "",
       marcas: raiz?.querySelectorAll("svg.marca").length ?? 0,
       tramos: raiz?.querySelectorAll("line.tramo").length ?? 0,
-      triangulos: raiz?.querySelectorAll("svg.tri").length ?? 0,
+      triangulos: raiz?.querySelectorAll(".columna:not(.fantasma) svg.tri, .fila svg.tri").length ?? 0,
       // Colores de las series, de los triángulos (gráfica y detalle) y de las bolitas de la leyenda.
       colores: [
         ...[...(raiz?.querySelectorAll("path.serie") ?? [])].map((e) => e.getAttribute("stroke")),
@@ -261,8 +280,15 @@ for (const c of casos) {
       const data = form.data;
       let emitida;
       editor.addEventListener("config-changed", (ev) => (emitida = ev.detail.config));
+      // Campos de cada sección (todas planas: las claves del YAML no cambian).
+      const campos = (esquema) => esquema.flatMap((s) => (s.type === "expandable" ? s.schema.map((c) => c.name) : [s.name]));
+      const antes = campos(form.schema);
+      const planas = form.schema.every((s) => s.type === "expandable" && s.flatten === true);
       form.dispatchEvent(new CustomEvent("value-changed", { detail: { value: { ...data, graph: false } } }));
-      return { data, emitida, etiqueta: form.computeLabel({ name: "graph" }) };
+      await editor.updateComplete;
+      const despues = campos(editor.shadowRoot.querySelector("ha-form").schema);
+      const ayuda = antes.includes("ventana") ? "con ventana" : "";
+      return { data, emitida, etiqueta: form.computeLabel({ name: "graph" }), antes, despues, planas, ayuda };
     });
     if (r.sin) mal.push("sin getConfigElement");
     else {
@@ -276,7 +302,13 @@ for (const c of casos) {
       // Lo que no se ha tocado no se escribe en el YAML.
       const esperada = { type: "custom:pvpc-bono-social-card", color_hoy: "#4269d0", color_manana: "rgb(1, 2, 3)", prevision: false, graph: false };
       if (JSON.stringify(r.emitida) !== JSON.stringify(esperada)) mal.push(`config emitida ${JSON.stringify(r.emitida)}`);
-      if (r.etiqueta !== "Gráfica") mal.push(`etiqueta «${r.etiqueta}»`);
+      if (r.etiqueta !== "Mostrar la gráfica") mal.push(`etiqueta «${r.etiqueta}»`);
+      if (!r.planas) mal.push("secciones sin flatten");
+      if (!r.antes.includes("color_hoy") || r.despues.includes("color_hoy") || !r.despues.includes("graph"))
+        mal.push(`sin gráfica deben ocultarse sus opciones (${r.despues.join(",")})`);
+      if (r.antes.includes("facturas_meses")) mal.push("opciones de la evolución de facturas visibles con ella apagada");
+      // La ventana va siempre: el editor ya no la ofrece.
+      if (r.ayuda) mal.push("el editor aún ofrece la opción de la ventana");
     }
   }
   if (c.solapes !== undefined && info.solapes !== c.solapes) mal.push(`${info.solapes} etiquetas de mes se pisan`);

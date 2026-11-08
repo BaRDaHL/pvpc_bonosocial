@@ -16,7 +16,8 @@ if(p.get("calculadas"))estados["sensor.pvpc_bs_factura_actual"].attributes.factu
 if(p.get("doce"))estados["sensor.pvpc_bs_factura_actual"].attributes.facturas=[...Array(12)].map((_,i)=>{const a=new Date(Date.UTC(2025,i+10,12));const b=new Date(Date.UTC(2025,i+11,12));return{inicio:a.toISOString().slice(0,10),fin:b.toISOString().slice(0,10),total:90+i,real:true}});
 if(p.get("sin_manana"))for(const e of Object.values(estados))for(const k of Object.keys(e.attributes||{}))if(k.startsWith("price_next_day_"))delete e.attributes[k];
 const c=document.createElement("pvpc-bono-social-card");
-c.setConfig(JSON.parse(p.get("config")||"{}"));
+// «stub=1»: lo que escribe HA al añadir una tarjeta nueva (getStubConfig).
+c.setConfig(p.get("stub")?c.constructor.getStubConfig({states:estados}):JSON.parse(p.get("config")||"{}"));
 // Recorder simulado: la estadística de facturas, una fila por factura al inicio del periodo.
 const importes=[88.4,95.1,112.7,141.3,156.9,121.5,104.2,97.8];
 const callWS=async(m)=>m.type==="recorder/list_statistic_ids"?[{statistic_id:"sensor.otro"},{statistic_id:"pvpc_bonosocial:facturas_prueba"}]

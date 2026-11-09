@@ -67,6 +67,7 @@ const casos = [
     legible: m,
   })),
   { nombre: "editor", ancho: 500, q: "", precio: "0,120", textos: [], editor: true },
+  { nombre: "anexo_dos_vistas", ancho: 1100, q: "anexo=1", precio: "0,120", textos: [], anexo: true },
   // 12 facturas: las etiquetas de mes no se pisan (en catalán y gallego salía «nov. del 25»).
   ...["es", "en", "ca", "gl", "eu"].map((idioma) => ({
     nombre: `meses_${idioma}`,
@@ -310,6 +311,15 @@ for (const c of casos) {
       // La ventana va siempre: el editor ya no la ofrece.
       if (r.ayuda) mal.push("el editor aún ofrece la opción de la ventana");
     }
+  }
+  if (c.anexo) {
+    // Ventana → «Comparar tarifas» → anexo con las dos vistas (último año y previsión de la CNMC).
+    await pag.locator("pvpc-bono-social-card >> button.abrir").first().click();
+    await pag.locator("dialog.ventana pvpc-bono-social-card >> button.btn-comparar").click();
+    await pag.waitForTimeout(300);
+    const texto = await pag.locator("dialog.ventana .anexo").innerText();
+    for (const t of ["Depende de los precios", "Lo que pagaste (último año)", "PVPC previsto", "≈1825,23", "último año", "previsión", "revisión anual", "bono social térmico", "mercado de futuros"])
+      if (!texto.includes(t)) mal.push(`anexo sin «${t}»`);
   }
   if (c.solapes !== undefined && info.solapes !== c.solapes) mal.push(`${info.solapes} etiquetas de mes se pisan`);
   if (info.ancho > c.ancho) mal.push(`se sale de la pantalla (${info.ancho} px)`);

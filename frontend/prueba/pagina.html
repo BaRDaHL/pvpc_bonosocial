@@ -15,6 +15,19 @@ const estados=await (await fetch("estados.json")).json();
 if(p.get("calculadas"))estados["sensor.pvpc_bs_factura_actual"].attributes.facturas=[88.4,95.1,112.7,141.3,156.9,121.5,104.2,97.8].map((v,i)=>({inicio:`2026-${String(i+2).padStart(2,"0")}-12`,fin:`2026-${String(i+3).padStart(2,"0")}-12`,total:v,real:i>=3}));
 if(p.get("doce"))estados["sensor.pvpc_bs_factura_actual"].attributes.facturas=[...Array(12)].map((_,i)=>{const a=new Date(Date.UTC(2025,i+10,12));const b=new Date(Date.UTC(2025,i+11,12));return{inicio:a.toISOString().slice(0,10),fin:b.toISOString().slice(0,10),total:90+i,real:true}});
 if(p.get("sin_manana"))for(const e of Object.values(estados))for(const k of Object.keys(e.attributes||{}))if(k.startsWith("price_next_day_"))delete e.attributes[k];
+// «anexo=1»: comparativa guardada con datos inventados y la previsión de la CNMC (dos vistas).
+let callService;
+if(p.get("anexo")){
+  estados["button.pvpc_bs_comparar_tarifas"]={state:"2026-10-20",attributes:{}};
+  estados["sensor.pvpc_bs_mejor_alternativa"]={state:"-128.0",attributes:{fecha:"2026-10-20T21:25+02:00",estado:"ok",
+    periodo:{inicio:"2026-02-12",fin:"2026-10-12",dias:242,facturas_conciliadas:8,facturas_estimadas:0},
+    pagado:917.9,pagado_anual:1384.4,pagado_sin_bono:1265,pagado_sin_bono_anual:1907.9,
+    pvpc_cnmc:1985.3,pvpc_cnmc_prevision:2380.1,pvpc_cnmc_prevision_bono:1825.23,total_ofertas:61,grandes_ausentes:[],
+    ofertas:[{id:1,comercializadora:"Energía Ejemplo S.L.",oferta:"Tarifa Fija 24 h",importe_primer_anio:1512.4,importe_segundo_anio:1512.4,
+      ahorro_anual:-128,ahorro_prevision:312.83,revision:"anual",permanencia:false,solo_nuevos_clientes:false,verde:true}],
+    avisos:["pierde_bono","revision_precios","prevision_volatil","bono_termico"],veredicto:"depende_precios"}};
+  callService=async()=>{};
+}
 const c=document.createElement("pvpc-bono-social-card");
 // «stub=1»: lo que escribe HA al añadir una tarjeta nueva (getStubConfig).
 c.setConfig(p.get("stub")?c.constructor.getStubConfig({states:estados}):JSON.parse(p.get("config")||"{}"));
@@ -23,7 +36,7 @@ const importes=[88.4,95.1,112.7,141.3,156.9,121.5,104.2,97.8];
 const callWS=async(m)=>m.type==="recorder/list_statistic_ids"?[{statistic_id:"sensor.otro"},{statistic_id:"pvpc_bonosocial:facturas_prueba"}]
 :{"pvpc_bonosocial:facturas_prueba":importes.map((v,i)=>({start:Date.UTC(2026,i+1,12,22),max:v,mean:v,min:v}))};
 // Zona horaria de HA (?zona=Europe/Madrid); sin ella, la tarjeta usa la del navegador.
-c.hass={states:estados,locale:{language:p.get("idioma")||"es"},language:p.get("idioma")||"es",callWS,...(p.get("zona")?{config:{time_zone:p.get("zona")}}:{})};
+c.hass={states:estados,callService,entities:{"button.pvpc_bs_comparar_tarifas":{device_id:"d1"},"sensor.pvpc_bs_mejor_alternativa":{device_id:"d1"}},locale:{language:p.get("idioma")||"es"},language:p.get("idioma")||"es",callWS,...(p.get("zona")?{config:{time_zone:p.get("zona")}}:{})};
 document.body.appendChild(c);
 window.listo=true;
 </script></body></html>

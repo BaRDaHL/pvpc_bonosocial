@@ -19,7 +19,7 @@ import logging
 import re
 from collections.abc import Mapping
 from dataclasses import replace
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -37,19 +37,25 @@ from .cnmc import CnmcNoResponde, ConsultaCnmc, async_consultar, enlace_ficha, e
 from .comparativa import (
     AVISO_BONO_NUEVO,
     AVISO_BONO_PERDIDO,
+    AVISO_BONO_TERMICO,
     AVISO_COBERTURA,
     AVISO_ESTIMADAS,
     AVISO_EXTRAPOLADO,
     AVISO_PIERDE_BONO,
+    AVISO_PREVISION_VOLATIL,
+    AVISO_REVISION_PRECIOS,
     AVISO_SIN_OFERTAS,
     MAX_OFERTAS,
+    VEREDICTO_DEPENDE_PRECIOS,
     VEREDICTO_LIBRE,
     VEREDICTO_LIBRE_PIERDE_BONO,
     VEREDICTO_QUEDARSE,
     VEREDICTO_QUEDARSE_CON_BONO,
     Comparativa,
+    bono_termico_en_plazo,
     comparar,
     consulta_anual,
+    ordenar_avisos,
     ventana_12_meses,
 )
 from .const import (
@@ -63,7 +69,8 @@ from .const import (
     CONF_POTENCIA_P2,
     DOMAIN,
 )
-from .facturacion import FacturacionSuministro
+from .engine.factura import Bono
+from .facturacion import FacturacionSuministro, suministro_de
 
 _LOGGER = logging.getLogger(__name__)
 STORE_VERSION = 1
@@ -85,15 +92,22 @@ def _f(x: Decimal | None) -> float | None:
     return None if x is None else float(x)
 
 
-def _prevision_con_bono(c: Comparativa) -> float | None:
-    """La previsión de PVPC de la CNMC con el bono: aplicándole lo que el bono rebajó de verdad en
-    tus facturas (lo pagado / lo que habrías pagado sin bono). Aproximada: el bono tiene tope de kWh."""
-    v = c.ventana
-    if c.pvpc_cnmc_prevision is None or not v.con_bono or not v.pagada_con_bono:
+def pct_bono_medio(tarifas: Any, bono: Bono, inicio: date, fin: date) -> Decimal | None:
+    """% medio del descuento del bono entre `inicio` y `fin` (exclusivo), por días; None sin bono.
+
+    El % cambia por fecha (42,5 % en 2026, 35 % desde 2027 si no se prorroga): para comparar el
+    descuento de la ventana con el de los próximos 12 meses hay que prorratearlo."""
+    if bono is Bono.NINGUNO:
         return None
-    if not v.pagado_sin_bono_anual:
+    concepto = "descuento_bono_vulnerable" if bono is Bono.VULNERABLE else "descuento_bono_severo"
+    dias = (fin - inicio).days
+    if dias <= 0:
         return None
-    return round(float(c.pvpc_cnmc_prevision * v.pagado_anual / v.pagado_sin_bono_anual), 2)
+    try:
+        total = sum((tarifas.valor(concepto, inicio + timedelta(days=i)) for i in range(dias)), Decimal(0))
+    except (KeyError, LookupError, ValueError):
+        return None
+    return total / dias
 
 
 def a_dict(c: Comparativa, ahora: datetime) -> dict[str, Any]:
@@ -116,7 +130,7 @@ def a_dict(c: Comparativa, ahora: datetime) -> dict[str, Any]:
         "pagado_sin_bono_anual": _f(v.pagado_sin_bono_anual) if v.pagada_con_bono else None,
         "pvpc_cnmc": _f(c.pvpc_cnmc),
         "pvpc_cnmc_prevision": _f(c.pvpc_cnmc_prevision),
-        "pvpc_cnmc_prevision_bono": _prevision_con_bono(c),
+        "pvpc_cnmc_prevision_bono": _f(c.pvpc_cnmc_prevision_bono),
         "ofertas": [
             {
                 "id": a.oferta.id,
@@ -126,6 +140,8 @@ def a_dict(c: Comparativa, ahora: datetime) -> dict[str, Any]:
                 "importe_segundo_anio": float(a.oferta.importe_segundo_anio),
                 "ahorro_anual": float(a.ahorro_primer_anio),
                 "ahorro_segundo_anio": float(a.ahorro_segundo_anio),
+                "ahorro_prevision": _f(a.ahorro_prevision),
+                "revision": a.oferta.revision,
                 "permanencia": a.oferta.permanencia,
                 "penalizacion": float(a.oferta.penalizacion_eur),
                 "servicios_adicionales": a.oferta.servicios_adicionales,
@@ -180,6 +196,27 @@ def _linea_pvpc_cnmc(r: Mapping[str, Any], t: Mapping[str, str], idioma: str) ->
     return t["pvpc_cnmc"].format(x=_eur(r["pvpc_cnmc"], idioma))
 
 
+def _texto_veredicto(r: Mapping[str, Any], t: Mapping[str, Any], idioma: str) -> str:
+    """El veredicto con sus cifras; «depende» junta lo del último año y lo de la previsión."""
+    mejor = r["ofertas"][0]
+    if r["veredicto"] != VEREDICTO_DEPENDE_PRECIOS:
+        return t[r["veredicto"]].format(x=_eur(abs(mejor["ahorro_anual"]), idioma))
+    x, y = mejor["ahorro_anual"], mejor.get("ahorro_prevision") or 0
+    pasado = t["dep_oferta" if x > 0 else "dep_pvpc"].format(x=_eur(abs(x), idioma))
+    futuro = t["dep_prev_oferta" if y > 0 else "dep_prev_pvpc"].format(y=_eur(abs(y), idioma))
+    return t[VEREDICTO_DEPENDE_PRECIOS].format(pasado=pasado, futuro=futuro)
+
+
+def _texto_aviso(aviso: str, r: Mapping[str, Any], t: Mapping[str, Any], idioma: str) -> str:
+    revision = r["ofertas"][0].get("revision") if r.get("ofertas") else None
+    return t[aviso].format(
+        ausentes=", ".join(x.title() for x in r["grandes_ausentes"]),
+        dias=r["periodo"]["dias"],
+        sin_anual=_eur(r.get("pagado_sin_bono_anual") or 0, idioma),
+        revision=t["revisiones"].get(revision, revision or ""),
+    )
+
+
 def _fecha(iso: str, idioma: str) -> str:
     a, m, d = iso.split("-")
     return f"{d}/{m}/{a}" if idioma == "es" else iso
@@ -216,9 +253,9 @@ TEXTOS = {
         "pagado sin bono en el PVPC ({sin_anual} en un año), que es lo que pagarás desde ahora.",
         AVISO_BONO_NUEVO: "⚠️ Parte de lo pagado en estos 12 meses no lleva el bono social que tienes "
         "ahora: con tu bono pagarás menos, así que el ahorro de las ofertas sale mayor de lo que es.",
-        AVISO_COBERTURA: "⚠️ El comparador de la CNMC solo incluye las ofertas que le envían las "
+        AVISO_COBERTURA: "ℹ️ El comparador de la CNMC solo incluye las ofertas que le envían las "
         "comercializadoras; no están: {ausentes}. No es un censo completo del mercado.",
-        AVISO_EXTRAPOLADO: "⚠️ Solo hay {dias} días de facturas: lo pagado y el consumo se han "
+        AVISO_EXTRAPOLADO: "ℹ️ Solo hay {dias} días de facturas: lo pagado y el consumo se han "
         "extrapolado a un año.",
         AVISO_ESTIMADAS: "⚠️ Hay facturas estimadas: concilia las facturas reales para afinar la comparativa.",
         VEREDICTO_QUEDARSE_CON_BONO: "✅ Con tu bono social, el PVPC sigue siendo lo más barato: la "
@@ -227,6 +264,38 @@ TEXTOS = {
         "pagas con bono, aunque lo perderías. Comprueba las condiciones antes de cambiar.",
         VEREDICTO_LIBRE: "💡 Con la mejor oferta te ahorrarías {x} al año.",
         VEREDICTO_QUEDARSE: "✅ Ninguna oferta mejora lo que pagas: la mejor te costaría {x} más al año.",
+        "revision": " Revisión de precios {r}.",
+        "prev_ahorra": " Con la previsión de la CNMC ahorrarías {x}.",
+        "prev_cuesta": " Con la previsión de la CNMC pagarías {x} más.",
+        "dep_pvpc": "con los precios del último año, el PVPC te salió {x} más barato que la mejor oferta",
+        "dep_oferta": "con los precios del último año, la mejor oferta te habría salido {x} más barata",
+        "dep_prev_pvpc": "con la previsión de la CNMC para los próximos 12 meses, el PVPC saldría {y} "
+        "más barato",
+        "dep_prev_oferta": "con la previsión de la CNMC para los próximos 12 meses, la mejor oferta "
+        "saldría {y} más barata",
+        "revisiones": {
+            "mensual": "mensual",
+            "trimestral": "trimestral",
+            "cuatrimestral": "tres veces al año",
+            "semestral": "semestral",
+            "anual": "anual",
+            "bienal": "cada dos años",
+            "trienal": "cada tres años",
+            "quinquenal": "cada cinco años",
+        },
+        AVISO_BONO_TERMICO: "🛑 Si cambias de comercializadora antes del 1 de enero, no tendrás el bono "
+        "social a 31 de diciembre y perderás el bono social térmico que se cobra el próximo año: una "
+        "ayuda en dinero (mínimo 50 €) que recibes aunque no tengas gas. Para no perderlo, cámbiate a "
+        "partir del 1 de enero.",
+        AVISO_PREVISION_VOLATIL: "⚠️ La previsión de la CNMC para el PVPC sale de los precios del mercado de "
+        "futuros de hoy y cambia mucho de un mes a otro: es un escenario, no lo que vas a pagar.",
+        AVISO_REVISION_PRECIOS: "ℹ️ La mejor oferta revisa sus precios ({revision}); la CNMC calcula sus "
+        "importes sin esas revisiones.",
+        VEREDICTO_DEPENDE_PRECIOS: "⚖️ Depende de los precios: {pasado}; {futuro}. Vuelve a comparar antes "
+        "de decidir.",
+        "leer_avisos": "👇 Antes de decidir, lee los avisos del final.",
+        "leer_avisos_termico": "👇 Antes de decidir, lee los avisos del final: hay uno importante sobre el "
+        "bono social térmico.",
         "impuestos": "Los importes de la CNMC llevan los impuestos y el alquiler del contador de hoy; "
         "lo pagado, los de cada factura.",
         "confirmar": "ℹ️ Los precios son los que publica la CNMC y pueden estar desfasados: confírmalos con "
@@ -262,9 +331,9 @@ TEXTOS = {
         "would have paid on PVPC without it ({sin_anual} per year), which is what you will pay from now on.",
         AVISO_BONO_NUEVO: "⚠️ Part of what you paid in these 12 months does not include the social bonus "
         "you have now: with it you will pay less, so the savings of the offers look bigger than they are.",
-        AVISO_COBERTURA: "⚠️ The CNMC comparator only includes offers sent by retailers; missing: "
+        AVISO_COBERTURA: "ℹ️ The CNMC comparator only includes offers sent by retailers; missing: "
         "{ausentes}. It is not a complete census of the market.",
-        AVISO_EXTRAPOLADO: "⚠️ Only {dias} days of bills: payments and consumption were extrapolated "
+        AVISO_EXTRAPOLADO: "ℹ️ Only {dias} days of bills: payments and consumption were extrapolated "
         "to a year.",
         AVISO_ESTIMADAS: "⚠️ Some bills are estimates: reconcile the real bills to refine the comparison.",
         VEREDICTO_QUEDARSE_CON_BONO: "✅ With your social bonus, PVPC is still the cheapest: the best "
@@ -273,6 +342,36 @@ TEXTOS = {
         "pay with the bonus, although you would lose it. Check the conditions before switching.",
         VEREDICTO_LIBRE: "💡 With the best offer you would save {x} per year.",
         VEREDICTO_QUEDARSE: "✅ No offer beats what you pay: the best would cost you {x} more per year.",
+        "revision": " Price review {r}.",
+        "prev_ahorra": " With the CNMC forecast you would save {x}.",
+        "prev_cuesta": " With the CNMC forecast you would pay {x} more.",
+        "dep_pvpc": "at last year's prices, PVPC was {x} cheaper than the best offer",
+        "dep_oferta": "at last year's prices, the best offer would have been {x} cheaper",
+        "dep_prev_pvpc": "with the CNMC forecast for the next 12 months, PVPC would be {y} cheaper",
+        "dep_prev_oferta": "with the CNMC forecast for the next 12 months, the best offer would be "
+        "{y} cheaper",
+        "revisiones": {
+            "mensual": "monthly",
+            "trimestral": "quarterly",
+            "cuatrimestral": "three times a year",
+            "semestral": "every six months",
+            "anual": "yearly",
+            "bienal": "every two years",
+            "trienal": "every three years",
+            "quinquenal": "every five years",
+        },
+        AVISO_BONO_TERMICO: "🛑 If you switch retailer before 1 January, you won't have the social bonus on "
+        "31 December and you'll lose the thermal social bonus paid next year: a cash aid (at least €50) "
+        "you get even if you have no gas. To keep it, switch on or after 1 January.",
+        AVISO_PREVISION_VOLATIL: "⚠️ The CNMC forecast for PVPC comes from today's futures market prices and "
+        "changes a lot from month to month: it is a scenario, not what you will pay.",
+        AVISO_REVISION_PRECIOS: "ℹ️ The best offer reviews its prices ({revision}); the CNMC works out its "
+        "amounts without those reviews.",
+        VEREDICTO_DEPENDE_PRECIOS: "⚖️ It depends on prices: {pasado}; {futuro}. Compare again before "
+        "deciding.",
+        "leer_avisos": "👇 Before deciding, read the notes at the end.",
+        "leer_avisos_termico": "👇 Before deciding, read the notes at the end: there is an important one "
+        "about the thermal social bonus.",
         "impuestos": "CNMC amounts use today's taxes and meter rental; payments, those of each bill.",
         "confirmar": "ℹ️ Prices are those published by the CNMC and may be out of date: confirm them with "
         "the retailer before signing up.",
@@ -345,28 +444,56 @@ def texto(r: Mapping[str, Any], nombre: str, idioma: str = "es", *, breve: bool 
                 linea += t["servicios"]
             if o["solo_nuevos_clientes"]:
                 linea += t["nuevos"]
+            if o.get("revision"):
+                linea += t["revision"].format(r=t["revisiones"].get(o["revision"], o["revision"]))
+            if o.get("ahorro_prevision") is not None:
+                y = o["ahorro_prevision"]
+                linea += (t["prev_ahorra"] if y >= 0 else t["prev_cuesta"]).format(x=_eur(abs(y), idioma))
             lineas.append(linea)
     else:
         lineas.append(t["ninguna"])
     if r.get("pvpc_cnmc") is not None and not breve:
         lineas.append(_linea_pvpc_cnmc(r, t, idioma))
     if r.get("veredicto") and r["ofertas"]:
-        lineas += ["", t[r["veredicto"]].format(x=_eur(abs(r["ofertas"][0]["ahorro_anual"]), idioma))]
+        lineas += ["", _texto_veredicto(r, t, idioma)]
+        if not breve:
+            lineas.append(_leer_avisos(r, t))
     if breve:
         return t["titulo"].format(nombre=nombre), "\n".join(lineas)
-    avisos = [a for a in r["avisos"] if a != AVISO_SIN_OFERTAS]
+    avisos = _avisos_ordenados(r)
     if avisos:
         lineas.append("")
     for aviso in avisos:
-        lineas.append(
-            t[aviso].format(
-                ausentes=", ".join(x.title() for x in r["grandes_ausentes"]),
-                dias=p["dias"],
-                sin_anual=_eur(r.get("pagado_sin_bono_anual") or 0, idioma),
-            )
-        )
+        lineas.append(_texto_aviso(aviso, r, t, idioma))
     lineas += ["", t["impuestos"], t["confirmar"]]
     return t["titulo"].format(nombre=nombre), "\n".join(lineas)
+
+
+def _avisos_ordenados(r: Mapping[str, Any]) -> list[str]:
+    """Avisos para mostrar, en su orden: sin el de «sin ofertas» y el del térmico solo de agosto a
+    diciembre (también en una comparativa guardada que se vuelve a enviar en enero)."""
+    hoy = dt_util.now().date()
+    return ordenar_avisos(
+        a
+        for a in r["avisos"]
+        if a != AVISO_SIN_OFERTAS and (a != AVISO_BONO_TERMICO or bono_termico_en_plazo(hoy))
+    )
+
+
+def _leer_avisos(r: Mapping[str, Any], t: Mapping[str, Any]) -> str:
+    """Bajo el veredicto, siempre (José, 9-nov): que lean los avisos; si está el del térmico, se nombra."""
+    return t["leer_avisos_termico"] if AVISO_BONO_TERMICO in _avisos_ordenados(r) else t["leer_avisos"]
+
+
+def _aviso_tg(aviso: str, x: str) -> str:
+    """Un aviso en MarkdownV2 con el formato de José; el emoji del principio, sin formato."""
+    emoji, _, resto = x.partition(" ")
+    if aviso in (AVISO_PIERDE_BONO, AVISO_BONO_TERMICO):
+        return f"{emoji} *{_e(resto)}*"
+    if aviso == AVISO_PREVISION_VOLATIL and ": " in resto:
+        antes, _, despues = resto.partition(": ")
+        return f"{emoji} __{_e(antes)}__{_e(': ')}*{_e(despues)}*"
+    return _e(x)
 
 
 # --- Telegram (MarkdownV2) --------------------------------------------------------------------
@@ -390,6 +517,9 @@ TEXTOS_TG = {
         "permanencia": "permanencia (penalización ~{x})",
         "servicios": "con servicios adicionales",
         "nuevos": "solo nuevos clientes",
+        "revision": "revisión {r}",
+        "prev_ahorra": "previsión CNMC: ahorrarías {x}",
+        "prev_cuesta": "previsión CNMC: pagarías {x} más",
         "todas": "Ver las {n} ofertas en el comparador de la CNMC",
         "todas_sin_n": "Ver todas las ofertas en el comparador de la CNMC",
     },
@@ -409,6 +539,9 @@ TEXTOS_TG = {
         "permanencia": "minimum stay (penalty ~{x})",
         "servicios": "with additional services",
         "nuevos": "new customers only",
+        "revision": "review {r}",
+        "prev_ahorra": "CNMC forecast: you would save {x}",
+        "prev_cuesta": "CNMC forecast: you would pay {x} more",
         "todas": "See the {n} offers in the CNMC comparator",
         "todas_sin_n": "See all offers in the CNMC comparator",
     },
@@ -502,6 +635,12 @@ def texto_telegram(r: Mapping[str, Any], nombre: str, idioma: str = "es", *, bre
                 extras.append(g["servicios"])
             if o["solo_nuevos_clientes"]:
                 extras.append(g["nuevos"])
+            if o.get("revision"):
+                extras.append(g["revision"].format(r=t["revisiones"].get(o["revision"], o["revision"])))
+            if o.get("ahorro_prevision") is not None:
+                y = o["ahorro_prevision"]
+                prev = g["prev_ahorra"] if y >= 0 else g["prev_cuesta"]
+                extras.append(prev.format(x=_eur(abs(y), idioma)))
             lineas.append(
                 "    "
                 + f"*{_e(_eur(o['importe_primer_anio'], idioma))}*"
@@ -515,24 +654,19 @@ def texto_telegram(r: Mapping[str, Any], nombre: str, idioma: str = "es", *, bre
     if r.get("pvpc_cnmc") is not None and not breve:
         lineas.append(f"_{_e(_linea_pvpc_cnmc(r, t, idioma).rstrip('.'))}_")
     if r.get("veredicto") and r["ofertas"]:
-        v = t[r["veredicto"]].format(x=_eur(abs(r["ofertas"][0]["ahorro_anual"]), idioma))
+        v = _texto_veredicto(r, t, idioma)
         cabeza, dos_puntos, resto = v.partition(":")
         lineas += ["", f"*{_e(cabeza + dos_puntos)}*" + _e(resto)]
+        if not breve:
+            lineas.append(f"*{_e(_leer_avisos(r, t))}*")
     if breve:
         return "\n".join(lineas)
-    # Avisos y, justo debajo, el de confirmar precios: cada línea en monoespaciado (José, 8-nov);
-    # la nota de impuestos al final, en cursiva. Dentro del bloque solo se escapan ` y \.
-    avisos = [a for a in r["avisos"] if a != AVISO_SIN_OFERTAS]
-    info = [
-        t[aviso].format(
-            ausentes=", ".join(x.title() for x in r["grandes_ausentes"]),
-            dias=p["dias"],
-            sin_anual=_eur(r.get("pagado_sin_bono_anual") or 0, idioma),
-        )
-        for aviso in avisos
-    ] + [t["confirmar"]]
+    # Avisos y, justo debajo, el de confirmar precios; la nota de impuestos al final, en cursiva.
+    # Formato de José (9-nov): perder el bono y el térmico en negrita; la previsión subrayada hasta
+    # los dos puntos y en negrita lo que sigue; el resto, texto normal.
     lineas.append("")
-    lineas += ["`" + x.replace("\\", "\\\\").replace("`", "\\`") + "`" for x in info]
+    lineas += [_aviso_tg(aviso, _texto_aviso(aviso, r, t, idioma)) for aviso in _avisos_ordenados(r)]
+    lineas.append(_e(t["confirmar"]))
     lineas.append(f"_{_e(t['impuestos'])}_")
     return "\n".join(lineas)
 
@@ -692,7 +826,17 @@ class Comparador:
             raise _Fallo(
                 ESTADO_CNMC_NO_RESPONDE, "El comparador de la CNMC no responde; inténtalo más tarde."
             ) from exc
-        return comparar(ventana, ofertas)
+        # % del bono prorrateado: el de la ventana y el de los próximos 12 meses (la previsión).
+        tarifas = self.facturacion.historico.tarifas
+        bono = suministro_de(self.facturacion.datos).bono
+        hoy = dt_util.now().date()
+        return comparar(
+            ventana,
+            ofertas,
+            pct_bono_ventana=pct_bono_medio(tarifas, bono, ventana.inicio, ventana.fin),
+            pct_bono_prevision=pct_bono_medio(tarifas, bono, hoy, hoy + timedelta(days=365)),
+            hoy=hoy,
+        )
 
     def programar(self) -> None:
         """Comparativa mensual (día 2 a las 10:17) si el usuario la activó."""

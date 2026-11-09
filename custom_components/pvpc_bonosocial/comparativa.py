@@ -37,6 +37,35 @@ AVISO_COBERTURA = "cobertura_incompleta"
 AVISO_EXTRAPOLADO = "datos_extrapolados"
 AVISO_ESTIMADAS = "facturas_estimadas"
 AVISO_SIN_OFERTAS = "sin_ofertas"
+AVISO_BONO_TERMICO = "bono_termico"  # con bono: cambiar antes del 31-dic pierde el térmico del año siguiente
+AVISO_PREVISION_VOLATIL = "prevision_volatil"  # la previsión de la CNMC sale de los futuros
+AVISO_REVISION_PRECIOS = "revision_precios"  # la mejor oferta revisa su precio cada cierto tiempo
+
+# Orden en que se muestran (José, 9-nov): bono, térmico, previsión, cobertura, días, revisión.
+ORDEN_AVISOS = (
+    AVISO_PIERDE_BONO,
+    AVISO_BONO_PERDIDO,
+    AVISO_BONO_NUEVO,
+    AVISO_BONO_TERMICO,
+    AVISO_PREVISION_VOLATIL,
+    AVISO_COBERTURA,
+    AVISO_EXTRAPOLADO,
+    AVISO_ESTIMADAS,
+    AVISO_REVISION_PRECIOS,
+    AVISO_SIN_OFERTAS,
+)
+# El del térmico solo de agosto a diciembre: es cuando cambiar de comercializadora lo hace perder.
+MES_DESDE_BONO_TERMICO = 8
+
+
+def bono_termico_en_plazo(hoy: date | None) -> bool:
+    """Si toca avisar del bono térmico: de agosto a diciembre (sin fecha, siempre)."""
+    return hoy is None or hoy.month >= MES_DESDE_BONO_TERMICO
+
+
+def ordenar_avisos(avisos: Sequence[str]) -> list[str]:
+    """Los avisos en el orden de ORDEN_AVISOS; los desconocidos, al final en su orden."""
+    return sorted(avisos, key=lambda a: ORDEN_AVISOS.index(a) if a in ORDEN_AVISOS else len(ORDEN_AVISOS))
 
 # Conclusión de la comparativa.
 VEREDICTO_QUEDARSE_CON_BONO = "quedarse_con_bono"  # con bono, ninguna oferta libre mejora lo pagado
@@ -45,6 +74,8 @@ VEREDICTO_LIBRE_PIERDE_BONO = (
 )
 VEREDICTO_LIBRE = "mercado_libre"  # sin bono: hay una oferta más barata que lo pagado
 VEREDICTO_QUEDARSE = "quedarse"  # sin bono: ninguna oferta mejora lo pagado
+# Con los precios del último año sale una cosa y con la previsión de la CNMC la contraria.
+VEREDICTO_DEPENDE_PRECIOS = "depende_precios"
 
 
 @dataclass(frozen=True)
@@ -125,6 +156,8 @@ class Alternativa:
     oferta: OfertaCnmc
     ahorro_primer_anio: Decimal  # positivo: la oferta sale más barata que lo pagado
     ahorro_segundo_anio: Decimal
+    # Frente a la previsión de la CNMC para los próximos 12 meses (con bono si hoy se tiene).
+    ahorro_prevision: Decimal | None = None
 
 
 @dataclass(frozen=True)
@@ -139,6 +172,8 @@ class Comparativa:
     # La CNMC da dos PVPC: el «Histórico» (último año, tipo PVPC) y su previsión para el año que
     # viene (tipo COR), que es la que encabeza su web.
     pvpc_cnmc_prevision: Decimal | None = None
+    # Esa previsión con el bono de hoy, al % de bono que regirá en esos 12 meses.
+    pvpc_cnmc_prevision_bono: Decimal | None = None
     veredicto: str | None = None
 
     @property
@@ -195,15 +230,53 @@ def consulta_anual(ventana: Ventana) -> dict[str, int]:
     return {"P1": p1, "P2": p2, "P3": max(0, total - p1 - p2)}
 
 
-def comparar(ventana: Ventana, ofertas: Sequence[OfertaCnmc]) -> Comparativa:
+def prevision_con_bono(
+    ventana: Ventana, prevision: Decimal, pct_ventana: Decimal | None, pct_prevision: Decimal | None
+) -> Decimal | None:
+    """La previsión del PVPC (sin bono) con el bono de hoy.
+
+    El bono rebaja un % de la parte con derecho (potencia y kWh hasta el tope): en la ventana, lo
+    pagado frente a lo que se habría pagado sin bono da el descuento efectivo, que ya lleva el tope.
+    Ese descuento se escala al % que regirá en los próximos 12 meses (prorrateado por días: el
+    42,5 % de 2026 baja al 35 % en 2027 si no se prorroga). Sin los % del bono, el de la ventana.
+    """
+    if not ventana.con_bono or not ventana.pagada_con_bono or not ventana.pagado_sin_bono_anual:
+        return None
+    efectivo = 1 - ventana.pagado_anual / ventana.pagado_sin_bono_anual
+    if pct_ventana and pct_prevision:
+        efectivo = efectivo * pct_prevision / pct_ventana
+    return _euros(prevision * (1 - efectivo))
+
+
+def comparar(
+    ventana: Ventana,
+    ofertas: Sequence[OfertaCnmc],
+    *,
+    pct_bono_ventana: Decimal | None = None,
+    pct_bono_prevision: Decimal | None = None,
+    hoy: date | None = None,
+) -> Comparativa:
     pagado = ventana.referencia_anual
     libres = [o for o in ofertas if not o.es_pvpc]
-    pvpc = next((o for o in ofertas if o.es_pvpc and o.tipo == "PVPC"), None) or next(
-        (o for o in ofertas if o.es_pvpc), None
+    # La CNMC da el PVPC del último año (tipo «PVPC», «PVPC Histórico») y su previsión para los
+    # próximos 12 meses (tipo «COR»). Cada uno por su tipo: si falta uno, no se toma el otro por él.
+    pvpc = next((o for o in ofertas if o.es_pvpc and o.tipo == "PVPC"), None)
+    prevision = next((o for o in ofertas if o.es_pvpc and o.tipo != "PVPC"), None)
+    prevision_bono = (
+        prevision_con_bono(ventana, prevision.importe_primer_anio, pct_bono_ventana, pct_bono_prevision)
+        if prevision
+        else None
     )
-    prevision = next((o for o in ofertas if o.es_pvpc and o is not pvpc and o.tipo != "PVPC"), None)
+    # Lo que costaría seguir en el PVPC los próximos 12 meses según la CNMC: con el bono si hoy se
+    # tiene (y se puede calcular); sin él, la previsión tal cual.
+    futuro = prevision_bono if ventana.con_bono else (prevision.importe_primer_anio if prevision else None)
     alternativas = tuple(
-        Alternativa(o, _euros(pagado - o.importe_primer_anio), _euros(pagado - o.importe_segundo_anio))
+        Alternativa(
+            o,
+            _euros(pagado - o.importe_primer_anio),
+            _euros(pagado - o.importe_segundo_anio),
+            _euros(futuro - o.importe_primer_anio) if futuro is not None else None,
+        )
         for o in sorted(libres, key=lambda o: (o.importe_primer_anio, o.id))
     )
     ausentes = tuple(grandes_ausentes(list(ofertas)))
@@ -224,19 +297,30 @@ def comparar(ventana: Ventana, ofertas: Sequence[OfertaCnmc]) -> Comparativa:
         avisos.append(AVISO_SIN_OFERTAS)
     veredicto = None
     if alternativas:
-        mejora = alternativas[0].ahorro_primer_anio > 0
+        mejor = alternativas[0]
+        mejora = mejor.ahorro_primer_anio > 0
         if ventana.con_bono:
             veredicto = VEREDICTO_LIBRE_PIERDE_BONO if mejora else VEREDICTO_QUEDARSE_CON_BONO
         else:
             veredicto = VEREDICTO_LIBRE if mejora else VEREDICTO_QUEDARSE
+        # Si la previsión de la CNMC dice lo contrario que el último año, no hay veredicto firme.
+        if mejor.ahorro_prevision is not None and (mejor.ahorro_prevision > 0) != mejora:
+            veredicto = VEREDICTO_DEPENDE_PRECIOS
+        if mejor.oferta.revision:
+            avisos.append(AVISO_REVISION_PRECIOS)
+    if futuro is not None:
+        avisos.append(AVISO_PREVISION_VOLATIL)
+    if ventana.con_bono and bono_termico_en_plazo(hoy):
+        avisos.append(AVISO_BONO_TERMICO)
     return Comparativa(
         ventana=ventana,
         kwh_anuales=consulta_anual(ventana),
         alternativas=alternativas,
         pvpc_cnmc=pvpc.importe_primer_anio if pvpc else None,
         pvpc_cnmc_prevision=prevision.importe_primer_anio if prevision else None,
+        pvpc_cnmc_prevision_bono=prevision_bono,
         total_ofertas=len(libres),
         grandes_ausentes=ausentes,
-        avisos=tuple(avisos),
+        avisos=tuple(ordenar_avisos(avisos)),
         veredicto=veredicto,
     )

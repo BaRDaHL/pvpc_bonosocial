@@ -141,11 +141,26 @@ class OfertaCnmc:
     verde: bool
     validez: str | None
     solo_nuevos_clientes: bool
+    # Cada cuánto revisa su precio (`tipoRevision` de la CNMC): «anual», «semestral»…; None si no lo dice.
+    # La CNMC calcula sus importes a 12 meses sin esas revisiones.
+    revision: str | None = None
 
     @property
     def es_pvpc(self) -> bool:
         return self.tipo == "PVPC" or "referencia" in self.comercializadora.lower()
 
+
+# `tipoRevision` de la API, como lo traduce la web de la CNMC (tipoRevisionAcortado, 8-nov-2026).
+REVISIONES = {
+    1: "mensual",
+    2: "trimestral",
+    3: "cuatrimestral",
+    4: "semestral",
+    5: "anual",
+    6: "bienal",
+    7: "trienal",
+    8: "quinquenal",
+}
 
 URL_FICHA = "https://comparador.cnmc.gob.es/comparador/detalle/"
 URL_LISTADO = "https://comparador.cnmc.gob.es/comparador/listado/"
@@ -274,6 +289,7 @@ def parsear(datos: Mapping[str, Any]) -> list[OfertaCnmc]:
                     verde=bool(o.get("verde")),
                     validez=validez.strip() if isinstance(validez, str) else None,
                     solo_nuevos_clientes="nuevos clientes" in (validez or "").lower(),
+                    revision=REVISIONES.get(o.get("tipoRevision")),
                 )
             )
         except (KeyError, TypeError, ValueError, ArithmeticError, AttributeError) as exc:

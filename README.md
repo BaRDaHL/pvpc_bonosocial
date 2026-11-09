@@ -47,7 +47,7 @@ Conoce **tu factura de la luz antes de que llegue**: precios horarios del PVPC *
 - 📊 **Coste real en el panel de Energía**, con impuestos y fijos, corregido al llegar la factura.
 - 📄 **Sube el PDF de la factura**: se lee en local, recalibra el medidor y el saldo del bono.
 - 🔍 **Segunda opinión de la CNMC** de cada factura (opcional), con aviso en Reparaciones si no cuadra.
-- 💶 **Compara tarifas** con el comparador oficial de la CNMC usando lo que *de verdad* pagaste y consumiste. Desde la tarjeta, con las 4 mejores ofertas, enlace a la ficha de cada una y al listado completo de la CNMC con tus datos, y la previsión del PVPC para el año que viene.
+- 💶 **Compara tarifas** con el comparador oficial de la CNMC usando lo que *de verdad* pagaste y consumiste. Desde la tarjeta, con las 3 mejores ofertas, enlace a la ficha de cada una y al listado completo de la CNMC con tus datos, y la previsión del PVPC para el año que viene.
 - 📱 **Resumen diario de precios** por Telegram (necesita la integración [Telegram bot](https://www.home-assistant.io/integrations/telegram_bot/) configurada en Home Assistant) o cualquier notificación.
 - 🃏 **Tarjeta propia**: precios de hoy y mañana, la factura, la evolución de tus facturas y la comparativa de tarifas, con un editor visual por secciones.
 - 🔌 **Datadis**: lecturas oficiales del contador (opcional).
@@ -93,7 +93,11 @@ Solo puedo probar con mis datos (una comercializadora, un Shelly EM de 1.ª gene
 
 Es gratis y lo seguirá siendo. Si te ahorra dinero o tiempo, puedes [invitarme a un café ☕](https://buymeacoffee.com/bardahl).
 
-> Herramienta no oficial. La factura que vale es la de tu comercializadora; esta integración la estima y te avisa antes de que llegue.
+### Aviso
+
+Herramienta no oficial. La factura que vale es la de tu comercializadora; esta integración la estima y te avisa antes de que llegue.
+
+La comparativa de tarifas, la factura estimada y el resto de cálculos son el resultado de un algoritmo hecho con datos públicos (CNMC, ESIOS, BOE) y con tus facturas. Puede tener errores o no ajustarse del todo a tu caso: hay muchas situaciones distintas (tipo de bono, cambios de contrato, ofertas con condiciones, precios que cambian) y no todas se pueden prever. Es una ayuda para informarte, no un consejo: la decisión de cambiar de compañía o de tarifa es tuya. Antes de decidir, contrástalo con fuentes oficiales (el comparador de la CNMC, tu comercializadora y las condiciones de la oferta). El autor no se hace responsable de las decisiones que se tomen a partir de estos datos.
 
 ---
 
@@ -107,7 +111,7 @@ Know **your electricity bill before it arrives**: PVPC hourly prices *plus* the 
 - 📊 **Real cost in the Energy dashboard**, with taxes and fixed charges, corrected when the bill arrives.
 - 📄 **Upload the PDF bill**: read locally, recalibrates the meter and the bonus balance.
 - 🔍 **CNMC second opinion** of every bill (optional), with a Repairs notice if it does not match.
-- 💶 **Compare tariffs** with the official CNMC comparator using what you *actually* paid and consumed. From the card, with the top 4 offers, links to each offer sheet and to the full CNMC list with your data, and the PVPC forecast for next year.
+- 💶 **Compare tariffs** with the official CNMC comparator using what you *actually* paid and consumed. From the card, with the top 3 offers, links to each offer sheet and to the full CNMC list with your data, and the PVPC forecast for next year.
 - 📱 **Daily price summary** on Telegram (needs the [Telegram bot](https://www.home-assistant.io/integrations/telegram_bot/) integration set up in Home Assistant) or any notification.
 - 🃏 **Built-in card**: today's and tomorrow's prices, the bill, your bills over time and the tariff comparison, with a visual editor in sections.
 - 🔌 **Datadis** official readings (optional).
@@ -153,7 +157,11 @@ I can only test with my own data (one supplier, a 1st-gen Shelly EM, a Datadis a
 
 It is free and always will be. If it saves you money or time, you can [buy me a coffee ☕](https://buymeacoffee.com/bardahl).
 
-> Unofficial tool. The bill that counts is your supplier's; this integration estimates it and tells you before it arrives.
+### Disclaimer
+
+Unofficial tool. The bill that counts is your supplier's; this integration estimates it and tells you before it arrives.
+
+The tariff comparison, the estimated bill and every other figure come from an algorithm built on public data (CNMC, ESIOS, BOE) and your bills. They may contain errors or not fully fit your case: there are many different situations (type of bonus, contract changes, offers with conditions, changing prices) and not all of them can be foreseen. It is a tool to keep you informed, not advice: the decision to switch company or tariff is yours. Before deciding, check official sources (the CNMC comparator, your retailer and the offer's terms). The author accepts no liability for decisions made on the basis of this data.
 
 ---
 

@@ -23,6 +23,21 @@ const COLOR_PERIODO = { P1: 3, P2: 2, P3: 0 };
 const COLOR_HOY = "#4269d0";
 const COLOR_MANANA = "#f4bd4a";
 /** Color de la configuración: «#4269d0», cualquier color CSS o [r, g, b] (selector de color del editor). */
+// Orden de los avisos de la comparativa (igual que ORDEN_AVISOS de comparativa.py).
+const ORDEN_AVISOS = [
+  "pierde_bono",
+  "bono_perdido",
+  "bono_nuevo",
+  "bono_termico",
+  "prevision_volatil",
+  "cobertura_incompleta",
+  "datos_extrapolados",
+  "facturas_estimadas",
+  "revision_precios",
+  "sin_ofertas",
+];
+const ordenAviso = (a) => (ORDEN_AVISOS.includes(a) ? ORDEN_AVISOS.indexOf(a) : ORDEN_AVISOS.length);
+
 function colorCss(valor, defecto) {
   if (Array.isArray(valor) && valor.length === 3 && valor.every((c) => Number.isFinite(Number(c)))) {
     return `rgb(${valor.map(Number).join(", ")})`;
@@ -48,6 +63,9 @@ const TEXTOS = {
     anterior: "Factura periodo anterior",
     en_curso: "Factura periodo en curso",
     estimada_cierre: "Factura estimada",
+    anterior_corto: "Anterior",
+    en_curso_corto: "En curso",
+    estimada_corto: "Estimada",
     facturas: "Facturas",
     sin_facturas: "Aún no hay facturas cerradas",
     calculada: "calculada",
@@ -69,7 +87,16 @@ const TEXTOS = {
       facturas: (n) => (n === 1 ? "1 factura" : `${n} facturas`),
       dias: (n) => `${n} días`,
       ofertas: (n) => `${n} ofertas de la CNMC`,
-      tu_tarifa: "Tu tarifa actual",
+      tu_tarifa: "Lo que pagaste (último año)",
+      prevision: "PVPC previsto (CNMC, próximos 12 meses)",
+      prevision_bono: "con tu bono, si se cumple la previsión",
+      prevision_sin_bono: "sin bono, si se cumple la previsión",
+      ultimo_anio: "último año",
+      con_prevision: "previsión",
+      revision: (r) => `revisión ${r}`,
+      revisiones: { mensual: "mensual", trimestral: "trimestral", cuatrimestral: "tres veces al año", semestral: "semestral", anual: "anual", bienal: "cada dos años", trienal: "cada tres años", quinquenal: "cada cinco años" },
+      depende: (pasadoOferta, x, futuroOferta, y) =>
+        `${pasadoOferta ? `Con los precios del último año, la mejor oferta te habría salido ${x} más barata` : `Con los precios del último año, el PVPC te salió ${x} más barato que la mejor oferta`}; ${futuroOferta ? `con la previsión de la CNMC para los próximos 12 meses, la mejor oferta saldría ${y} más barata` : `con la previsión de la CNMC para los próximos 12 meses, el PVPC saldría ${y} más barato`}. Vuelve a comparar antes de decidir.`,
       pvpc_bono: "PVPC con bono social",
       pvpc: "PVPC sin bono",
       al_anio: "/año",
@@ -91,6 +118,7 @@ const TEXTOS = {
         libre_aunque_pierde_bono: ["Hay una oferta más barata", "La mejor oferta libre sale {x} más barata al año que lo que pagas con bono, aunque lo perderías. Comprueba las condiciones antes de cambiar."],
         mercado_libre: ["Puedes ahorrar", "Con la mejor oferta te ahorrarías {x} al año."],
         quedarse: ["Sigue con tu tarifa", "Ninguna oferta mejora lo que pagas: la mejor te costaría {x} más al año."],
+        depende_precios: ["Depende de los precios", ""],
       },
       avisos: {
         pierde_bono: "Con otra comercializadora pierdes el bono social.",
@@ -100,8 +128,13 @@ const TEXTOS = {
         datos_extrapolados: "Solo hay {dias} días de facturas: lo pagado y el consumo se han llevado a un año.",
         facturas_estimadas: "Hay facturas estimadas: concilia las reales para afinar.",
         sin_ofertas: "La CNMC no ha devuelto ofertas para tu código postal.",
+        revision_precios: "La mejor oferta revisa sus precios ({revision}); la CNMC calcula sus importes sin esas revisiones.",
+        prevision_volatil: "La previsión de la CNMC para el PVPC sale de los precios del mercado de futuros de hoy y cambia mucho de un mes a otro: es un escenario, no lo que vas a pagar.",
+        bono_termico: "Si cambias de comercializadora antes del 1 de enero, no tendrás el bono social a 31 de diciembre y perderás el bono social térmico que se cobra el próximo año: una ayuda en dinero (mínimo 50 €) que recibes aunque no tengas gas. Para no perderlo, cámbiate a partir del 1 de enero.",
       },
       cerrar: "Cerrar la comparativa",
+      leer_avisos: "👇 Antes de decidir, lee los avisos del final.",
+      leer_avisos_termico: "👇 Antes de decidir, lee los avisos del final: hay uno importante sobre el bono social térmico.",
       confirmar: "Los precios son los que publica la CNMC y pueden estar desfasados: confírmalos con la comercializadora antes de contratar.",
       ficha: "Ficha de la oferta en la CNMC (con la web de la comercializadora)",
       cnmc: "Ver todas las ofertas en el comparador de la CNMC",
@@ -122,6 +155,9 @@ const TEXTOS = {
     anterior: "Previous bill",
     en_curso: "Current bill",
     estimada_cierre: "Estimated bill",
+    anterior_corto: "Previous",
+    en_curso_corto: "Current",
+    estimada_corto: "Estimated",
     facturas: "Bills",
     sin_facturas: "No closed bills yet",
     calculada: "calculated",
@@ -143,7 +179,16 @@ const TEXTOS = {
       facturas: (n) => (n === 1 ? "1 bill" : `${n} bills`),
       dias: (n) => `${n} days`,
       ofertas: (n) => `${n} CNMC offers`,
-      tu_tarifa: "Your current tariff",
+      tu_tarifa: "What you paid (last year)",
+      prevision: "Forecast PVPC (CNMC, next 12 months)",
+      prevision_bono: "with your bonus, if the forecast holds",
+      prevision_sin_bono: "without bonus, if the forecast holds",
+      ultimo_anio: "last year",
+      con_prevision: "forecast",
+      revision: (r) => `review ${r}`,
+      revisiones: { mensual: "monthly", trimestral: "quarterly", cuatrimestral: "three times a year", semestral: "every six months", anual: "yearly", bienal: "every two years", trienal: "every three years", quinquenal: "every five years" },
+      depende: (pasadoOferta, x, futuroOferta, y) =>
+        `${pasadoOferta ? `At last year's prices, the best offer would have been ${x} cheaper` : `At last year's prices, PVPC was ${x} cheaper than the best offer`}; ${futuroOferta ? `with the CNMC forecast for the next 12 months, the best offer would be ${y} cheaper` : `with the CNMC forecast for the next 12 months, PVPC would be ${y} cheaper`}. Compare again before deciding.`,
       pvpc_bono: "PVPC with social bonus",
       pvpc: "PVPC without bonus",
       al_anio: "/year",
@@ -165,6 +210,7 @@ const TEXTOS = {
         libre_aunque_pierde_bono: ["There is a cheaper offer", "The best free-market offer is {x} per year cheaper than what you pay with the bonus, although you would lose it. Check the conditions before switching."],
         mercado_libre: ["You can save", "With the best offer you would save {x} per year."],
         quedarse: ["Keep your tariff", "No offer beats what you pay: the best would cost you {x} more per year."],
+        depende_precios: ["It depends on prices", ""],
       },
       avisos: {
         pierde_bono: "Switching retailer loses the social bonus.",
@@ -174,8 +220,13 @@ const TEXTOS = {
         datos_extrapolados: "Only {dias} days of bills: payments and consumption extrapolated to a year.",
         facturas_estimadas: "Some bills are estimates: reconcile the real ones to refine.",
         sin_ofertas: "The CNMC returned no offers for your postal code.",
+        revision_precios: "The best offer reviews its prices ({revision}); the CNMC works out its amounts without those reviews.",
+        prevision_volatil: "The CNMC forecast for PVPC comes from today's futures market prices and changes a lot from month to month: it is a scenario, not what you will pay.",
+        bono_termico: "If you switch retailer before 1 January, you won't have the social bonus on 31 December and you'll lose the thermal social bonus paid next year: a cash aid (at least €50) you get even if you have no gas. To keep it, switch on or after 1 January.",
       },
       cerrar: "Close the comparison",
+      leer_avisos: "👇 Before deciding, read the notes at the end.",
+      leer_avisos_termico: "👇 Before deciding, read the notes at the end: there is an important one about the thermal social bonus.",
       confirmar: "Prices are those published by the CNMC and may be out of date: confirm them with the retailer before signing up.",
       ficha: "Offer details at the CNMC (with the retailer website)",
       cnmc: "See all offers in the CNMC comparator",
@@ -197,6 +248,9 @@ const TEXTOS = {
     anterior: "Factura del període anterior",
     en_curso: "Factura del període en curs",
     estimada_cierre: "Factura estimada",
+    anterior_corto: "Anterior",
+    en_curso_corto: "En curs",
+    estimada_corto: "Estimada",
     facturas: "Factures",
     sin_facturas: "Encara no hi ha factures tancades",
     calculada: "calculada",
@@ -216,6 +270,9 @@ const TEXTOS = {
     anterior: "Factura do período anterior",
     en_curso: "Factura do período en curso",
     estimada_cierre: "Factura estimada",
+    anterior_corto: "Anterior",
+    en_curso_corto: "En curso",
+    estimada_corto: "Estimada",
     facturas: "Facturas",
     sin_facturas: "Aínda non hai facturas pechadas",
     calculada: "calculada",
@@ -235,6 +292,9 @@ const TEXTOS = {
     anterior: "Aurreko aldiko faktura",
     en_curso: "Aldi honetako faktura",
     estimada_cierre: "Zenbatetsitako faktura",
+    anterior_corto: "Aurrekoa",
+    en_curso_corto: "Oraingoa",
+    estimada_corto: "Zenbatetsia",
     facturas: "Fakturak",
     sin_facturas: "Oraindik ez dago itxitako fakturarik",
     calculada: "kalkulatua",
@@ -649,9 +709,6 @@ class PvpcBonoSocialCard extends LitElement {
           ${factura && posicion === "below_chart_right"
             ? html`<div class="factura abajo derecha">${factura}</div>`
             : nothing}
-          ${factura && posicion === "header"
-            ? html`<div class="factura abajo estrecha">${factura}</div>`
-            : nothing}
           ${this._config.grafica_facturas ? this._graficaFacturas() : nothing}
           ${this.enVentana && buscarEntidad(this.hass, "button.pvpc_bs_comparar_tarifas")
             ? html`<div class="comparar">
@@ -789,8 +846,10 @@ class PvpcBonoSocialCard extends LitElement {
       return html`<aside class="anexo">${cabecera}<div class="anexo-aviso">${c.avisos.sin_ofertas}</div></aside>`;
     }
     const avisos = Array.isArray(r.avisos) ? r.avisos : [];
+    const termicoVisible = avisos.includes("bono_termico") && new Date().getMonth() >= 7;
     // Con bono se compara con lo pagado; si se ha perdido, con lo que se pagaría sin él.
-    const sinBono = avisos.includes("bono_perdido") || !["quedarse_con_bono", "libre_aunque_pierde_bono"].includes(r.veredicto);
+    // («pierde_bono» solo sale si hoy se tiene bono; vale también con el veredicto «depende»).
+    const sinBono = avisos.includes("bono_perdido") || !avisos.includes("pierde_bono");
     const base = avisos.includes("bono_perdido") ? r.pagado_sin_bono_anual : r.pagado_anual;
     const eur = (x) => `${this._num(x, 2)} €`;
     const fecha = typeof r.fecha === "string" ? `${r.fecha.slice(8, 10)}/${r.fecha.slice(5, 7)} ${r.fecha.slice(11, 16)}` : "";
@@ -803,28 +862,45 @@ class PvpcBonoSocialCard extends LitElement {
     const mejor = ofertas[0];
     const veredicto = c.veredictos[r.veredicto];
     const bueno = ["quedarse_con_bono", "quedarse"].includes(r.veredicto);
+    const depende = r.veredicto === "depende_precios";
+    const textoVeredicto = depende
+      ? c.depende(mejor.ahorro_anual > 0, eur(Math.abs(mejor.ahorro_anual)), (mejor.ahorro_prevision ?? 0) > 0, eur(Math.abs(mejor.ahorro_prevision ?? 0)))
+      : veredicto?.[1].replace("{x}", eur(Math.abs(mejor.ahorro_anual)));
+    // Lo que costaría seguir en el PVPC según la previsión de la CNMC (con tu bono si lo tienes).
+    const futuro = sinBono ? r.pvpc_cnmc_prevision : r.pvpc_cnmc_prevision_bono;
+    const revision = (o) => (o.revision ? c.revision(c.revisiones[o.revision] || o.revision) : null);
     const etiquetas = (o) =>
-      [o.oferta, o.permanencia ? c.permanencia : c.sin_permanencia, o.solo_nuevos_clientes && c.nuevos, o.verde && c.verde]
+      [o.oferta, o.permanencia ? c.permanencia : c.sin_permanencia, revision(o), o.solo_nuevos_clientes && c.nuevos, o.verde && c.verde]
         .filter(Boolean)
         .join(" · ");
     const textoAviso = (a) =>
       (c.avisos[a] || "")
         .replace("{ausentes}", (r.grandes_ausentes || []).join(", "))
-        .replace("{dias}", p.dias ?? "");
+        .replace("{dias}", p.dias ?? "")
+        .replace("{revision}", mejor.revision ? c.revisiones[mejor.revision] || mejor.revision : "");
+    const diferencia = (x, etiqueta) =>
+      html`<div class="d ${x >= 0 ? "menos" : "mas"}">${x >= 0 ? "−" : "+"}${eur(Math.abs(x))}${futuro != null ? html` <span class="base">${etiqueta}</span>` : nothing}</div>`;
     return html`<aside class="anexo">
       ${cabecera}
       <div class="anexo-resumen">${resumen}</div>
       ${veredicto && mejor
-        ? html`<div class="anexo-veredicto ${bueno ? "bueno" : "ahorro"}">
-            <b>${bueno ? "✅" : "💡"} ${veredicto[0]}</b>
-            <div>${veredicto[1].replace("{x}", eur(Math.abs(mejor.ahorro_anual)))}</div>
-          </div>`
+        ? html`<div class="anexo-veredicto ${bueno ? "bueno" : depende ? "depende" : "ahorro"}">
+            <b>${bueno ? "✅" : depende ? "⚖️" : "💡"} ${veredicto[0]}</b>
+            <div>${textoVeredicto}</div>
+          </div>
+          <div class="anexo-leer"><b>${termicoVisible ? c.leer_avisos_termico : c.leer_avisos}</b></div>`
         : nothing}
       <div class="anexo-fila tuya">
         <div><div class="n">${c.tu_tarifa}</div><div class="o">${sinBono ? c.pvpc : c.pvpc_bono}</div></div>
         <div class="i">${eur(base)}${c.al_anio}</div>
       </div>
-      ${ofertas.slice(0, 4).map(
+      ${futuro != null
+        ? html`<div class="anexo-fila tuya prevista">
+            <div><div class="n">${c.prevision}</div><div class="o">${sinBono ? c.prevision_sin_bono : c.prevision_bono}</div></div>
+            <div class="i">≈${eur(futuro)}${c.al_anio}</div>
+          </div>`
+        : nothing}
+      ${ofertas.slice(0, 3).map(
         (o) => html`<div class="anexo-fila">
           <div>
             ${o.enlace
@@ -836,9 +912,8 @@ class PvpcBonoSocialCard extends LitElement {
           </div>
           <div>
             <div class="i">${eur(o.importe_primer_anio)}</div>
-            <div class="d ${o.ahorro_anual >= 0 ? "menos" : "mas"}">
-              ${o.ahorro_anual >= 0 ? "−" : "+"}${eur(Math.abs(o.ahorro_anual))}
-            </div>
+            ${diferencia(o.ahorro_anual, c.ultimo_anio)}
+            ${o.ahorro_prevision != null && futuro != null ? diferencia(o.ahorro_prevision, c.con_prevision) : nothing}
           </div>
         </div>`,
       )}
@@ -863,7 +938,23 @@ class PvpcBonoSocialCard extends LitElement {
             )}
           </div>`
         : nothing}
-      ${avisos.filter((a) => c.avisos[a]).map((a) => html`<div class="anexo-nota">⚠️ ${textoAviso(a)}</div>`)}
+      ${/* Orden de José (9-nov); el del térmico destacado y solo de agosto a diciembre. */ ""}
+      ${[...avisos]
+        .filter((a) => c.avisos[a] && (a !== "bono_termico" || termicoVisible))
+        .sort((x, y) => ordenAviso(x) - ordenAviso(y))
+        .map((a) => {
+          // Formato de José (9-nov): perder el bono y el térmico en negrita; la previsión subrayada
+          // hasta los dos puntos y en negrita lo que sigue.
+          const x = textoAviso(a);
+          const i = x.indexOf(": ");
+          if (a === "bono_termico") return html`<div class="anexo-nota destacado"><b>🛑 ${x}</b></div>`;
+          if (a === "pierde_bono") return html`<div class="anexo-nota"><b>⚠️ ${x}</b></div>`;
+          if (a === "prevision_volatil" && i > 0)
+            return html`<div class="anexo-nota">⚠️ <u>${x.slice(0, i)}</u>: <b>${x.slice(i + 2)}</b></div>`;
+          // Los informativos con ℹ️ (José, 9-nov).
+          const info = ["cobertura_incompleta", "datos_extrapolados", "revision_precios"].includes(a);
+          return html`<div class="anexo-nota">${info ? "ℹ️" : "⚠️"} ${x}</div>`;
+        })}
       <div class="anexo-nota">ℹ️ ${c.confirmar}</div>
       ${r.destino ? html`<div class="anexo-pie">${this._botonEnviar(id, r.destino)}</div>` : nothing}
     </aside>`;
@@ -1034,14 +1125,16 @@ class PvpcBonoSocialCard extends LitElement {
     // dd/mm de una fecha ISO; el periodo, «(dd/mm - dd/mm)»
     const dm = (iso) => (typeof iso === "string" ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "");
     const periodo = (desde, hasta) => (desde && hasta ? ` (${dm(desde)} - ${dm(hasta)})` : "");
-    const linea = (texto, fechas, importe, extra = nothing) =>
-      html`<div>${texto}<span class="sin-corte">${fechas}</span>: <b class="sin-corte">${this._num(importe, 2)} €</b>${extra}</div>`;
+    // En la cabecera de una tarjeta estrecha (móvil) solo cabe el texto corto, sin fechas. Va en
+    // ::before (atributo) para que el texto del DOM sea solo el largo.
+    const linea = (texto, fechas, importe, corto) =>
+      html`<div><span class="txt-largo">${texto}<span class="sin-corte">${fechas}</span></span><span class="txt-corto" data-t=${corto}></span>: <b class="sin-corte">${this._num(importe, 2)} €</b></div>`;
 
     // 1. Periodo anterior
     const anterior = idAnterior && this.hass.states[idAnterior];
     if (this._config.factura_anterior && anterior && Number.isFinite(Number(anterior.state))) {
       const a = anterior.attributes || {};
-      lineas.push(linea(t.anterior, periodo(a.inicio, a.fin), Number(anterior.state)));
+      lineas.push(linea(t.anterior, periodo(a.inicio, a.fin), Number(anterior.state), t.anterior_corto));
     }
     // 2. Periodo en curso (lo gastado hasta hoy) y 3. factura estimada al cierre (opcional)
     const actual = idActual && this.hass.states[idActual];
@@ -1050,10 +1143,10 @@ class PvpcBonoSocialCard extends LitElement {
       const a = actual.attributes || {};
       const hoyIso = fechaIso(new Date(), zonaDeHA(this.hass));
       if (this._config.factura_actual && typeof a.acumulado === "number") {
-        lineas.push(linea(t.en_curso, periodo(a.inicio, hoyIso), a.acumulado));
+        lineas.push(linea(t.en_curso, periodo(a.inicio, hoyIso), a.acumulado, t.en_curso_corto));
       }
       if (this._config.prevision !== false) {
-        lineas.push(linea(t.estimada_cierre, periodo(a.inicio, a.fin_previsto), Number(actual.state)));
+        lineas.push(linea(t.estimada_cierre, periodo(a.inicio, a.fin_previsto), Number(actual.state), t.estimada_corto));
       }
     }
     return lineas.length ? lineas : null;
@@ -1787,7 +1880,7 @@ class PvpcBonoSocialCard extends LitElement {
       text-align: right;
       margin-top: 6px;
     }
-    /* Bajo la gráfica (izquierda o derecha) y en pantallas estrechas: mismo tamaño que en la cabecera. */
+    /* Bajo la gráfica (izquierda o derecha): mismo tamaño que en la cabecera. */
     .factura.abajo {
       font-size: 0.85em;
     }
@@ -1800,16 +1893,19 @@ class PvpcBonoSocialCard extends LitElement {
       align-items: flex-end;
       text-align: right;
     }
-    .factura.estrecha {
+    .factura .txt-corto {
       display: none;
     }
-    /* En pantallas estrechas la factura de la cabecera pasa abajo. */
+    .factura .txt-corto::before {
+      content: attr(data-t);
+    }
+    /* En pantallas estrechas la factura de la cabecera se queda arriba con el texto corto. */
     @container (max-width: 380px) {
-      .factura.arriba {
+      .factura.arriba .txt-largo {
         display: none;
       }
-      .factura.estrecha {
-        display: flex;
+      .factura.arriba .txt-corto {
+        display: inline;
       }
     }
     button.abrir {
@@ -1933,6 +2029,11 @@ class PvpcBonoSocialCard extends LitElement {
       color: var(--secondary-text-color);
       margin: 2px 0 12px;
     }
+    .anexo-leer {
+      font-size: 0.85em;
+      margin: -2px 0 10px;
+      line-height: 1.35;
+    }
     .anexo-veredicto {
       border-radius: 10px;
       padding: 10px 12px;
@@ -1947,6 +2048,17 @@ class PvpcBonoSocialCard extends LitElement {
     .anexo-veredicto.bueno {
       background: rgba(67, 160, 71, 0.15);
       border: 1px solid rgba(67, 160, 71, 0.5);
+    }
+    .anexo-veredicto.depende {
+      background: rgba(66, 165, 245, 0.12);
+      border: 1px solid rgba(66, 165, 245, 0.5);
+    }
+    .anexo-fila.tuya.prevista .i {
+      color: var(--primary-text-color);
+    }
+    .anexo-fila .d .base {
+      color: var(--secondary-text-color);
+      font-size: 0.9em;
     }
     .anexo-veredicto.ahorro {
       background: rgba(255, 179, 0, 0.14);
@@ -1999,6 +2111,9 @@ class PvpcBonoSocialCard extends LitElement {
       color: var(--secondary-text-color);
       margin-top: 8px;
       line-height: 1.35;
+    }
+    .anexo-nota.destacado {
+      font-size: 0.85em;
     }
     .anexo-aviso,
     .anexo-espera {

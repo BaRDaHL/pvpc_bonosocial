@@ -474,7 +474,6 @@
     },
     "fuente_sin_datos": {
       "title": "La font de consum de «{suministro}» no dona dades",
-      "description": "La font {fuente} no té cap dada des de fa més de {horas} hores (última dada: {desde}). S'ha reanomenat o esborrat l'entitat, o la integració que la importa ha deixat de funcionar? Si l'entitat ha canviat de nom al registre d'entitats, la integració la segueix sola; si no, obre aquest avís i tria la font correcta. Per canviar de perfil (Datadis, sense font…), reconfigura el subministrament. L'avís desapareix tan bon punt tornen les dades.",
       "fix_flow": {
         "step": {
           "fuente": {

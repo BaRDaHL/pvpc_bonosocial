@@ -474,7 +474,6 @@
     },
     "fuente_sin_datos": {
       "title": "A fonte de consumo de «{suministro}» non dá datos",
-      "description": "A fonte {fuente} non ten ningún dato desde hai máis de {horas} horas (último dato: {desde}). Renomeouse ou borrouse a entidade, ou a integración que a importa deixou de funcionar? Se a entidade cambiou de nome no rexistro de entidades, a integración séguea soa; se non, abre este aviso e escolle a fonte correcta. Para cambiar de perfil (Datadis, sen fonte…), reconfigura a subministración. O aviso desaparece en canto volven os datos.",
       "fix_flow": {
         "step": {
           "fuente": {

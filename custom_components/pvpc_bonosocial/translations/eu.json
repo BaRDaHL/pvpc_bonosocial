@@ -474,7 +474,6 @@
     },
     "fuente_sin_datos": {
       "title": "«{suministro}» hornidurako kontsumo-iturriak ez du daturik ematen",
-      "description": "{fuente} iturriak ez du daturik duela {horas} ordu baino gehiagotik (azken datua: {desde}). Entitatea izenez aldatu edo ezabatu da, edo hura inportatzen duen integrazioak funtzionatzeari utzi dio? Entitatea izenez aldatu bada entitate-erregistroan, integrazioak bere kabuz jarraitzen dio; bestela, ireki abisu hau eta aukeratu iturri zuzena. Profilez aldatzeko (Datadis, iturririk gabe…), birkonfiguratu hornidura. Abisua desagertu egingo da datuak itzuli bezain laster.",
       "fix_flow": {
         "step": {
           "fuente": {

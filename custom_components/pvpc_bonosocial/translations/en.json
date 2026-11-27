@@ -474,7 +474,6 @@
     },
     "fuente_sin_datos": {
       "title": "The consumption source of \"{suministro}\" has no data",
-      "description": "The source {fuente} has had no data for more than {horas} hours (last data: {desde}). Was the entity renamed or deleted, or has the integration that imports it stopped working? If the entity was renamed in the entity registry, the integration follows it; otherwise, open this notice and choose the right source. To change the profile (Datadis, no source…), reconfigure the supply. This notice disappears as soon as data comes back.",
       "fix_flow": {
         "step": {
           "fuente": {

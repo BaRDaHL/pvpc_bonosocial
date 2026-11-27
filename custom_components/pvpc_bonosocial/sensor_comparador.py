@@ -2,7 +2,8 @@
 
 Estado: ahorro anual estimado (primer año) de la mejor oferta de mercado libre frente a lo
 pagado en los últimos 12 meses; negativo si todas salen más caras. Atributos: la comparativa
-guardada (lo pagado, sin bono, las mejores ofertas —la tarjeta enseña 4 y Telegram 3— y los avisos).
+guardada (lo pagado, sin bono, las mejores ofertas —la tarjeta enseña 4 y Telegram 3— y los avisos)
+y el histórico mensual de comparativas (`historico`, sin grabar en el recorder).
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from .comparador import Comparador, senal
 from .const import CONF_COMPARADOR_DESTINO, SUBENTRY_SUMINISTRO
 from .helpers import primera_subentrada
+from .historico_comparativas import para_atributo
 from .sensor_suministro import EUR, dispositivo, entity_id_suministro
 
 CLAVE = "mejor_alternativa"
@@ -29,6 +31,10 @@ class MejorAlternativa(SensorEntity):
     _attr_native_unit_of_measurement = EUR
     _attr_suggested_display_precision = 2
     _attr_should_poll = False
+    # La lista de ofertas es lo que más pesa y la tarjeta la lee del estado; el último intento
+    # cambia en cada reintento. Ninguno de los dos sirve en el historial; el histórico mensual de
+    # comparativas ya se guarda en el Store del comparador.
+    _unrecorded_attributes = frozenset({"ofertas", "ultimo_intento", "historico"})
 
     def __init__(self, comparador: Comparador, primero: bool) -> None:
         sub = comparador.facturacion.subentrada
@@ -62,6 +68,8 @@ class MejorAlternativa(SensorEntity):
             "ultimo_intento": self.comparador.ultimo_intento,
             # Para la tarjeta: el botón «Enviar» solo sale si hay a dónde enviarla.
             "destino": self.comparador.facturacion.datos.get(CONF_COMPARADOR_DESTINO),
+            # Para la tarjeta (botón «Histórico»): un mes por fila, el más reciente primero.
+            "historico": para_atributo(self.comparador.historico),
         }
 
 

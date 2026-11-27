@@ -51,6 +51,16 @@ const casos = [
   { nombre: "catalan", ancho: 500, q: "idioma=ca", precio: "0,120", textos: ["Factura del període en curs", "punta", "Hora actual", "Factura estimada"] },
   { nombre: "gallego", ancho: 500, q: "idioma=gl", precio: "0,120", textos: ["Factura do período en curso", "chan", "Hora actual"] },
   { nombre: "euskera", ancho: 500, q: "idioma=eu", precio: "0,120", textos: ["Aldi honetako faktura", "laua", "Uneko ordua", "Zenbatetsitako faktura"] },
+  // Textos completos en los cinco idiomas (tarjeta y editor) y el editor en cada uno; otro idioma, en inglés.
+  { nombre: "idiomas_completos", ancho: 500, q: "", precio: "0,120", textos: [], idiomas: true },
+  ...["en", "ca", "gl", "eu", "fr"].map((idioma) => ({
+    nombre: `editor_${idioma}`,
+    ancho: 500,
+    q: `idioma=${idioma}`,
+    precio: idioma === "en" ? "0.120" : "0,120",
+    textos: [],
+    editorIdioma: idioma,
+  })),
   // Legible a cualquier ancho: el texto de las gráficas no escala con la tarjeta (px reales).
   ...[
     { ancho: 278, min: 9, max: 13, viewBox: null },
@@ -68,6 +78,14 @@ const casos = [
   })),
   { nombre: "editor", ancho: 500, q: "", precio: "0,120", textos: [], editor: true },
   { nombre: "anexo_dos_vistas", ancho: 1100, q: "anexo=1", precio: "0,120", textos: [], anexo: true },
+  // «Histórico»: tercer botón y su panel (a la derecha en escritorio, debajo en móvil), con datos y vacío.
+  { nombre: "historico", ancho: 1100, q: "historico=1&subir=1", precio: "0,120", textos: [], historico: "datos" },
+  { nombre: "historico_movil", ancho: 360, q: "historico=1&subir=1", precio: "0,120", textos: [], historico: "datos" },
+  { nombre: "historico_vacio", ancho: 1100, q: "historico=vacio", precio: "0,120", textos: [], historico: "vacio" },
+  { nombre: "historico_vacio_movil", ancho: 360, q: "historico=vacio", precio: "0,120", textos: [], historico: "vacio" },
+  { nombre: "historico_ingles", ancho: 1100, q: "historico=1&idioma=en", precio: "0.120", textos: [], historico: "en" },
+  { nombre: "subir_factura", ancho: 1100, q: "subir=1", precio: "0,120", textos: [], subir: true },
+  { nombre: "subir_factura_movil", ancho: 360, q: "subir=1", precio: "0,120", textos: [], subir: true },
   // 12 facturas: las etiquetas de mes no se pisan (en catalán y gallego salía «nov. del 25»).
   ...["es", "en", "ca", "gl", "eu"].map((idioma) => ({
     nombre: `meses_${idioma}`,
@@ -320,6 +338,183 @@ for (const c of casos) {
     const texto = await pag.locator("dialog.ventana .anexo").innerText();
     for (const t of ["Depende de los precios", "Lo que pagaste (último año)", "PVPC previsto", "≈1825,23", "último año", "previsión", "revisión anual", "bono social térmico", "mercado de futuros"])
       if (!texto.includes(t)) mal.push(`anexo sin «${t}»`);
+    // Termómetro bajo el veredicto: la mejor de hoy frente a los meses anteriores, en €/kWh.
+    const termo = "🌡️ La mejor oferta de hoy (0,360 €/kWh) está entre la más barata (julio de 2026, 0,341 €/kWh) y la más cara (septiembre de 2026, 0,376 €/kWh) de los últimos 4 meses.";
+    if (!texto.includes(termo)) mal.push("anexo sin el termómetro");
+    // Sin el atributo del histórico en el sensor, no hay tercer botón.
+    if (await pag.locator("dialog.ventana pvpc-bono-social-card >> button.btn-historico").count()) mal.push("botón «Histórico» sin histórico");
+  }
+  if (c.historico) {
+    // Ventana → «Histórico»: panel propio, uno a la vez con los de comparar y subir.
+    await pag.locator("pvpc-bono-social-card >> button.abrir").first().click();
+    const dentro = "dialog.ventana pvpc-bono-social-card";
+    const botones = await pag.evaluate(() => {
+      const d = document.querySelector("pvpc-bono-social-card").shadowRoot.querySelector("dialog.ventana pvpc-bono-social-card");
+      return [...d.shadowRoot.querySelectorAll(".comparar button")].map((b) => b.className);
+    });
+    const esperados = c.historico === "datos" ? ["btn-subir", "btn-comparar", "btn-historico"] : ["btn-comparar", "btn-historico"];
+    if (JSON.stringify(botones) !== JSON.stringify(esperados)) mal.push(`botones ${JSON.stringify(botones)}`);
+    await pag.locator(`${dentro} >> button.btn-historico`).click();
+    await pag.waitForTimeout(200);
+    const anexo = pag.locator("dialog.ventana .anexo");
+    if ((await anexo.count()) !== 1 || !(await pag.locator("dialog.ventana .anexo.historico").count())) mal.push("no se abre el panel del histórico");
+    const texto = await anexo.innerText();
+    const esperado = {
+      datos: ["Histórico de comparativas", "noviembre de 2026", "octubre de 2026", "1512,40 €", "CNMC ≈1825,23 €", "pagado 1384,40 €", "4200 kWh/año", "mejor oferta"],
+      vacio: ["Histórico de comparativas", "Aún no hay comparativas guardadas."],
+      en: ["Comparison history", "November 2026", "1,512.40 €", "paid 1,384.40 €", "4,200 kWh/year"],
+    }[c.historico];
+    for (const t of esperado) if (!texto.includes(t)) mal.push(`histórico sin «${t}»`);
+    if (c.historico !== "vacio") {
+      // Cerrado no se ven las ofertas; al tocar el mes, las 3 con su enlace a la ficha.
+      const mes = anexo.locator("details.hist-mes").first();
+      if (await mes.locator(".hist-oferta").first().isVisible()) mal.push("las ofertas se ven sin desplegar");
+      await mes.locator("summary").click();
+      await pag.waitForTimeout(100);
+      const ofertas = await mes.locator(".hist-oferta").count();
+      const enlaces = await mes.locator(".hist-oferta a.enlace").evaluateAll((as) => as.map((a) => [a.textContent.trim(), a.getAttribute("href")]));
+      if (ofertas !== 3 || enlaces.length !== 3 || !enlaces.every(([t, h]) => t.endsWith("↗") && h.startsWith("https://comparador.example/")))
+        mal.push(`ofertas del mes ${ofertas} ${JSON.stringify(enlaces)}`);
+      const desplegado = await mes.innerText();
+      for (const t of c.historico === "en" ? ["Oferta 2", "minimum stay", "05/11"] : ["Oferta 2", "permanencia", "solo nuevos clientes", "05/11", "4300 kWh/año"])
+        if (!desplegado.includes(t)) mal.push(`mes desplegado sin «${t}»`);
+    }
+    // Escritorio: el panel a la derecha de la ventana; ≤900 px, debajo.
+    const caja = await pag.evaluate(() => {
+      const d = document.querySelector("pvpc-bono-social-card").shadowRoot.querySelector("dialog.ventana");
+      const p = d.querySelector(".ventana-principal").getBoundingClientRect();
+      const a = d.querySelector(".anexo").getBoundingClientRect();
+      return { pDer: p.right, pAbajo: p.bottom, aIzq: a.left, aArriba: a.top, aAncho: a.width };
+    });
+    if (c.ancho > 900 ? caja.aIzq < caja.pDer - 1 : caja.aArriba < caja.pAbajo - 1) mal.push(`panel mal colocado ${JSON.stringify(caja)}`);
+    const ancho = await pag.evaluate(() => document.documentElement.scrollWidth);
+    if (ancho > c.ancho) mal.push(`el histórico se sale de la pantalla (${ancho} px)`);
+    // Uno a la vez: «Comparar tarifas» lo cierra y abre el suyo; «Histórico» vuelve; «Subir factura» lo cierra.
+    await pag.locator(`${dentro} >> button.btn-comparar`).click();
+    await pag.waitForTimeout(300);
+    if ((await pag.locator("dialog.ventana .anexo").count()) !== 1 || (await pag.locator("dialog.ventana .anexo.historico").count()))
+      mal.push("comparar no cierra el histórico");
+    await pag.locator(`${dentro} >> button.btn-historico`).click();
+    await pag.waitForTimeout(200);
+    if ((await pag.locator("dialog.ventana .anexo").count()) !== 1 || !(await pag.locator("dialog.ventana .anexo.historico").count()))
+      mal.push("el histórico no vuelve tras comparar");
+    if (c.historico === "datos") {
+      await pag.locator(`${dentro} >> button.btn-subir`).click();
+      await pag.waitForTimeout(200);
+      if ((await pag.locator("dialog.ventana .anexo.historico").count()) || !(await pag.locator("dialog.ventana .anexo.subida").count()))
+        mal.push("subir no cierra el histórico");
+    }
+  }
+  if (c.subir) {
+    // Ventana → «Subir factura» → dos archivos (un PDF y un ZIP) → revisar → guardar las dos.
+    await pag.locator("pvpc-bono-social-card >> button.abrir").first().click();
+    await pag.locator("dialog.ventana pvpc-bono-social-card >> button.btn-subir").click();
+    await pag.locator("dialog.ventana .anexo input.sub-archivos").setInputFiles([
+      { name: "marzo.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 prueba") },
+      { name: "facturas.zip", mimeType: "application/zip", buffer: Buffer.from("PK prueba") },
+    ]);
+    await pag.locator("dialog.ventana .anexo .sub-factura").nth(1).waitFor();
+    const anexo = pag.locator("dialog.ventana .anexo");
+    const texto = await anexo.innerText();
+    for (const t of ["Subir factura", "febrero.pdf", "marzo.pdf", "Se quedan fuera", "otra.pdf", "Guardar 2 facturas"])
+      if (!texto.includes(t)) mal.push(`subida sin «${t}»`);
+    const total = await anexo.locator(".sub-factura").nth(1).locator("input[name=total]").inputValue();
+    if (total !== "180.55") mal.push(`total leído ${total}`);
+    // Se corrige un dato antes de guardar, como en el formulario del flujo.
+    await anexo.locator(".sub-factura").first().locator("input[name=kwh_p3]").fill("351");
+    await anexo.locator(".anexo-pie button.btn-subir").click();
+    await anexo.locator(".anexo-aviso.hecho").waitFor();
+    const llamadas = await pag.evaluate(() => window.llamadas);
+    const guardadas = llamadas.filter(([s]) => s === "conciliar_factura").map(([, d]) => `${d.inicio}:${d.kwh_p3}:${d.total}:${d.comprobar}`);
+    if (llamadas.filter(([s]) => s === "subir").length !== 2) mal.push(`subidas ${JSON.stringify(llamadas)}`);
+    const leer = llamadas.find(([s]) => s === "leer_facturas");
+    if (JSON.stringify(leer?.[1]) !== JSON.stringify({ suministro: "d1", archivos: ["id-marzo.pdf", "id-facturas.zip"] }))
+      mal.push(`leer_facturas ${JSON.stringify(leer)}`);
+    if (JSON.stringify(guardadas) !== JSON.stringify(["2026-02-12:351:150:false", "2026-03-12:350:180.55:true"]))
+      mal.push(`conciliar_factura ${JSON.stringify(guardadas)}`);
+    if (!(await anexo.innerText()).includes("2 facturas introducidas")) mal.push("sin «2 facturas introducidas»");
+    // A mano, sin datos: no llama al servicio y dice qué falta.
+    await anexo.locator("button.btn-subir.secundario").click();
+    // Pulsar otra vez no crea una segunda en blanco: deja el cursor en la que ya hay.
+    await anexo.locator("button.btn-subir.secundario").click();
+    await pag.waitForTimeout(100);
+    const enBlanco = await anexo.locator(".sub-factura").count();
+    if (enBlanco !== 1) mal.push(`«Añadir a mano» dos veces deja ${enBlanco} facturas`);
+    if (!(await anexo.locator(".sub-factura input[name=inicio]").evaluate((el) => el.matches(":focus"))))
+      mal.push("«Añadir a mano» no lleva el cursor a la factura en blanco");
+    await anexo.locator(".anexo-pie button.btn-subir").click();
+    await anexo.locator(".sub-factura .anexo-aviso.error").waitFor();
+    const n = (await pag.evaluate(() => window.llamadas)).filter(([s]) => s === "conciliar_factura").length;
+    if (n !== 2) mal.push(`factura a mano vacía enviada (${n})`);
+    const ancho = await pag.evaluate(() => document.documentElement.scrollWidth);
+    if (ancho > c.ancho) mal.push(`la subida se sale de la pantalla (${ancho} px)`);
+  }
+  if (c.idiomas) {
+    // Los cinco idiomas con las mismas claves que el español (las funciones, con los mismos
+    // parámetros), en la tarjeta y en el editor; y los errores de los servicios, traducidos.
+    const r = await pag.evaluate(async () => {
+      const forma = (o) =>
+        Object.fromEntries(
+          Object.entries(o).map(([k, v]) => [
+            k,
+            typeof v === "function" ? `función(${v.length})` : Array.isArray(v) ? `lista(${v.length})` : v && typeof v === "object" ? forma(v) : typeof v,
+          ]),
+        );
+      const rutas = (o, p = "") => Object.entries(o).flatMap(([k, v]) => (v && typeof v === "object" ? rutas(v, `${p}${k}.`) : [`${p}${k}=${v}`]));
+      // Vacíos donde el español sí tiene texto (el de «depende» va vacío a propósito).
+      const vacios = (o, es, p = "") =>
+        Object.entries(o).flatMap(([k, v]) =>
+          typeof v === "string" ? (v.trim() || !es?.[k] ? [] : [`${p}${k}`]) : v && typeof v === "object" ? vacios(v, es?.[k], `${p}${k}.`) : [],
+        );
+      const { tarjeta, editor } = customElements.get("pvpc-bono-social-card").textos;
+      const mal = [];
+      for (const [nombre, textos] of [["tarjeta", tarjeta], ["editor", editor]]) {
+        const es = new Set(rutas(forma(textos.es)));
+        for (const idioma of ["en", "ca", "gl", "eu"]) {
+          if (!textos[idioma]) {
+            mal.push(`${nombre}: sin ${idioma}`);
+            continue;
+          }
+          const otro = new Set(rutas(forma(textos[idioma])));
+          const faltan = [...es].filter((x) => !otro.has(x));
+          const sobran = [...otro].filter((x) => !es.has(x));
+          if (faltan.length || sobran.length) mal.push(`${nombre} ${idioma}: faltan ${faltan.join(", ")} · sobran ${sobran.join(", ")}`);
+          const huecos = vacios(textos[idioma], textos.es);
+          if (huecos.length) mal.push(`${nombre} ${idioma}: vacíos ${huecos.join(", ")}`);
+        }
+      }
+      const t = document.querySelector("pvpc-bono-social-card");
+      const traducciones = { "component.pvpc_bonosocial.exceptions.sin_comparativa.message": "Encara no hi ha cap comparativa ({n})" };
+      t.hass = { ...t.hass, loadBackendTranslation: async () => (clave, datos) => (traducciones[clave] ?? "").replace("{n}", datos.n) };
+      const traducido = await t._mensajeError({ translation_domain: "pvpc_bonosocial", translation_key: "sin_comparativa", translation_placeholders: { n: 1 }, message: "There is no comparison yet" });
+      const sinClave = await t._mensajeError({ message: "Error de red" });
+      const sinTraduccion = await t._mensajeError({ translation_domain: "pvpc_bonosocial", translation_key: "otra", message: "Other" });
+      if (traducido !== "Encara no hi ha cap comparativa (1)") mal.push(`error traducido «${traducido}»`);
+      if (sinClave !== "Error de red" || sinTraduccion !== "Other") mal.push(`errores sin traducción «${sinClave}» «${sinTraduccion}»`);
+      return mal;
+    });
+    mal.push(...r);
+  }
+  if (c.editorIdioma) {
+    // El editor en cada idioma: etiquetas, ayudas, secciones y opciones de su bloque.
+    const r = await pag.evaluate(async (idioma) => {
+      const { editor: textos } = customElements.get("pvpc-bono-social-card").textos;
+      const editor = await customElements.get("pvpc-bono-social-card").getConfigElement();
+      editor.setConfig({ type: "custom:pvpc-bono-social-card" });
+      editor.hass = document.querySelector("pvpc-bono-social-card").hass;
+      document.body.appendChild(editor);
+      await editor.updateComplete;
+      const form = editor.shadowRoot.querySelector("ha-form");
+      const te = textos[idioma] ?? textos.en;
+      const mal = [];
+      if (form.computeLabel({ name: "graph" }) !== te.etiquetas.graph) mal.push(`etiqueta ${form.computeLabel({ name: "graph" })}`);
+      if (form.computeHelper({ name: "graph" }) !== te.ayudas.graph) mal.push(`ayuda ${form.computeHelper({ name: "graph" })}`);
+      if (form.schema[0].title !== te.secciones.cabecera) mal.push(`sección ${form.schema[0].title}`);
+      const icono = form.schema[0].schema.find((s) => s.name === "icon_color").selector.select.options.map((o) => o.label);
+      if (JSON.stringify(icono) !== JSON.stringify(Object.values(te.opciones.icon_color))) mal.push(`opciones ${icono}`);
+      return mal;
+    }, c.editorIdioma);
+    mal.push(...r);
   }
   if (c.solapes !== undefined && info.solapes !== c.solapes) mal.push(`${info.solapes} etiquetas de mes se pisan`);
   if (info.ancho > c.ancho) mal.push(`se sale de la pantalla (${info.ancho} px)`);

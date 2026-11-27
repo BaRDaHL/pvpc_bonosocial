@@ -29,6 +29,7 @@ from ..const import (
 )
 from ..engine import Tarifas
 from ..helpers import ZONA_CANARIAS, config_entrada, potencia_contratada
+from ..idiomas import fecha, idioma, numero
 from .aiopvpc import DEFAULT_POWER_KW, BadApiTokenAuthError, EsiosApiData, PVPCData
 from .aiopvpc.const import (
     KEY_PVPC,
@@ -41,7 +42,7 @@ from .aiopvpc.const import (
 )
 from .aiopvpc.pvpc_tariff import _price_period_key
 from .historico import HistoricoPrecios
-from .periodos import discrepancias, horas_sin_casar, periodos_del_dia
+from .periodos import discrepancias, horas_sin_casar
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -57,6 +58,85 @@ ISSUE_PEAJES = "tabla_peajes_desfasada"
 ISSUE_TARIFAS = "tarifas_por_revisar"
 DIAS_AVISO_PEAJES = 7  # días publicados más recientes en los que se mira si la tabla casa
 MAX_HORAS_EN_AVISO = 6
+# Nombre de cada concepto de la tabla de tarifas (engine/tarifas.json) en el aviso de valores por
+# revisar, en el idioma de HA. Un concepto que no esté aquí sale con su clave.
+NOMBRES_CONCEPTO = {
+    "es": {
+        "peaje_potencia_p1": "peajes y cargos de potencia P1",
+        "peaje_potencia_p2": "peajes y cargos de potencia P2",
+        "peaje_energia_p1": "peajes y cargos de energía P1",
+        "peaje_energia_p2": "peajes y cargos de energía P2",
+        "peaje_energia_p3": "peajes y cargos de energía P3",
+        "margen_comercializacion": "margen de comercialización",
+        "financiacion_bono_social": "financiación del bono social",
+        "alquiler_contador": "alquiler del contador",
+        "descuento_bono_vulnerable": "descuento del bono social (vulnerable)",
+        "descuento_bono_severo": "descuento del bono social (vulnerable severo)",
+        "iee_tipo": "impuesto eléctrico (tipo)",
+        "iee_minimo": "impuesto eléctrico (mínimo)",
+        "iva": "IVA",
+    },
+    "en": {
+        "peaje_potencia_p1": "power access tolls and charges P1",
+        "peaje_potencia_p2": "power access tolls and charges P2",
+        "peaje_energia_p1": "energy access tolls and charges P1",
+        "peaje_energia_p2": "energy access tolls and charges P2",
+        "peaje_energia_p3": "energy access tolls and charges P3",
+        "margen_comercializacion": "retail margin",
+        "financiacion_bono_social": "social bonus financing",
+        "alquiler_contador": "meter rental",
+        "descuento_bono_vulnerable": "social bonus discount (vulnerable)",
+        "descuento_bono_severo": "social bonus discount (severely vulnerable)",
+        "iee_tipo": "electricity tax (rate)",
+        "iee_minimo": "electricity tax (minimum)",
+        "iva": "VAT",
+    },
+    "ca": {
+        "peaje_potencia_p1": "peatges i càrrecs de potència P1",
+        "peaje_potencia_p2": "peatges i càrrecs de potència P2",
+        "peaje_energia_p1": "peatges i càrrecs d'energia P1",
+        "peaje_energia_p2": "peatges i càrrecs d'energia P2",
+        "peaje_energia_p3": "peatges i càrrecs d'energia P3",
+        "margen_comercializacion": "marge de comercialització",
+        "financiacion_bono_social": "finançament del bo social",
+        "alquiler_contador": "lloguer del comptador",
+        "descuento_bono_vulnerable": "descompte del bo social (vulnerable)",
+        "descuento_bono_severo": "descompte del bo social (vulnerable sever)",
+        "iee_tipo": "impost elèctric (tipus)",
+        "iee_minimo": "impost elèctric (mínim)",
+        "iva": "IVA",
+    },
+    "gl": {
+        "peaje_potencia_p1": "peaxes e cargos de potencia P1",
+        "peaje_potencia_p2": "peaxes e cargos de potencia P2",
+        "peaje_energia_p1": "peaxes e cargos de enerxía P1",
+        "peaje_energia_p2": "peaxes e cargos de enerxía P2",
+        "peaje_energia_p3": "peaxes e cargos de enerxía P3",
+        "margen_comercializacion": "marxe de comercialización",
+        "financiacion_bono_social": "financiamento do bono social",
+        "alquiler_contador": "aluguer do contador",
+        "descuento_bono_vulnerable": "desconto do bono social (vulnerable)",
+        "descuento_bono_severo": "desconto do bono social (vulnerable severo)",
+        "iee_tipo": "imposto eléctrico (tipo)",
+        "iee_minimo": "imposto eléctrico (mínimo)",
+        "iva": "IVE",
+    },
+    "eu": {
+        "peaje_potencia_p1": "potentziaren bidesariak eta kargak P1",
+        "peaje_potencia_p2": "potentziaren bidesariak eta kargak P2",
+        "peaje_energia_p1": "energiaren bidesariak eta kargak P1",
+        "peaje_energia_p2": "energiaren bidesariak eta kargak P2",
+        "peaje_energia_p3": "energiaren bidesariak eta kargak P3",
+        "margen_comercializacion": "merkaturatze-marjina",
+        "financiacion_bono_social": "gizarte-bonuaren finantzaketa",
+        "alquiler_contador": "kontagailuaren alokairua",
+        "descuento_bono_vulnerable": "gizarte-bonuaren deskontua (kaltebera)",
+        "descuento_bono_severo": "gizarte-bonuaren deskontua (kaltebera larria)",
+        "iee_tipo": "elektrizitatearen gaineko zerga (tasa)",
+        "iee_minimo": "elektrizitatearen gaineko zerga (gutxienekoa)",
+        "iva": "BEZ",
+    },
+}
 
 
 def zona_de_tarifa(tariff: str) -> str:
@@ -320,6 +400,8 @@ class ElecPricesDataUpdateCoordinator(  # pylint: disable=too-few-public-methods
             ir.async_delete_issue(self.hass, DOMAIN, ISSUE_TARIFAS)
             return
         desde = min(v.revisar_desde for v in por_revisar.values() if v.revisar_desde)
+        lengua = idioma(self.hass.config.language)
+        nombres = NOMBRES_CONCEPTO[lengua]
         ir.async_create_issue(
             self.hass,
             DOMAIN,
@@ -330,9 +412,9 @@ class ElecPricesDataUpdateCoordinator(  # pylint: disable=too-few-public-methods
             translation_placeholders={
                 # Los valores son los del año que acaba el día antes de la revisión.
                 "anio": str((desde - timedelta(days=1)).year),
-                "desde": desde.isoformat(),
+                "desde": fecha(desde, lengua),
                 "version": tarifas.version,
-                "conceptos": ", ".join(por_revisar),
+                "conceptos": ", ".join(nombres.get(c, c) for c in por_revisar),
             },
         )
 
@@ -380,7 +462,8 @@ class ElecPricesDataUpdateCoordinator(  # pylint: disable=too-few-public-methods
             precios = historico.dia(dia)
             if precios is None:
                 continue
-            periodos = periodos_del_dia(dia, precios.teu, historico.tarifas)
+            # Los mismos que usa la factura: calculados al incorporar el día, no se repiten aquí.
+            periodos = historico.periodos_dia(dia)
             inicios = [i.astimezone(REFERENCE_TZ) for i in precios.inicios_utc()]
             del_dia = discrepancias(inicios, periodos, _regla)
             if dia in nuevos_:
@@ -398,8 +481,9 @@ class ElecPricesDataUpdateCoordinator(  # pylint: disable=too-few-public-methods
         if not encontradas:
             ir.async_delete_issue(self.hass, DOMAIN, ISSUE_PERIODOS)
             return
+        lengua = idioma(self.hass.config.language)
         horas = ", ".join(
-            f"{inicio:%Y-%m-%d %H:%M} ({regla} → {teu})"
+            f"{fecha(inicio, lengua, hora=True)} ({regla} → {teu})"
             for inicio, regla, teu in encontradas[-MAX_HORAS_EN_AVISO:]
         )
         ir.async_create_issue(
@@ -425,8 +509,10 @@ class ElecPricesDataUpdateCoordinator(  # pylint: disable=too-few-public-methods
             sin_casar[0][0].strftime("%Y-%m-%d %H:%M"),
             sin_casar[0][1],
         )
+        lengua = idioma(self.hass.config.language)
         horas = ", ".join(
-            f"{inicio:%Y-%m-%d %H:%M} ({teu} €/MWh)" for inicio, teu in sin_casar[-MAX_HORAS_EN_AVISO:]
+            f"{fecha(inicio, lengua, hora=True)} ({numero(teu, '', lengua)} €/MWh)"
+            for inicio, teu in sin_casar[-MAX_HORAS_EN_AVISO:]
         )
         ir.async_create_issue(
             self.hass,

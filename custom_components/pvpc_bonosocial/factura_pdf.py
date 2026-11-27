@@ -67,13 +67,16 @@ def leer_factura(pdf: bytes) -> DatosFactura:
         raise FacturaNoReconocida("No se encuentran el periodo, el total o los consumos P1/P2/P3")
     emision = re.search(r"emitida el (\d{1,2} de \w+ de \d{4})", texto)
     bonificados = re.search(r"Consumo bonificado: (\d+) kWh", texto)
+    # La devolución de la fianza de la distribuidora (RD 88/2026) va en «Otros conceptos» y rebaja el
+    # total, pero no es luz: se suma de vuelta para que la factura refleje lo que costó el suministro.
+    deposito = re.search(r"Dep[óo]sito de garant[íi]a:[ .]*(" + NUM + r") ?€", texto, re.I)
     return DatosFactura(
         comercializadora="Comercializadora Regulada, Gas & Power",
         inicio=_fecha(periodo.group(1)),
         fin=_fecha(periodo.group(2)),
         emision=_fecha(emision.group(1)) if emision else None,
         kwh={f"P{p}": int(v) for p, v in sorted(consumos.items())},
-        total=_num(total.group(1)),
+        total=_num(total.group(1)) - (_num(deposito.group(1)) if deposito else 0),
         bonificados=int(bonificados.group(1)) if bonificados else None,
         rectificativa=bool(re.search(r"rectificativa|rectifica a", texto, re.I)),
     )

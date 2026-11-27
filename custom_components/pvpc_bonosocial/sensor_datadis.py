@@ -26,6 +26,8 @@ class EstadoDatadis(CoordinatorEntity[CuentaDatadis], SensorEntity):
     _attr_device_class = SensorDeviceClass.ENUM
     _attr_options = ESTADOS
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    # Cambia en cada paso de la descarga del histórico: en el estado, no en cada fila del historial.
+    _unrecorded_attributes = frozenset({"historico"})
 
     def __init__(self, cuenta: CuentaDatadis, primero: bool) -> None:
         super().__init__(cuenta)

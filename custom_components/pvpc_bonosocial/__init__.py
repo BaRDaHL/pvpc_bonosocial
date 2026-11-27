@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from homeassistant.config_entries import ConfigSubentry
 from homeassistant.const import CONF_API_TOKEN, Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
@@ -22,26 +22,26 @@ from .const import (
     ATTR_PRICE_MODE,
     ATTR_SHOW_REFERENCE_PRICE,
     ATTR_TARIFF,
+    CLAVES_FRECUENCIA_RETIRADAS,
     CONF_SHELLY_FRECUENCIA,
     DEFAULT_ENABLE_PRIVATE_API,
     DEFAULT_PRICE_MODE,
     DEFAULT_SHOW_REFERENCE_PRICE,
-    DEFAULT_UPDATE_FREQUENCY,
     DOMAIN,
     ENTRY_VERSION,
     LEGACY_ATTR_ENABLE_INJECTION_PRICE,
     SUBENTRY_DATADIS,
     SUBENTRY_SUMINISTRO,
-    UPDATE_FREQUENCY_BY_SENSOR,
-    UPDATE_FREQUENCY_OPTIONS,
     normalize_price_mode,
 )
 from .cuenta_datadis import CuentaDatadis
 from .facturacion import FacturacionSuministro
+from .fuentes import async_completar_subentradas, async_seguir_medidor
 from .helpers import TERRITORIO_PENINSULA, config_entrada, get_enabled_sensor_keys, territorio
+from .idiomas import idioma, texto_error
 from .importacion import CONF_IMPORTAR, async_importar, async_revisar_pvpc_next
 from .limpieza import async_olvidar_entrada, async_reconciliar
-from .migracion import async_migrar_v02
+from .migracion import ajustar_registro_cuentas_atras, async_migrar_v02
 from .notificacion import programar as programar_resumenes
 from .prices.aiopvpc.const import KEY_ADJUSTMENT
 from .prices.coordinator import (
@@ -60,7 +60,14 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.DATE, Platform.BUTTON]
 ISSUE_TERRITORIO = "facturacion_no_soportada"
 ISSUE_SUBENTRADA = "subentrada_no_cargada"
-NOMBRES_TERRITORIO = {"canarias": "Canarias", "ceuta_melilla": "Ceuta y Melilla"}
+# Nombre del territorio en el aviso de Reparaciones, en el idioma de HA.
+NOMBRES_TERRITORIO = {
+    "es": {"canarias": "Canarias", "ceuta_melilla": "Ceuta y Melilla"},
+    "en": {"canarias": "the Canary Islands", "ceuta_melilla": "Ceuta and Melilla"},
+    "ca": {"canarias": "Canàries", "ceuta_melilla": "Ceuta i Melilla"},
+    "gl": {"canarias": "Canarias", "ceuta_melilla": "Ceuta e Melilla"},
+    "eu": {"canarias": "Kanariak", "ceuta_melilla": "Ceuta eta Melilla"},
+}
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
@@ -121,6 +128,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: PVPCConfigEntry) -> bool
             coordinator.update_interval,
         )
     await coordinator.async_iniciar_historico()
+    # Antes de crear los coordinadores (y del update listener: aquí cambiar una subentrada no recarga).
+    async_completar_subentradas(hass, entry)
     await _async_preparar_suministros(hass, entry, coordinator)
 
     await _async_preparar_datadis(hass, entry, coordinator)
@@ -134,7 +143,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: PVPCConfigEntry) -> bool
     entry.async_on_unload(
         async_track_time_change(hass, coordinator.async_al_empezar_hora, minute=0, second=0)
     )
-    _apply_update_frequency_disables(entity_registry, entry, config)
     async_revisar_pvpc_next(hass, entry)
     return True
 
@@ -172,8 +180,17 @@ def _avisar_subentrada(hass: HomeAssistant, sub: ConfigSubentry, error: Exceptio
         is_fixable=False,
         severity=ir.IssueSeverity.ERROR,
         translation_key=ISSUE_SUBENTRADA,
-        translation_placeholders={"nombre": sub.title, "error": (str(error) or type(error).__name__)[:200]},
+        translation_placeholders={"nombre": sub.title, "error": _texto_fallo(hass, error)},
     )
+
+
+def _texto_fallo(hass: HomeAssistant, error: Exception) -> str:
+    """El fallo en el aviso, en el idioma de HA. Una HomeAssistantError de la integración ya trae
+    su mensaje traducido (`idiomas.error`); cualquier otra (un Store dañado, un dato imposible)
+    lleva un texto interno, así que solo se dice su tipo: el detalle está en el registro."""
+    if isinstance(error, HomeAssistantError) and error.translation_domain == DOMAIN and str(error):
+        return str(error)[:200]
+    return texto_error(hass, "subentrada_error", tipo=type(error).__name__)
 
 
 async def _async_preparar_suministros(
@@ -204,6 +221,15 @@ async def _async_preparar_suministros(
             continue
         _avisar_subentrada(hass, sub, None)
         coordinator.suministros[subentry_id] = facturacion
+        if dejar := async_seguir_medidor(
+            hass,
+            entry,
+            subentry_id,
+            lambda f=facturacion: entry.async_create_background_task(
+                hass, f.async_request_refresh(), f"{DOMAIN} medidor borrado"
+            ),
+        ):
+            entry.async_on_unload(dejar)
         try:
             comparador = Comparador(hass, entry, facturacion)
             await comparador.async_cargar()
@@ -246,7 +272,9 @@ def _facturacion_soportada(hass: HomeAssistant, entry: PVPCConfigEntry) -> bool:
         is_fixable=False,
         severity=ir.IssueSeverity.WARNING,
         translation_key=ISSUE_TERRITORIO,
-        translation_placeholders={"territorio": NOMBRES_TERRITORIO[lugar]},
+        translation_placeholders={
+            "territorio": NOMBRES_TERRITORIO[idioma(hass.config.language)].get(lugar, lugar)
+        },
     )
     return False
 
@@ -310,33 +338,6 @@ async def _async_entrada_actualizada(hass: HomeAssistant, entry: PVPCConfigEntry
     hass.config_entries.async_schedule_reload(entry.entry_id)
 
 
-def _apply_update_frequency_disables(
-    entity_registry: er.EntityRegistry,
-    entry: PVPCConfigEntry,
-    config: dict,
-) -> None:
-    """Disable/enable minute-update sensors based on options."""
-    for entity_entry in er.async_entries_for_config_entry(entity_registry, entry.entry_id):
-        unique_id = entity_entry.unique_id
-        for sensor_key, option_key in UPDATE_FREQUENCY_BY_SENSOR.items():
-            if unique_id.endswith(f"_{sensor_key}"):
-                frequency = config.get(option_key, DEFAULT_UPDATE_FREQUENCY)
-                if frequency not in UPDATE_FREQUENCY_OPTIONS:
-                    frequency = DEFAULT_UPDATE_FREQUENCY
-                if frequency == "disabled":
-                    if entity_entry.disabled_by != er.RegistryEntryDisabler.INTEGRATION:
-                        entity_registry.async_update_entity(
-                            entity_entry.entity_id,
-                            disabled_by=er.RegistryEntryDisabler.INTEGRATION,
-                        )
-                elif entity_entry.disabled_by == er.RegistryEntryDisabler.INTEGRATION:
-                    entity_registry.async_update_entity(
-                        entity_entry.entity_id,
-                        disabled_by=None,
-                    )
-                break
-
-
 async def async_unload_entry(hass: HomeAssistant, entry: PVPCConfigEntry) -> bool:
     """Unload a config entry."""
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
@@ -363,6 +364,8 @@ async def async_migrate_entry(hass: HomeAssistant, entry: PVPCConfigEntry) -> bo
         _migrar_token_a_data(hass, entry)
     if entry.version == ENTRY_VERSION and entry.minor_version < 3:
         _migrar_potencia_a_data(hass, entry)
+    if entry.version == ENTRY_VERSION and entry.minor_version < 4:
+        _migrar_cuentas_atras(hass, entry)
     return True
 
 
@@ -402,3 +405,17 @@ def _migrar_potencia_a_data(hass: HomeAssistant, entry: PVPCConfigEntry) -> None
             if valor is not None:
                 data[clave] = valor
     hass.config_entries.async_update_entry(entry, data=data, options=options, minor_version=3)
+
+
+def _migrar_cuentas_atras(hass: HomeAssistant, entry: PVPCConfigEntry) -> None:
+    """2.3 → 2.4 (v2.0): los sensores «… en» pasan a ser marcas de tiempo; fuera su frecuencia.
+
+    Hasta la v1.x cada uno tenía una frecuencia de actualización (cada minuto, cada hora o
+    desactivado) en `data` y `options`. Ya no se usa: se quita de los dos sitios. Las entidades
+    que la frecuencia «desactivado» había desactivado siguen desactivadas, ahora como si lo
+    hubiera hecho el usuario (se pueden volver a activar desde la entidad).
+    """
+    data = {k: v for k, v in entry.data.items() if k not in CLAVES_FRECUENCIA_RETIRADAS}
+    options = {k: v for k, v in entry.options.items() if k not in CLAVES_FRECUENCIA_RETIRADAS}
+    ajustar_registro_cuentas_atras(er.async_get(hass), entry.entry_id)
+    hass.config_entries.async_update_entry(entry, data=data, options=options, minor_version=4)

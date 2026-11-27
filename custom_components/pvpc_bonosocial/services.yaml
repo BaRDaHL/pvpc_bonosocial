@@ -61,6 +61,23 @@ conciliar_factura:
           max: 100000
           mode: box
           unit_of_measurement: kWh
+    comprobar:
+      required: false
+      default: true
+      selector:
+        boolean:
+leer_facturas:
+  fields:
+    suministro:
+      required: true
+      selector:
+        device:
+          integration: pvpc_bonosocial
+    archivos:
+      required: true
+      selector:
+        file:
+          accept: ".pdf,.zip,application/pdf,application/zip"
 enviar_resumen:
   fields:
     manana:

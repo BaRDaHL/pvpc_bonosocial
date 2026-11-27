@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from datetime import date, datetime
 from decimal import Decimal
+from functools import lru_cache
 
 from ..engine import TarifaAusente, Tarifas
 
@@ -31,10 +32,18 @@ def peajes_mwh(dia: date, tarifas: Tarifas) -> dict[str, Decimal] | None:
 
 def periodo_por_teu(teu_mwh: Decimal, tabla: dict[str, Decimal]) -> str | None:
     """Periodo cuyo peaje está más cerca del TEU, o None si ninguno encaja."""
-    periodo = min(PERIODOS, key=lambda p: abs(tabla[p] - teu_mwh))
-    if abs(tabla[periodo] - teu_mwh) > TOLERANCIA_MWH:
+    return _periodo_por_teu(tuple(tabla[p] for p in PERIODOS), teu_mwh)
+
+
+@lru_cache(maxsize=1024)
+def _periodo_por_teu(tabla: tuple[Decimal, ...], teu_mwh: Decimal) -> str | None:
+    """`periodo_por_teu` memorizado por (tabla, TEU): en un año hay muy pocas parejas distintas (los TEU
+    de cada periodo se repiten todo el año) y el histórico entero son unas 9.600 horas."""
+    distancias = [abs(peaje - teu_mwh) for peaje in tabla]
+    i = min(range(len(PERIODOS)), key=distancias.__getitem__)
+    if distancias[i] > TOLERANCIA_MWH:
         return None
-    return periodo
+    return PERIODOS[i]
 
 
 def periodos_del_dia(dia: date, teu_mwh: Sequence[Decimal], tarifas: Tarifas) -> list[str | None]:
@@ -42,7 +51,8 @@ def periodos_del_dia(dia: date, teu_mwh: Sequence[Decimal], tarifas: Tarifas) ->
     tabla = peajes_mwh(dia, tarifas)
     if tabla is None:
         return [None] * len(teu_mwh)
-    return [periodo_por_teu(teu, tabla) for teu in teu_mwh]
+    clave = tuple(tabla[p] for p in PERIODOS)
+    return [_periodo_por_teu(clave, teu) for teu in teu_mwh]
 
 
 def horas_sin_casar(

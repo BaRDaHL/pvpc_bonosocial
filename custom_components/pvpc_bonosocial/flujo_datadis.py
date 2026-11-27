@@ -1,4 +1,4 @@
-"""Flujo de las subentradas «Datadis» (F7): alta, importar CSV y cambiar las credenciales."""
+"""Flujo de las subentradas «Datadis» (F7): alta, importar CSV, histórico completo y credenciales."""
 
 from __future__ import annotations
 
@@ -23,11 +23,21 @@ from homeassistant.helpers.selector import (
 
 from .const import (
     CONF_DATADIS_CLAVE,
+    CONF_DATADIS_ESTADISTICA,
     CONF_DATADIS_SUMINISTRO,
     CONF_DATADIS_USUARIO,
     SUBENTRY_DATADIS,
 )
-from .datadis import CredencialesInvalidas, DatadisNoResponde, async_login, async_suministros, registros_csv
+from .cuenta_datadis import id_estadistica_energia
+from .datadis import (
+    CredencialesInvalidas,
+    DatadisNoResponde,
+    async_login,
+    async_suministros,
+    registros_csv,
+    texto_motivo,
+)
+from .idiomas import idioma
 
 _LOGGER = logging.getLogger(__name__)
 CONF_REVISION = "revision"  # cambia al cambiar las credenciales: fuerza una consulta nueva
@@ -49,6 +59,44 @@ def _titulo(suministro: dict[str, Any]) -> str:
     return f"Datadis {str(suministro.get('cups', ''))[-4:]}".strip()
 
 
+async def async_probar(hass: Any, usuario: str, clave: str) -> tuple[list[dict[str, Any]] | None, str | None]:
+    """(suministros de la cuenta, error) al entrar en Datadis con esas credenciales."""
+    session = async_get_clientsession(hass)
+    try:
+        token = await async_login(session, usuario, clave)
+        return await async_suministros(session, token), None
+    except CredencialesInvalidas:
+        return None, "credenciales"
+    except DatadisNoResponde as exc:
+        _LOGGER.info("Datadis no responde: %s", exc)
+        return None, "no_responde"
+
+
+def datos_cuenta(credenciales: dict[str, Any], suministro: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """(título, datos) de la subentrada de una cuenta de Datadis para un suministro (CUPS)."""
+    titulo = _titulo(suministro)
+    return titulo, {
+        **credenciales,
+        CONF_DATADIS_SUMINISTRO: {
+            "cups": suministro["cups"],
+            "distributorCode": str(suministro.get("distributorCode", "")),
+            "pointType": int(suministro.get("pointType") or 5),
+        },
+        CONF_REVISION: 1,
+        # Fija la estadística al crear la cuenta: renombrarla después no la cambia.
+        CONF_DATADIS_ESTADISTICA: id_estadistica_energia(titulo),
+    }
+
+
+def cups_configurados(entry: Any) -> dict[str, str]:
+    """CUPS de las cuentas de Datadis de la entrada → subentry_id."""
+    return {
+        s.data.get(CONF_DATADIS_SUMINISTRO, {}).get("cups"): sid
+        for sid, s in entry.subentries.items()
+        if s.subentry_type == SUBENTRY_DATADIS
+    }
+
+
 class DatadisSubentryFlow(ConfigSubentryFlow):
     """Añadir una cuenta de Datadis (un suministro por subentrada)."""
 
@@ -57,15 +105,7 @@ class DatadisSubentryFlow(ConfigSubentryFlow):
         self._suministros: list[dict[str, Any]] = []
 
     async def _probar(self, usuario: str, clave: str) -> tuple[list[dict[str, Any]] | None, str | None]:
-        session = async_get_clientsession(self.hass)
-        try:
-            token = await async_login(session, usuario, clave)
-            return await async_suministros(session, token), None
-        except CredencialesInvalidas:
-            return None, "credenciales"
-        except DatadisNoResponde as exc:
-            _LOGGER.info("Datadis no responde: %s", exc)
-            return None, "no_responde"
+        return await async_probar(self.hass, usuario, clave)
 
     # --- alta -------------------------------------------------------------------------
 
@@ -113,23 +153,10 @@ class DatadisSubentryFlow(ConfigSubentryFlow):
         return self.async_show_form(step_id="suministro", data_schema=esquema)
 
     def _crear(self, suministro: dict[str, Any]) -> SubentryFlowResult:
-        ya = {
-            s.data.get(CONF_DATADIS_SUMINISTRO, {}).get("cups")
-            for s in self._get_entry().subentries.values()
-            if s.subentry_type == SUBENTRY_DATADIS
-        }
-        if suministro.get("cups") in ya:
+        if suministro.get("cups") in cups_configurados(self._get_entry()):
             return self.async_abort(reason="ya_configurado")
-        datos = {
-            **self._credenciales,
-            CONF_DATADIS_SUMINISTRO: {
-                "cups": suministro["cups"],
-                "distributorCode": str(suministro.get("distributorCode", "")),
-                "pointType": int(suministro.get("pointType") or 5),
-            },
-            CONF_REVISION: 1,
-        }
-        return self.async_create_entry(title=_titulo(suministro), data=datos)
+        titulo, datos = datos_cuenta(self._credenciales, suministro)
+        return self.async_create_entry(title=titulo, data=datos)
 
     # --- reconfigurar -------------------------------------------------------------------
 
@@ -138,7 +165,9 @@ class DatadisSubentryFlow(ConfigSubentryFlow):
         return getattr(datos, "datadis", {}).get(self._reconfigure_subentry_id)
 
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
-        return self.async_show_menu(step_id="reconfigure", menu_options=["importar_csv", "cuenta"])
+        return self.async_show_menu(
+            step_id="reconfigure", menu_options=["importar_csv", "historico", "cuenta"]
+        )
 
     async def async_step_importar_csv(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         cuenta = self._cuenta()
@@ -153,6 +182,7 @@ class DatadisSubentryFlow(ConfigSubentryFlow):
                 errores["csv"] = "csv_no_valido"
             else:
                 c = await cuenta.async_importar(registros)
+                lengua = idioma(self.hass.config.language)
                 if not c.horas and not c.rechazados:
                     errores["csv"] = "csv_vacio"
                 else:
@@ -161,13 +191,31 @@ class DatadisSubentryFlow(ConfigSubentryFlow):
                         description_placeholders={
                             "horas": str(len(c.horas)),
                             "rechazados": ", ".join(
-                                f"{d.isoformat()} ({m})" for d, m in sorted(c.rechazados.items())
+                                f"{d.isoformat()} ({texto_motivo(m, lengua)})"
+                                for d, m in sorted(c.rechazados.items())
                             )
                             or "—",
                         },
                     )
         esquema = vol.Schema({vol.Required("csv"): FileSelector(FileSelectorConfig(accept=".csv,text/csv"))})
         return self.async_show_form(step_id="importar_csv", data_schema=esquema, errors=errores)
+
+    async def async_step_historico(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        """Descarga lo que deja Datadis (dos años) por detrás de la consulta diaria, en segundo plano."""
+        cuenta = self._cuenta()
+        if cuenta is None:
+            return self.async_abort(reason="no_cargada")
+        rango = cuenta.rango_del_historico()
+        if rango is None:
+            return self.async_abort(reason="historico_nada")
+        if user_input is not None:
+            rango = cuenta.async_pedir_historico() or rango
+        placeholders = {"desde": f"{rango[0]:%m/%Y}", "hasta": f"{rango[1]:%m/%Y}"}
+        if user_input is not None:
+            return self.async_abort(reason="historico_iniciado", description_placeholders=placeholders)
+        return self.async_show_form(
+            step_id="historico", data_schema=vol.Schema({}), description_placeholders=placeholders
+        )
 
     async def async_step_cuenta(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         subentrada = self._get_reconfigure_subentry()

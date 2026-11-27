@@ -1,4 +1,4 @@
-"""Servicios: `conciliar_factura` (F4), `enviar_resumen` (F5) y `comparar_tarifas` (F8)."""
+"""Servicios: `conciliar_factura` y `leer_facturas` (F4), `enviar_resumen` (F5) y `comparar_tarifas` (F8)."""
 
 from __future__ import annotations
 
@@ -7,12 +7,14 @@ from decimal import Decimal
 
 import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.service import async_register_admin_service
+from homeassistant.util import dt as dt_util
 
 from .const import CONF_DESTINO, DOMAIN, SUBENTRY_RESUMEN
+from .idiomas import error, idioma
+from .prices.aiopvpc.const import REFERENCE_TZ
 from .validacion import MAX_KWH_FACTURA, MAX_TOTAL_FACTURA, errores_factura
 
 _LOGGER = logging.getLogger(__name__)
@@ -30,32 +32,34 @@ ESQUEMA_CONCILIAR = vol.Schema(
         vol.Required("kwh_p3"): _KWH,
         vol.Required("total"): vol.All(vol.Coerce(float), vol.Range(min=0, max=MAX_TOTAL_FACTURA)),
         vol.Optional("kwh_bonificados"): _KWH,
+        # Varias seguidas (la tarjeta): solo la última consulta a la CNMC, como el lote ZIP del flujo.
+        vol.Optional("comprobar", default=True): cv.boolean,
     }
 )
-_ERRORES_FACTURA = {
-    "importe_a_cero": "El total de la factura no puede ser cero",
-    "bonificados_mayor_que_consumo": "Los kWh bonificados no pueden superar al consumo",
-}
 
 
 def _subentrada_de(hass: HomeAssistant, device_id: str, atributo: str):
     dispositivo = dr.async_get(hass).async_get(device_id)
     if dispositivo is None:
-        raise HomeAssistantError(f"No existe el dispositivo {device_id}")
+        raise error(hass, "dispositivo_no_existe", device_id=device_id)
     ids = {ident for dominio, ident in dispositivo.identifiers if dominio == DOMAIN}
     for entry in hass.config_entries.async_loaded_entries(DOMAIN):
         for subentry_id, objeto in getattr(entry.runtime_data, atributo, {}).items():
             if subentry_id in ids:
                 return objeto
-    raise HomeAssistantError("Ese dispositivo no es un suministro de PVPC + Bono Social")
+    raise error(hass, "no_es_suministro")
 
 
 async def _async_conciliar(call: ServiceCall) -> None:
+    from .facturacion import FacturaFutura
+
     d = call.data
     facturacion = _subentrada_de(call.hass, d["suministro"], "suministros")
     kwh = {"P1": d["kwh_p1"], "P2": d["kwh_p2"], "P3": d["kwh_p3"]}
     if errores := errores_factura(kwh, d["total"], d.get("kwh_bonificados")):
-        raise HomeAssistantError(". ".join(_ERRORES_FACTURA[e] for e in errores.values()))
+        raise error(call.hass, next(iter(errores.values())))  # el primero; el otro, al corregirlo
+    if not 0 < (d["fin"] - d["inicio"]).days <= 62:
+        raise error(call.hass, "periodo_factura_no_valido")
     try:
         await facturacion.async_conciliar(
             inicio=d["inicio"],
@@ -64,9 +68,52 @@ async def _async_conciliar(call: ServiceCall) -> None:
             kwh=kwh,
             total=Decimal(str(d["total"])),
             bonificados=d.get("kwh_bonificados"),
+            comprobar=d["comprobar"],
         )
+    except FacturaFutura as exc:
+        raise error(call.hass, "factura_futura") from exc
     except ValueError as exc:
-        raise HomeAssistantError(str(exc)) from exc
+        raise error(call.hass, "factura_no_guardada", error=str(exc)) from exc
+
+
+SERVICIO_LEER = "leer_facturas"
+ESQUEMA_LEER = vol.Schema(
+    {
+        vol.Required("suministro"): cv.string,
+        # Ids de /api/file_upload (lo que sube el selector de archivos): PDF o ZIP de PDF. Como
+        # mucho 12 archivos, igual que los PDF de un ZIP (MAX_FACTURAS_ZIP).
+        vol.Required("archivos"): vol.All(cv.ensure_list, [cv.string], vol.Length(min=1, max=12)),
+    }
+)
+
+
+async def _async_leer_facturas(call: ServiceCall) -> ServiceResponse:
+    """Lee los PDF (o ZIP) subidos con el mismo lector que «Factura real»; no concilia nada.
+
+    Devuelve las facturas con los campos de `conciliar_factura` y las que se quedan fuera con el
+    motivo del lote ZIP. Como en el lote, se apartan las que el motor rechazaría al introducirlas.
+    """
+    from .flujo_suministro import MOTIVOS_ZIP, _leer_subida, campos_factura
+
+    hass = call.hass
+    _subentrada_de(hass, call.data["suministro"], "suministros")
+    hoy = dt_util.now(REFERENCE_TZ).date()
+    motivos = MOTIVOS_ZIP[idioma(hass.config.language)]
+    facturas: list[dict] = []
+    rechazadas: list[dict] = []
+    for archivo in call.data["archivos"]:
+        try:
+            subida = await hass.async_add_executor_job(_leer_subida, hass, archivo)
+        except ValueError:  # id caducado o inexistente, o ZIP no válido (como en el flujo)
+            rechazadas.append({"id": archivo, "archivo": None, "motivo": "pdf_no_subido"})
+            continue
+        subida.apartar_no_validas(hoy)
+        facturas += [{"id": archivo, "archivo": nombre, **campos_factura(f)} for nombre, f in subida.buenas]
+        rechazadas += [{"id": archivo, "archivo": nombre, "motivo": m} for nombre, m in subida.malas]
+    for r in rechazadas:
+        r["texto"] = motivos.get(r["motivo"], r["motivo"])
+    facturas.sort(key=lambda f: f["inicio"])
+    return {"facturas": facturas, "rechazadas": rechazadas}
 
 
 SERVICIO_RESUMEN = "enviar_resumen"
@@ -90,7 +137,7 @@ async def _async_resumen(call: ServiceCall) -> ServiceResponse:
     hass = call.hass
     entradas = hass.config_entries.async_loaded_entries(DOMAIN)
     if not entradas:
-        raise HomeAssistantError("PVPC + Bono Social no está cargada")
+        raise error(hass, "no_cargada")
     # (entrada, datos del resumen) de todos los resúmenes configurados
     resumenes = [
         (entry, dict(s.data))
@@ -115,7 +162,7 @@ async def _async_resumen(call: ServiceCall) -> ServiceResponse:
             return {"titulo": None, "texto": None}
         return {"titulo": mensaje.titulo, "texto": mensaje.texto}
     if not resumenes:
-        raise HomeAssistantError("No hay ningún resumen configurado: añade uno o indica el destino")
+        raise error(hass, "sin_resumen")
     enviados = 0
     fallidos: list[str] = []
     sin_precios: list[str] = []
@@ -130,8 +177,8 @@ async def _async_resumen(call: ServiceCall) -> ServiceResponse:
             fallidos.append(datos[CONF_DESTINO])
     if not enviados:
         if fallidos:
-            raise HomeAssistantError(f"No se pudo enviar el resumen a {', '.join(fallidos)}")
-        raise HomeAssistantError("Mañana aún no tiene precios publicados")
+            raise error(hass, "resumen_no_enviado", destinos=", ".join(fallidos))
+        raise error(hass, "manana_sin_precios")
     if not call.return_response:
         return None
     return {"enviados": enviados, "fallidos": fallidos, "sin_precios": sin_precios}
@@ -184,6 +231,15 @@ def registrar(hass: HomeAssistant) -> None:
         supports_response=SupportsResponse.OPTIONAL,
     )
     async_register_admin_service(hass, DOMAIN, SERVICIO_CONCILIAR, _async_conciliar, schema=ESQUEMA_CONCILIAR)
+    # Lee lo subido para la tarjeta («Subir factura»), que luego concilia con conciliar_factura.
+    async_register_admin_service(
+        hass,
+        DOMAIN,
+        SERVICIO_LEER,
+        _async_leer_facturas,
+        schema=ESQUEMA_LEER,
+        supports_response=SupportsResponse.ONLY,
+    )
     async_register_admin_service(
         hass,
         DOMAIN,

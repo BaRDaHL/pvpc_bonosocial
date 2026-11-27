@@ -25,7 +25,22 @@ if(p.get("anexo")){
     pvpc_cnmc:1985.3,pvpc_cnmc_prevision:2380.1,pvpc_cnmc_prevision_bono:1825.23,total_ofertas:61,grandes_ausentes:[],
     ofertas:[{id:1,comercializadora:"Energía Ejemplo S.L.",oferta:"Tarifa Fija 24 h",importe_primer_anio:1512.4,importe_segundo_anio:1512.4,
       ahorro_anual:-128,ahorro_prevision:312.83,revision:"anual",permanencia:false,solo_nuevos_clientes:false,verde:true}],
-    avisos:["pierde_bono","revision_precios","prevision_volatil","bono_termico"],veredicto:"depende_precios"}};
+    avisos:["pierde_bono","revision_precios","prevision_volatil","bono_termico"],veredicto:"depende_precios",
+    termometro:{posicion:"entre",meses:4,eur_kwh:0.3601,mas_barata:{mes:"2026-07",eur_kwh:0.3412},mas_cara:{mes:"2026-09",eur_kwh:0.3755}}}};
+  callService=async()=>{};
+}
+// «historico=1»: histórico de comparativas inventado (dos meses); «historico=vacio»: sin meses.
+if(p.get("historico")){
+  const o=(id,nombre,importe,fecha,total,extra={})=>({id,comercializadora:nombre,oferta:`Oferta ${id}`,importe_primer_anio:importe,fecha,
+    enlace:`https://comparador.example/${id}`,permanencia:false,revision:"anual",solo_nuevos_clientes:false,kwh:{P1:1000,P2:1000,P3:total-2000,total},...extra});
+  const historico=p.get("historico")==="vacio"?[]:[
+    {mes:"2026-11",ofertas:[o(1,"Energía Ejemplo S.L.",1512.4,"2026-11-05",4200),o(2,"Luz de Prueba",1530.1,"2026-11-05",4200,{permanencia:true}),o(3,"Comercializadora Ficticia",1544,"2026-11-20",4300,{solo_nuevos_clientes:true})],
+      prevision:1825.23,prevision_bono:true,prevision_fecha:"2026-11-05",pagado_anual:1384.4,kwh:{P1:1000,P2:1000,P3:2200,total:4200},ultima:"2026-11-20",comparativas:2},
+    {mes:"2026-10",ofertas:[o(4,"Otra Inventada",1490,"2026-10-02",4100,{enlace:null})],
+      prevision:null,prevision_bono:null,prevision_fecha:null,pagado_anual:1390,kwh:{P1:1000,P2:1000,P3:2100,total:4100},ultima:"2026-10-02",comparativas:1},
+  ];
+  estados["button.pvpc_bs_comparar_tarifas"]={state:"2026-11-20",attributes:{}};
+  estados["sensor.pvpc_bs_mejor_alternativa"]={state:"unknown",attributes:{estado:"ok",historico}};
   callService=async()=>{};
 }
 const c=document.createElement("pvpc-bono-social-card");
@@ -36,7 +51,24 @@ const importes=[88.4,95.1,112.7,141.3,156.9,121.5,104.2,97.8];
 const callWS=async(m)=>m.type==="recorder/list_statistic_ids"?[{statistic_id:"sensor.otro"},{statistic_id:"pvpc_bonosocial:facturas_prueba"}]
 :{"pvpc_bonosocial:facturas_prueba":importes.map((v,i)=>({start:Date.UTC(2026,i+1,12,22),max:v,mean:v,min:v}))};
 // Zona horaria de HA (?zona=Europe/Madrid); sin ella, la tarjeta usa la del navegador.
-c.hass={states:estados,callService,entities:{"button.pvpc_bs_comparar_tarifas":{device_id:"d1"},"sensor.pvpc_bs_mejor_alternativa":{device_id:"d1"}},locale:{language:p.get("idioma")||"es"},language:p.get("idioma")||"es",callWS,...(p.get("zona")?{config:{time_zone:p.get("zona")}}:{})};
+// «subir=1»: «Subir factura» con /api/file_upload y los servicios simulados (llamadas en window.llamadas).
+const entidades={"button.pvpc_bs_comparar_tarifas":{device_id:"d1"},"sensor.pvpc_bs_mejor_alternativa":{device_id:"d1"}};
+let fetchWithAuth,ws=callWS;
+if(p.get("subir")){
+  entidades["sensor.pvpc_bs_factura_actual"]={device_id:"d1"};
+  window.llamadas=[];
+  fetchWithAuth=async(url,init)=>{const f=init.body.get("file");window.llamadas.push(["subir",url,f.name]);return new Response(JSON.stringify({file_id:"id-"+f.name}),{status:200})};
+  const comunes={emision:"2026-04-16",kwh_p1:200,kwh_p2:200,kwh_p3:350,kwh_bonificados:404};
+  ws=async(m)=>{
+    if(m.type!=="call_service")return callWS(m);
+    window.llamadas.push([m.service,m.service_data]);
+    if(m.service==="leer_facturas")return{context:{},response:{
+      facturas:[{id:"id-facturas.zip",archivo:"febrero.pdf",inicio:"2026-02-12",fin:"2026-03-12",total:150,...comunes},{id:"id-marzo.pdf",archivo:"marzo.pdf",inicio:"2026-03-12",fin:"2026-04-13",total:180.55,...comunes}],
+      rechazadas:[{id:"id-facturas.zip",archivo:"otra.pdf",motivo:"pdf_no_reconocido",texto:"no se reconoce (solo facturas de la Comercializadora Regulada, Gas & Power)"}]}};
+    return{context:{}};
+  };
+}
+c.hass={states:estados,callService,fetchWithAuth,entities:entidades,locale:{language:p.get("idioma")||"es"},language:p.get("idioma")||"es",callWS:ws,...(p.get("zona")?{config:{time_zone:p.get("zona")}}:{})};
 document.body.appendChild(c);
 window.listo=true;
 </script></body></html>

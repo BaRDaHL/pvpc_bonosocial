@@ -41,17 +41,9 @@
           "name": "Entry name",
           "tariff": "Applicable tariff by geographic zone",
           "better_price_target": "\"Next best price\" target",
-          "next_price_in_update": "Update rate of \"Next price in\"",
-          "next_best_in_update": "Update rate of \"Next best price in\"",
-          "next_period_in_update": "Update rate of \"Next period in\"",
-          "next_power_period_in_update": "Update rate of \"Next power period in\"",
           "enable_private_api": "Use the ESIOS private API (with token)"
         },
         "data_description": {
-          "next_price_in_update": "Every minute, every hour or disabled (the entity is disabled).",
-          "next_best_in_update": "Every minute, every hour or disabled (the entity is disabled).",
-          "next_period_in_update": "Every minute, every hour or disabled (the entity is disabled).",
-          "next_power_period_in_update": "Every minute, every hour or disabled (the entity is disabled).",
           "better_price_target": "Price level an hour must reach for \"Next best price\" to pick it.",
           "name": "Name shown in Devices & services. The sensors are always called sensor.pvpc_bs_*."
         }
@@ -99,17 +91,9 @@
         "description": "PVPC + Bono Social works without a token (ESIOS public API). With a personal ESIOS token (private API) it also provides the surplus price, the day-ahead wholesale price (OMIE), the gas adjustment (MAG) and the indexed price mode. The contracted power is asked for when adding the supply.",
         "data": {
           "better_price_target": "\"Next best price\" target",
-          "next_price_in_update": "Update rate of \"Next price in\"",
-          "next_best_in_update": "Update rate of \"Next best price in\"",
-          "next_period_in_update": "Update rate of \"Next period in\"",
-          "next_power_period_in_update": "Update rate of \"Next power period in\"",
           "enable_private_api": "Use the ESIOS private API (with token)"
         },
         "data_description": {
-          "next_price_in_update": "Every minute, every hour or disabled (the entity is disabled).",
-          "next_best_in_update": "Every minute, every hour or disabled (the entity is disabled).",
-          "next_period_in_update": "Every minute, every hour or disabled (the entity is disabled).",
-          "next_power_period_in_update": "Every minute, every hour or disabled (the entity is disabled).",
           "better_price_target": "Price level an hour must reach for \"Next best price\" to pick it."
         }
       },
@@ -269,7 +253,9 @@
           "sin_fecha": "Last bill date missing",
           "sin_consumo": "No consumption data",
           "precios_incompletos": "Prices missing",
-          "consumo_incompleto": "Consumption hours missing"
+          "consumo_incompleto": "Consumption hours missing",
+          "datos_pendientes": "Waiting for data (provisional)",
+          "sin_fuente": "No consumption source (bills only)"
         }
       },
       "estado_datadis": {
@@ -295,7 +281,8 @@
           "incompleta": "Not comparable (hourly consumption missing)",
           "sin_comprobar": "Not checked",
           "cnmc_no_responde": "CNMC not responding",
-          "desactivada": "Disabled"
+          "desactivada": "Disabled",
+          "aproximada": "Approximate (no hourly curve)"
         }
       }
     },
@@ -316,13 +303,6 @@
         "neutral": "Neutral",
         "cheap": "Cheap",
         "very_cheap": "Very cheap"
-      }
-    },
-    "update_frequency": {
-      "options": {
-        "disabled": "Disabled",
-        "hourly": "Hourly",
-        "minute": "Every minute"
       }
     },
     "price_mode": {
@@ -349,8 +329,11 @@
     },
     "tipo_fuente": {
       "options": {
-        "sensor": "Home Assistant energy sensor",
-        "estadistica": "External statistic (domain:object)"
+        "sensor": "An energy meter in Home Assistant (Shelly, Emporia, IoTaWatt, P1 reader, Zigbee clamp…)",
+        "datadis": "Datadis (official meter curve, 1-5 days late)",
+        "ambos": "Both: meter for recent hours and Datadis as official data (most accurate)",
+        "ninguna": "None: I will only enter my bills (rough forecast)",
+        "estadistica": "Advanced: external statistic from another integration (domain:object)"
       }
     },
     "shelly_frecuencia": {
@@ -391,6 +374,17 @@
         "color_precio": "Colour on the price, thin bar after",
         "barra_fija": "Fixed-width bar, aligned price after",
         "dos_columnas": "Two columns (00–11 h and 12–23 h)"
+      }
+    },
+    "factura_en_curso": {
+      "options": {
+        "estimar": "Estimate what is pending (provisional)",
+        "recibido": "Only what has been received"
+      }
+    },
+    "cuenta": {
+      "options": {
+        "nueva": "Add a new Datadis account"
       }
     }
   },
@@ -472,11 +466,50 @@
     },
     "periodo_cerrado_incompleto": {
       "title": "Closed period with hours without consumption in «{suministro}»",
-      "description": "When these periods were closed, the consumption of some hours was missing (for example, Datadis had not published it yet) and those hours were counted as 0 kWh: {periodos}. {horas} hours in total. The period is recalculated automatically as soon as the consumption arrives, and this notice disappears. If it does not arrive within {dias} days, it is left as it is: enter the real bill for the period to correct it."
+      "description": "When these periods were closed, the consumption of some hours was missing and it is no longer expected soon (gaps, or the source has gone longer than usual without publishing): {periodos}. {horas} hours in total. Hours that were only waiting to be published have been estimated; gaps count as 0 kWh. The period is recalculated automatically as soon as the consumption arrives, and this notice disappears. If it does not arrive within {dias} days, it is left as it is: enter the real bill for the period to correct it."
     },
     "factura_no_cuadra_medidor": {
       "title": "A «{suministro}» bill does not match the meter",
       "description": "The kWh of these bills are too far from what the meter measured over the same period (official reading ÷ meter outside {minimo}–{maximo}): {facturas}. They are not used to calibrate the meter; the other bills are. It is usually a mistyped bill (check the kWh per period and the dates) or a meter that does not measure the whole supply. If you correct the bill (enter it again with the same dates), this notice disappears."
+    },
+    "fuente_sin_datos": {
+      "title": "The consumption source of \"{suministro}\" has no data",
+      "description": "The source {fuente} has had no data for more than {horas} hours (last data: {desde}). Was the entity renamed or deleted, or has the integration that imports it stopped working? If the entity was renamed in the entity registry, the integration follows it; otherwise, open this notice and choose the right source. To change the profile (Datadis, no source…), reconfigure the supply. This notice disappears as soon as data comes back.",
+      "fix_flow": {
+        "step": {
+          "fuente": {
+            "title": "Another source for \"{suministro}\"",
+            "description": "The source {fuente} has had no data for more than {horas} hours (last data: {desde}). Was the entity renamed or deleted, or has the integration that imports it stopped working? If the entity was renamed in the entity registry, the integration follows it and you only need to wait.\n\nOtherwise, choose the right source: the meter (a cumulative energy sensor: kWh or Wh, total or total_increasing) or, if the supply uses an external statistic, the statistic (domain:object). Bills and the rest of the supply data are kept; what was calculated with the previous source is reviewed with the new one once it has data. To change the profile (Datadis, no source…), reconfigure the supply.",
+            "data": {
+              "fuente": "Source"
+            }
+          }
+        },
+        "error": {
+          "obligatorio": "This field is required.",
+          "misma_fuente": "This is the source the supply already uses: choose another one.",
+          "fuente_en_uso": "That source is already used by another supply.",
+          "estadistica_no_externa": "Choose an external statistic (domain:object). To use a sensor, reconfigure the supply and choose «An energy meter in Home Assistant».",
+          "fuente_no_encontrada": "That entity does not exist or has no state yet.",
+          "fuente_no_energia": "The sensor must be an energy sensor (kWh, Wh or MWh) with state_class total or total_increasing."
+        },
+        "abort": {
+          "ya_no_existe": "The supply no longer exists.",
+          "perfil_cambiado": "The supply no longer uses a meter or an external statistic: there is no source to change here."
+        }
+      }
+    },
+    "fuente_sin_datos_datadis": {
+      "title": "Datadis has no data for \"{suministro}\"",
+      "description": "The Datadis statistic {fuente} has had no data for more than {horas} hours (last data: {desde}). Datadis publishes with a 1-5 day delay, but this long is usually an account problem: check that the Datadis account username and password are still valid (reconfigure the account if you changed them) or whether Datadis is down. To use another source (a meter, no source…), reconfigure the supply. This notice disappears as soon as data comes back."
+    },
+    "medidor_no_coincide_datadis": {
+      "title": "The meter of \"{suministro}\" does not match Datadis",
+      "description": "Over the last full days with data from both sources, Datadis ({datadis}) differs by {diferencia} % from the meter {medidor}. For the hours Datadis has not published yet, the meter calibrated against Datadis is used. Check that the meter measures the whole supply (all phases, the clamp on the main line) and that the Datadis account is this supply's."
+    },
+    "medidor_no_coincide_datadis_sin_calibrar": {
+      "title": "The meter of \"{suministro}\" does not match Datadis",
+      "description": "Over the last full days with data from both sources, Datadis ({datadis}) differs by {diferencia} % from the meter {medidor}. The difference is too large to calibrate the meter against Datadis, so for the hours Datadis has not published yet the meter is used as is. Check that the meter measures the whole supply (all phases, the clamp on the main line) and that the Datadis account is this supply's."
     }
   },
   "config_subentries": {
@@ -500,7 +533,7 @@
           },
           "data_description": {
             "categoria": "Sets the yearly discounted kWh limit (RD 897/2017). Required with bono social.",
-            "tipo_fuente": "The bill cannot be computed without an hourly consumption source.",
+            "tipo_fuente": "Where the hourly consumption comes from. With Datadis recent figures are provisional (Datadis publishes days late). Without a source, the current bill is a rough forecast from the last real bill, and there is no cost today nor remaining discounted kWh.",
             "potencia_p1_kw": "Between 0.1 and 15 kW.",
             "potencia_p2_kw": "Between 0.1 and 15 kW."
           }
@@ -525,14 +558,14 @@
           },
           "data_description": {
             "categoria": "Sets the yearly discounted kWh limit (RD 897/2017). Required with bono social.",
-            "tipo_fuente": "The bill cannot be computed without an hourly consumption source.",
+            "tipo_fuente": "Where the hourly consumption comes from. With Datadis recent figures are provisional (Datadis publishes days late). Without a source, the current bill is a rough forecast from the last real bill, and there is no cost today nor remaining discounted kWh.",
             "potencia_p1_kw": "Between 0.1 and 15 kW.",
             "potencia_p2_kw": "Between 0.1 and 15 kW."
           }
         },
         "fuente": {
           "title": "Consumption source",
-          "description": "An energy sensor (kWh, cumulative) or an external statistic that imports the hourly curve (for example, from Datadis).",
+          "description": "Choose the meter: any cumulative energy sensor (kWh or Wh, total or total_increasing) of any brand (Shelly, Emporia, IoTaWatt, P1/DSMR reader, Tuya/Zigbee clamp, a utility_meter or a Riemann integration…). In the advanced option, an external statistic that imports the hourly curve.",
           "data": {
             "fuente": "Source"
           }
@@ -547,22 +580,26 @@
             "arrastre_inicial_kwh": "Accumulated discounted kWh (carry-over)",
             "codigo_postal": "Postal code (for the CNMC options)",
             "comparar_mensual": "Compare tariffs every month",
+            "comparar_fin_de_mes": "Complete the comparison history at month end",
             "segunda_opinion_cnmc": "Check each bill with the CNMC",
             "comparador_destino": "Send the tariff comparison to",
             "comparador_envio": "When to send it",
             "comparador_umbral_eur": "Minimum saving to send it (€/year)",
-            "comparador_formato": "Message format"
+            "comparador_formato": "Message format",
+            "factura_en_curso": "Current bill"
           },
           "data_description": {
             "arrastre_inicial_kwh": "The discounted kWh left over in the last 12 months that you have not used yet. If you do not know, leave 0: it is corrected when bills are reconciled.",
-            "codigo_postal": "Optional: only needed for the two options below, which send data to the CNMC. Comparing tariffs sends the postal code, the contracted power and the yearly kWh per period. Checking each bill also sends the hourly consumption of the period and the type of social bonus. Without those options nothing is sent.",
+            "codigo_postal": "Optional: only needed for the options below, which send data to the CNMC. Comparing tariffs sends the postal code, the contracted power and the yearly kWh per period. Checking each bill also sends the hourly consumption of the period and the type of social bonus. Without those options nothing is sent.",
             "comparar_mensual": "On the 2nd of every month, compares your last 12 months with the CNMC offers and leaves a notification. Needs the postal code.",
+            "comparar_fin_de_mes": "Complete the history: if there has been no comparison during the month, compares on the last day (at 21:43) without notification or message, only to fill in the card's comparison history. Sends the CNMC the same as “Compare tariffs every month”. Needs the postal code.",
             "segunda_opinion_cnmc": "When you enter an actual bill, the integration asks the official CNMC simulator for the same bill (with the bill's meter kWh) and warns you if it does not match. Hourly consumption, power, bonus type and postcode are sent (no CUPS). Needs the postcode.",
             "comparador_destino": "Optional. A notify entity (a Telegram chat, your phone…). Telegram needs the Telegram bot integration set up in Home Assistant. Besides the Home Assistant notification, the comparison (button or monthly) is sent there.",
             "comparador_umbral_eur": "Only with “Only if an offer saves money”: the best offer must save more than this per year.",
             "fin_ultima_factura": "End of the last bill: it is the start of the current period. When reconfiguring, the one in force is suggested; if you change it, the current period starts on that day (also backwards) and the later estimated periods are recalculated.",
             "dias_hasta_emision": "Between 0 and 30 days.",
-            "alquiler_contador_eur_mes": "Between €0 and €5."
+            "alquiler_contador_eur_mes": "Between €0 and €5.",
+            "factura_en_curso": "While the source has not published the last hours (Datadis takes 1 to 5 days): estimate them from your consumption of the last weeks (provisional figures, marked with ≈) or show only what has been received (\"data until …\"). The forecast always estimates them, and the remaining discounted kWh count them as used."
           }
         },
         "comprobacion": {
@@ -620,12 +657,34 @@
             "factura_real": "Add another bill",
             "terminar": "Finish"
           }
+        },
+        "datadis": {
+          "title": "Datadis account",
+          "description": "Choose the Datadis account that provides the hourly curve of this supply, or add a new one.",
+          "data": {
+            "cuenta": "Account"
+          }
+        },
+        "datadis_nueva": {
+          "title": "New Datadis account",
+          "description": "datadis.es user and password. The account is created when the supply is added; the first download takes a few minutes and, until then, the bill has no consumption.",
+          "data": {
+            "usuario": "User (NIF/NIE)",
+            "clave": "Password"
+          }
+        },
+        "datadis_cups": {
+          "title": "Datadis supply",
+          "description": "Your Datadis account has several supplies: choose this one.",
+          "data": {
+            "cups": "Supply"
+          }
         }
       },
       "error": {
         "categoria_requerida": "With bono social the household must be set.",
         "fuente_en_uso": "That source is already used by another supply.",
-        "estadistica_no_externa": "Choose an external statistic (domain:object). For a sensor, go back and choose «Energy sensor».",
+        "estadistica_no_externa": "Choose an external statistic (domain:object). To use a sensor, close this dialog, start again and choose «An energy meter in Home Assistant».",
         "fuente_no_encontrada": "That entity does not exist or has no state yet.",
         "fuente_no_energia": "The sensor must be an energy sensor (kWh, Wh or MWh) with state_class total or total_increasing.",
         "pdf_no_reconocido": "The PDF is not recognised. Only bills from Comercializadora Regulada, Gas & Power (Naturgy) can be read; for others, leave the file empty and enter the data by hand.",
@@ -650,7 +709,10 @@
         "rango_kwh": "Must be between 0 and 100000 kWh.",
         "rango_total": "Must be between €0 and €100000.",
         "codigo_postal_requerido": "The postal code is needed to compare tariffs or check bills with the CNMC.",
-        "nombre_en_uso": "There is already a supply with that name: choose another so their costs are not mixed in the Energy dashboard."
+        "nombre_en_uso": "There is already a supply with that name: choose another so their costs are not mixed in the Energy dashboard.",
+        "credenciales": "Wrong Datadis user or password.",
+        "no_responde": "Datadis is not responding. Try again later.",
+        "sin_suministros": "Datadis returns no supply for this account."
       },
       "abort": {
         "reconfigure_successful": "Supply updated.",
@@ -764,6 +826,7 @@
           "description": "What do you want to do?",
           "menu_options": {
             "importar_csv": "Import a CSV from datadis.es",
+            "historico": "Download full history",
             "cuenta": "Change user or password"
           }
         },
@@ -773,6 +836,10 @@
           "data": {
             "csv": "Consumption CSV"
           }
+        },
+        "historico": {
+          "title": "Download full history",
+          "description": "Asks Datadis for all the hourly consumption it allows (two years at most): from {desde} to {hasta}. The most recent part already comes with the daily query. It runs in the background and may take a few minutes; a notification appears when it finishes. Hours already stored in those months are replaced by Datadis's, as when importing a CSV. If Datadis does not respond or asks to wait (it only allows repeating a query every 24 h), it is retried later."
         },
         "cuenta": {
           "title": "Datadis account",
@@ -793,7 +860,9 @@
         "ya_configurado": "That supply is already configured.",
         "reconfigure_successful": "Account updated: Datadis will be queried now.",
         "no_cargada": "The integration is not loaded. Enable it and try again.",
-        "csv_importado": "Imported {horas} hours. Discarded days: {rechazados}."
+        "csv_importado": "Imported {horas} hours. Discarded days: {rechazados}.",
+        "historico_iniciado": "Download started ({desde} – {hasta}). A notification appears when it finishes; meanwhile the «historico» attribute of the Datadis status sensor shows its progress.",
+        "historico_nada": "Nothing more to download: the daily query already covers everything Datadis allows."
       }
     }
   },
@@ -837,6 +906,24 @@
         "kwh_bonificados": {
           "name": "Discounted kWh",
           "description": "Sum of discounted kWh on the bill (optional, improves the bono calculation)."
+        },
+        "comprobar": {
+          "name": "Check with the CNMC",
+          "description": "Ask the CNMC to check the latest bill (if enabled for the supply). When entering several in a row, the last one is enough."
+        }
+      }
+    },
+    "leer_facturas": {
+      "name": "Read bills",
+      "description": "Reads the uploaded bill PDFs (or ZIPs with several) with the same reader as «Actual bill» and returns their data for review, without entering anything. Only bills from Comercializadora Regulada, Gas & Power (Naturgy) are read.",
+      "fields": {
+        "suministro": {
+          "name": "Supply",
+          "description": "The supply the bills belong to."
+        },
+        "archivos": {
+          "name": "Files",
+          "description": "Ids of the files uploaded to Home Assistant (PDF or ZIP), up to 12."
         }
       }
     },
@@ -893,6 +980,68 @@
           "description": "Notification entity (for example, a Telegram chat). If not given, the one in the supply options."
         }
       }
+    }
+  },
+  "exceptions": {
+    "sin_historico": {
+      "message": "There is no price history yet."
+    },
+    "dispositivo_no_existe": {
+      "message": "Device {device_id} does not exist."
+    },
+    "no_es_suministro": {
+      "message": "That device is not a PVPC + Bono Social supply."
+    },
+    "importe_a_cero": {
+      "message": "The bill total cannot be zero."
+    },
+    "bonificados_mayor_que_consumo": {
+      "message": "Discounted kWh cannot exceed consumption."
+    },
+    "periodo_factura_no_valido": {
+      "message": "The bill period must be between 1 and 62 days long."
+    },
+    "factura_futura": {
+      "message": "The bill cannot end after today."
+    },
+    "factura_no_guardada": {
+      "message": "The bill could not be saved: {error}"
+    },
+    "no_cargada": {
+      "message": "PVPC + Bono Social is not loaded."
+    },
+    "sin_resumen": {
+      "message": "No summary is configured: add one or give a target."
+    },
+    "resumen_no_enviado": {
+      "message": "The summary could not be sent to {destinos}"
+    },
+    "manana_sin_precios": {
+      "message": "Tomorrow's prices are not published yet."
+    },
+    "sin_comparativa": {
+      "message": "There is no comparison yet: compare tariffs before sending it."
+    },
+    "comparativa_sin_destino": {
+      "message": "The supply has no target for the comparison: choose one in the supply options."
+    },
+    "comparar_sin_codigo_postal": {
+      "message": "The supply has no postal code: add it with the supply's ⚙ gear (Reconfigure) to compare tariffs."
+    },
+    "comparar_sin_datos": {
+      "message": "There is no closed bill period yet: at least one is needed to compare."
+    },
+    "comparar_cnmc_no_responde": {
+      "message": "The CNMC comparator is not responding; try again later."
+    },
+    "fin_periodo_no_valido": {
+      "message": "The period end must be after {inicio} and no later than {fin}."
+    },
+    "sin_periodo_en_curso": {
+      "message": "There is no current period yet."
+    },
+    "subentrada_error": {
+      "message": "unexpected error: {tipo}"
     }
   }
 }

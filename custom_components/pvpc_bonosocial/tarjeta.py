@@ -66,7 +66,9 @@ async def _async_registrar(hass: HomeAssistant, estado: dict[str, Any]) -> bool:
     if "version" not in estado:
         estado["version"] = await hass.async_add_executor_job(_version)
     if not estado.get("ruta"):
-        ruta = StaticPathConfig(URL, str(ARCHIVO), cache_headers=False)
+        # Con caché en el navegador: todas las direcciones que se dan (recurso o módulo extra) llevan la
+        # huella del fichero (`_version`), así que un `.js` nuevo es otra dirección y se descarga.
+        ruta = StaticPathConfig(URL, str(ARCHIVO), cache_headers=True)
         await hass.http.async_register_static_paths([ruta])
         estado["ruta"] = True
     url = f"{URL}?v={estado['version']}"

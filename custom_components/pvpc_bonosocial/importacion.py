@@ -27,10 +27,6 @@ from homeassistant.helpers.typing import UNDEFINED
 from .const import (
     ATTR_BETTER_PRICE_TARGET,
     ATTR_ENABLE_PRIVATE_API,
-    ATTR_NEXT_BEST_IN_UPDATE,
-    ATTR_NEXT_PERIOD_IN_UPDATE,
-    ATTR_NEXT_POWER_PERIOD_IN_UPDATE,
-    ATTR_NEXT_PRICE_IN_UPDATE,
     ATTR_POWER_P1,
     ATTR_POWER_P3,
     ATTR_PRICE_MODE,
@@ -44,7 +40,7 @@ from .const import (
     normalize_better_price_target,
     normalize_price_mode,
 )
-from .migracion import normalizar_config_pvpc_next, unique_id_actual_pvpc_next
+from .migracion import ajustar_registro_cuentas_atras, normalizar_config_pvpc_next, unique_id_actual_pvpc_next
 from .prices.aiopvpc.const import KEY_PVPC, TARIFFS
 from .renombrado import async_actualizar_panel_energia, avisar_nombres, renombrar
 
@@ -56,17 +52,14 @@ ISSUE_IMPORTAR = "importar_pvpc_next"
 ISSUE_PVPC_NEXT_VACIA = "pvpc_next_vacia"
 CONF_COPIA = "copia_seguridad"
 
-# Configuración de PVPC Next que se importa (el resto se ignora)
+# Configuración de PVPC Next que se importa (el resto se ignora; la frecuencia de actualización de
+# sus cuentas atrás tampoco: aquí son marcas de tiempo, ver const.SENSORES_CUENTA_ATRAS)
 CLAVES_IMPORTADAS = (
     CONF_NAME,
     ATTR_TARIFF,
     ATTR_POWER_P1,
     ATTR_POWER_P3,
     ATTR_BETTER_PRICE_TARGET,
-    ATTR_NEXT_PRICE_IN_UPDATE,
-    ATTR_NEXT_BEST_IN_UPDATE,
-    ATTR_NEXT_PERIOD_IN_UPDATE,
-    ATTR_NEXT_POWER_PERIOD_IN_UPDATE,
     ATTR_ENABLE_PRIVATE_API,
     ATTR_PRICE_MODE,
     ATTR_SHOW_REFERENCE_PRICE,
@@ -162,6 +155,7 @@ async def async_importar(hass: HomeAssistant, entry: ConfigEntry, origen_id: str
             if renombrar(hass, entidad.entity_id, nombre):
                 renombres[entidad.entity_id] = nombre
         movidas += 1
+    ajustar_registro_cuentas_atras(registro, entry.entry_id)
     await async_actualizar_panel_energia(hass, renombres)
     avisar_nombres(hass, renombres)
     _LOGGER.info("Importadas %d entidades de PVPC Next (%d renombradas)", movidas, len(renombres))

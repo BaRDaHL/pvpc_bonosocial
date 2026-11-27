@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Mapping
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -65,6 +65,23 @@ def metadatos_energia(statistic_id: str, nombre: str) -> dict:
 ESPERA_RECORDER = 30
 # Clave en hass.data: hay escrituras de estadísticas encoladas desde la última espera.
 _PENDIENTE = f"{DOMAIN}_estadisticas_pendientes"
+# Clave en hass.data: la sincronización con el recorder en curso (un futuro que comparten todos).
+_ESPERA = f"{DOMAIN}_espera_recorder"
+# Clave en hass.data: cuántas veces ha escrito esta integración cada estadística (la curva de
+# Datadis, sobre todo). La caché del consumo horario (consumo.py) la vuelve a leer entera si cambia.
+_GENERACIONES = f"{DOMAIN}_generacion_estadisticas"
+# `sum` previo: primero se mira solo esta ventana; casi siempre la hora anterior está ahí.
+VENTANA_SUMA_PREVIA = timedelta(days=2)
+
+
+def generacion(hass: HomeAssistant, statistic_id: str) -> int:
+    return hass.data.get(_GENERACIONES, {}).get(statistic_id, 0)
+
+
+def marcar_cambiada(hass: HomeAssistant, statistic_id: str) -> None:
+    """Apunta que la estadística ha cambiado (puede que en horas antiguas)."""
+    generaciones = hass.data.setdefault(_GENERACIONES, {})
+    generaciones[statistic_id] = generaciones.get(statistic_id, 0) + 1
 
 
 def _encolar(hass: HomeAssistant, metadatos: dict, filas: list) -> None:
@@ -72,6 +89,7 @@ def _encolar(hass: HomeAssistant, metadatos: dict, filas: list) -> None:
     from homeassistant.components.recorder.statistics import async_add_external_statistics
 
     hass.data[_PENDIENTE] = True
+    marcar_cambiada(hass, metadatos["statistic_id"])
     async_add_external_statistics(hass, metadatos, filas)
 
 
@@ -87,31 +105,43 @@ async def async_esperar_recorder(hass: HomeAssistant) -> None:
     importación ya ha salido de la cola pero aún se está guardando, la cola está vacía y vuelve sin
     esperar. Con el recorder parado o atascado no se bloquea la actualización: tras
     `ESPERA_RECORDER` s se lee lo que haya.
+
+    Todos los que llegan mientras esa sincronización sigue en marcha la esperan también (comparten el
+    mismo futuro): si no, el segundo (p. ej. la caché del consumo de otro suministro) volvía sin
+    esperar y leía de la BD antes del commit.
     """
     from homeassistant.components.recorder import get_instance
 
     # Solo hace falta esperar si esta integración ha encolado escrituras desde la última espera.
     # Sin esto, al arrancar HA (el recorder aún no procesa la cola) cada lectura esperaba los
     # 30 s enteros y el alta de la integración tardaba más de un minuto.
-    if not hass.data.get(_PENDIENTE) or hass.state is not CoreState.running:
+    if hass.state is not CoreState.running:
         return
-    instancia = get_instance(hass)
-    if not instancia.is_alive():
-        return
-    hass.data[_PENDIENTE] = False
-    try:
-        from homeassistant.components.recorder.tasks import SynchronizeTask
+    if hass.data.get(_PENDIENTE):
+        instancia = get_instance(hass)
+        if not instancia.is_alive():
+            return
+        hass.data[_PENDIENTE] = False
+        try:
+            from homeassistant.components.recorder.tasks import SynchronizeTask
 
-        futuro: asyncio.Future[None] = hass.loop.create_future()
-        instancia.queue_task(SynchronizeTask(futuro))
-        espera: Awaitable[None] = futuro
-    except Exception:  # API interna del recorder: si cambia, lo público
-        espera = instancia.async_block_till_done()
+            futuro: asyncio.Future[None] = hass.loop.create_future()
+            instancia.queue_task(SynchronizeTask(futuro))
+        except Exception:  # API interna del recorder: si cambia, lo público
+            futuro = asyncio.ensure_future(instancia.async_block_till_done())
+        hass.data[_ESPERA] = futuro
+    espera: asyncio.Future[None] | None = hass.data.get(_ESPERA)
+    if espera is None or espera.done():
+        return
     try:
         async with asyncio.timeout(ESPERA_RECORDER):
-            await espera
+            # `shield`: si a uno se le acaba el tiempo (o lo cancelan), los demás siguen esperando.
+            await asyncio.shield(espera)
     except TimeoutError:
         _LOGGER.warning("El recorder no ha guardado la cola en %d s; se lee lo que haya", ESPERA_RECORDER)
+        # Recorder atascado: los siguientes no vuelven a esperar a esta misma sincronización.
+        if hass.data.get(_ESPERA) is espera:
+            hass.data.pop(_ESPERA)
 
 
 async def async_hay_datos(hass: HomeAssistant, statistic_id: str) -> bool:
@@ -126,23 +156,29 @@ async def async_hay_datos(hass: HomeAssistant, statistic_id: str) -> bool:
 
 
 async def async_suma_previa(hass: HomeAssistant, statistic_id: str, antes_de: datetime) -> Decimal:
-    """`sum` de la última hora anterior a `antes_de` (0 si no hay)."""
+    """`sum` de la última hora anterior a `antes_de` (0 si no hay).
+
+    Se mira primero en los últimos `VENTANA_SUMA_PREVIA` (unas 48 filas) y solo si ahí no hay
+    ninguna, en los 400 días de antes (hasta 9.600 filas): el resultado es el mismo."""
     from homeassistant.components.recorder import get_instance
     from homeassistant.components.recorder.statistics import statistics_during_period
 
     await async_esperar_recorder(hass)
-    filas = await get_instance(hass).async_add_executor_job(
-        statistics_during_period,
-        hass,
-        antes_de - timedelta(days=400),
-        antes_de,
-        {statistic_id},
-        "hour",
-        None,
-        {"sum"},
-    )
-    previas = [f for f in filas.get(statistic_id, []) if f.get("sum") is not None]
-    return Decimal(str(previas[-1]["sum"])) if previas else Decimal(0)
+    for ventana in (VENTANA_SUMA_PREVIA, timedelta(days=400)):
+        filas = await get_instance(hass).async_add_executor_job(
+            statistics_during_period,
+            hass,
+            antes_de - ventana,
+            antes_de,
+            {statistic_id},
+            "hour",
+            None,
+            {"sum"},
+        )
+        previas = [f for f in filas.get(statistic_id, []) if f.get("sum") is not None]
+        if previas:
+            return Decimal(str(previas[-1]["sum"]))
+    return Decimal(0)
 
 
 async def async_copiar_pasado(
@@ -182,10 +218,14 @@ async def async_escribir(
     nombre: str,
     coste_horas: Mapping[datetime, Decimal],
     copiar_de: str | None = None,
+    escritas: dict[datetime, tuple[float, float]] | None = None,
 ) -> int:
     """Reescribe las horas del periodo en curso. Devuelve cuántas filas ha escrito.
 
     `copiar_de`: entidad cuyo coste horario se copia antes, si la estadística está vacía.
+    `escritas`: lo que se escribió la vez anterior (hora → (state, sum)). Solo se escriben las horas
+    que han cambiado, y se actualiza con lo escrito. La estadística queda igual que reescribiéndolas
+    todas.
     """
     if not coste_horas or "recorder" not in hass.config.components:
         return 0
@@ -199,8 +239,14 @@ async def async_escribir(
     filas = []
     for t in horas:
         suma += coste_horas[t]
-        filas.append({"start": t, "state": float(coste_horas[t]), "sum": float(suma)})
-    _encolar(hass, _metadatos(statistic_id, nombre), filas)
+        fila = (float(coste_horas[t]), float(suma))
+        if escritas is not None:
+            if escritas.get(t) == fila:
+                continue
+            escritas[t] = fila
+        filas.append({"start": t, "state": fila[0], "sum": fila[1]})
+    if filas:
+        _encolar(hass, _metadatos(statistic_id, nombre), filas)
     return len(filas)
 
 
@@ -212,6 +258,11 @@ async def async_reescribir_periodo(
     metadatos: dict | None = None,
 ) -> Decimal:
     """Reescribe un periodo ya pasado y desplaza el `sum` de todas las horas posteriores.
+
+    Solo se encolan las filas cuyo `state` o `sum` cambian respecto a lo que ya hay en la BD (la curva de
+    Datadis se vuelve a pedir por meses enteros cada día y casi todo llega igual). Si no cambia ninguna,
+    no se escribe nada (ni se marca la estadística como cambiada). La estadística queda igual que
+    reescribiéndolas todas.
 
     Devuelve la diferencia aplicada a las horas posteriores.
     """
@@ -256,8 +307,19 @@ async def async_reescribir_periodo(
             nuevas.append(
                 {"start": t, "state": f.get("state") or 0.0, "sum": float(Decimal(str(f["sum"])) + delta)}
             )
-    _encolar(hass, metadatos or _metadatos(statistic_id, nombre), nuevas)
+    cambiadas = [f for f in nuevas if not _igual(existentes.get(f["start"]), f)]
+    if cambiadas:
+        _encolar(hass, metadatos or _metadatos(statistic_id, nombre), cambiadas)
     return delta
+
+
+def _igual(existente: Mapping | None, nueva: Mapping) -> bool:
+    """La fila ya está en la BD con el mismo `state` y `sum` (escribirla no cambiaría nada)."""
+    return (
+        existente is not None
+        and existente.get("state") == nueva["state"]
+        and existente.get("sum") == nueva["sum"]
+    )
 
 
 async def async_revisar_panel(

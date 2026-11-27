@@ -6,6 +6,8 @@
   estadísticas), `debug` y el botón.
 - Normalización de la configuración y de los unique_id antiguos de PVPC Next (versiones
   1-6 de su dominio), que se aplica al importar una entrada de PVPC Next.
+- Sensores «… en» de cuenta atrás → marca de tiempo (v2.0): su registro, al migrar la
+  entrada (2.3 → 2.4) y al importar PVPC Next.
 """
 
 from __future__ import annotations
@@ -24,10 +26,6 @@ from .const import (
     ATTR_BETTER_PRICE_TARGET,
     ATTR_ENABLE_PRIVATE_API,
     ATTR_HOLIDAY_SOURCE,
-    ATTR_NEXT_BEST_IN_UPDATE,
-    ATTR_NEXT_PERIOD_IN_UPDATE,
-    ATTR_NEXT_POWER_PERIOD_IN_UPDATE,
-    ATTR_NEXT_PRICE_IN_UPDATE,
     ATTR_POWER_P1,
     ATTR_POWER_P3,
     ATTR_PRICE_MODE,
@@ -50,7 +48,6 @@ from .const import (
     DEFAULT_PRICE_MODE,
     DEFAULT_SHOW_REFERENCE_PRICE,
     DEFAULT_TARIFF,
-    DEFAULT_UPDATE_FREQUENCY,
     DOMAIN,
     ENTRY_MINOR_VERSION,
     ENTRY_VERSION,
@@ -59,6 +56,7 @@ from .const import (
     LEGACY_ATTR_POWER,
     LEGACY_ATTR_POWER_P2_P3,
     PREFIJO_ENTIDADES,
+    SENSORES_CUENTA_ATRAS,
     SUBENTRY_SUMINISTRO,
 )
 from .engine import LIMITES_ANUALES_KWH, Bono
@@ -103,10 +101,6 @@ def datos_desde_v02(config: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str
         ATTR_POWER_P1: potencia,
         ATTR_POWER_P3: potencia,
         ATTR_BETTER_PRICE_TARGET: DEFAULT_BETTER_PRICE_TARGET,
-        ATTR_NEXT_PRICE_IN_UPDATE: DEFAULT_UPDATE_FREQUENCY,
-        ATTR_NEXT_BEST_IN_UPDATE: DEFAULT_UPDATE_FREQUENCY,
-        ATTR_NEXT_PERIOD_IN_UPDATE: DEFAULT_UPDATE_FREQUENCY,
-        ATTR_NEXT_POWER_PERIOD_IN_UPDATE: DEFAULT_UPDATE_FREQUENCY,
         ATTR_ENABLE_PRIVATE_API: False,
         ATTR_PRICE_MODE: DEFAULT_PRICE_MODE,
         ATTR_SHOW_REFERENCE_PRICE: DEFAULT_SHOW_REFERENCE_PRICE,
@@ -252,3 +246,32 @@ def unique_id_actual_pvpc_next(unique_id: str) -> str:
             nuevo = f"{nuevo[: -len(antigua)]}{actual}"
             break
     return nuevo
+
+
+# --- Cuentas atrás → marcas de tiempo (v2.0) ------------------------------------------
+
+# Opciones de la entidad que solo tenían sentido con la duración en horas: la unidad y la
+# precisión que eligiera el usuario y la unidad sugerida que guarda HA.
+_OPCIONES_DURACION = ("unit_of_measurement", "display_precision", "suggested_display_precision")
+
+
+def ajustar_registro_cuentas_atras(registro: er.EntityRegistry, entry_id: str) -> None:
+    """Registro de los sensores «… en» de `entry_id` tras pasar de duración a marca de tiempo.
+
+    - La frecuencia «desactivado» los desactivaba como integración, y se volvían a activar al
+      cambiarla. La opción ya no existe: siguen desactivados, pero como si lo hubiera hecho el
+      usuario, que los puede activar desde la entidad.
+    - Se quitan la unidad y la precisión de la duración de las opciones de la entidad.
+    """
+    sufijos = tuple(f"_{clave}" for clave in SENSORES_CUENTA_ATRAS)
+    for entidad in er.async_entries_for_config_entry(registro, entry_id):
+        if entidad.domain != "sensor" or not entidad.unique_id.endswith(sufijos):
+            continue
+        if entidad.disabled_by is er.RegistryEntryDisabler.INTEGRATION:
+            registro.async_update_entity(entidad.entity_id, disabled_by=er.RegistryEntryDisabler.USER)
+        if "sensor.private" in entidad.options:
+            registro.async_update_entity_options(entidad.entity_id, "sensor.private", None)
+        opciones = entidad.options.get("sensor")
+        if opciones and any(k in opciones for k in _OPCIONES_DURACION):
+            resto = {k: v for k, v in opciones.items() if k not in _OPCIONES_DURACION}
+            registro.async_update_entity_options(entidad.entity_id, "sensor", resto or None)

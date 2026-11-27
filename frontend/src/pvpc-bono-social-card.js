@@ -15,7 +15,7 @@
 
 import { LitElement, css, html, nothing, svg } from "lit";
 
-const VERSION = "1.2.4";
+const VERSION = "2.0.0";
 const ETIQUETA = "pvpc-bono-social-card";
 const COLORES = ["var(--pvpc-bs-verde)", "var(--pvpc-bs-amarillo)", "var(--pvpc-bs-naranja)", "var(--pvpc-bs-rojo)"];
 const COLOR_PERIODO = { P1: 3, P2: 2, P3: 0 };
@@ -148,6 +148,57 @@ const TEXTOS = {
       enviar: (a) => `Enviar a ${a}`,
       enviando: "Enviando…",
       enviado: "Enviada ✓",
+      // Termómetro: la mejor oferta de hoy frente a la mejor de cada mes anterior guardado (€/kWh).
+      termometro: (pos, n, x, mesBarata, barata, mesCara, cara) =>
+        pos === "mas_barata"
+          ? `La mejor oferta de hoy (${x}) es la más barata (en €/kWh) de los últimos ${n} meses.`
+          : pos === "mas_cara"
+            ? `La mejor oferta de hoy (${x}) es la más cara (en €/kWh) de los últimos ${n} meses.`
+            : `La mejor oferta de hoy (${x}) está entre la más barata (${mesBarata}, ${barata}) y la más cara (${mesCara}, ${cara}) de los últimos ${n} meses.`,
+    },
+    // «Histórico»: el podio de ofertas de cada mes (atributo `historico` de «Mejor alternativa»).
+    hist: {
+      boton: "Histórico",
+      titulo: "Histórico de comparativas",
+      intro: "Las 3 ofertas más baratas de cada mes (importe del primer año), la previsión más baja de la CNMC para el PVPC y lo pagado según la última comparativa del mes.",
+      vacio: "Aún no hay comparativas guardadas.",
+      mejor: "mejor oferta",
+      prevision: "CNMC",
+      pagado: "pagado",
+      kwh: (x) => `${x} kWh/año`,
+      cerrar: "Cerrar el histórico",
+    },
+    // «Subir factura»: el lector de «Factura real» (servicio leer_facturas) y conciliar_factura.
+    sub: {
+      boton: "Subir factura",
+      titulo: "Subir factura",
+      intro: "Elige el PDF de la factura, varios a la vez o un ZIP con varias: se leen sus datos para que los revises antes de guardarlos. Solo se leen las facturas de la Comercializadora Regulada, Gas & Power (Naturgy); con otras, añádela a mano.",
+      elegir: "Elegir PDF o ZIP",
+      a_mano: "Añadir a mano",
+      leyendo: "Leyendo las facturas…",
+      manual: "Factura a mano",
+      quitar: "Quitar",
+      campos: {
+        inicio: "Inicio del periodo",
+        fin: "Fin del periodo",
+        emision: "Fecha de emisión",
+        total: "Total de la factura (€)",
+        kwh_p1: "Consumo en P1 (kWh)",
+        kwh_p2: "Consumo en P2 (kWh)",
+        kwh_p3: "Consumo en P3 (kWh)",
+        kwh_bonificados: "Consumo bonificado (kWh)",
+      },
+      revisar: "Revisa los datos tal como vienen en la factura. Una factura que se solape con otra ya introducida (por ejemplo, una rectificativa) la sustituye.",
+      fuera: "Se quedan fuera:",
+      guardar: (n) => (n === 1 ? "Guardar la factura" : `Guardar ${n} facturas`),
+      guardando: "Guardando…",
+      hechas: (n) => (n === 1 ? "Factura introducida ✓" : `${n} facturas introducidas ✓`),
+      faltan: "Faltan datos: las fechas del periodo, el consumo de P1, P2 y P3 y el total son obligatorios.",
+      demasiados: (n) => `Como mucho ${n} archivos a la vez.`,
+      no_subido: "no se ha podido subir",
+      error: "No se han podido leer las facturas",
+      cerrar: "Cerrar",
+      sin_suministro: "No se encuentra el suministro de la factura",
     },
   },
   en: {
@@ -240,9 +291,56 @@ const TEXTOS = {
       enviar: (a) => `Send to ${a}`,
       enviando: "Sending…",
       enviado: "Sent ✓",
+      termometro: (pos, n, x, mesBarata, barata, mesCara, cara) =>
+        pos === "mas_barata"
+          ? `Today's best offer (${x}) is the cheapest (per kWh) of the last ${n} months.`
+          : pos === "mas_cara"
+            ? `Today's best offer (${x}) is the most expensive (per kWh) of the last ${n} months.`
+            : `Today's best offer (${x}) is between the cheapest (${mesBarata}, ${barata}) and the most expensive (${mesCara}, ${cara}) of the last ${n} months.`,
+    },
+    hist: {
+      boton: "History",
+      titulo: "Comparison history",
+      intro: "The 3 cheapest offers of each month (first-year amount), the lowest CNMC forecast for PVPC and what you paid according to the month's last comparison.",
+      vacio: "No saved comparisons yet.",
+      mejor: "best offer",
+      prevision: "CNMC",
+      pagado: "paid",
+      kwh: (x) => `${x} kWh/year`,
+      cerrar: "Close the history",
+    },
+    sub: {
+      boton: "Upload bill",
+      titulo: "Upload bill",
+      intro: "Choose the bill PDF, several at once or a ZIP with several: their data is read so you can review it before saving. Only bills from Comercializadora Regulada, Gas & Power (Naturgy) are read; for others, add it by hand.",
+      elegir: "Choose PDF or ZIP",
+      a_mano: "Add by hand",
+      leyendo: "Reading the bills…",
+      manual: "Bill entered by hand",
+      quitar: "Remove",
+      campos: {
+        inicio: "Period start",
+        fin: "Period end",
+        emision: "Issue date",
+        total: "Bill total (€)",
+        kwh_p1: "P1 consumption (kWh)",
+        kwh_p2: "P2 consumption (kWh)",
+        kwh_p3: "P3 consumption (kWh)",
+        kwh_bonificados: "Discounted consumption (kWh)",
+      },
+      revisar: "Check the data exactly as it appears on the bill. A bill overlapping one already entered (for example, a corrective bill) replaces it.",
+      fuera: "Left out:",
+      guardar: (n) => (n === 1 ? "Save the bill" : `Save ${n} bills`),
+      guardando: "Saving…",
+      hechas: (n) => (n === 1 ? "Bill entered ✓" : `${n} bills entered ✓`),
+      faltan: "Missing data: the period dates, P1, P2 and P3 consumption and the total are required.",
+      demasiados: (n) => `At most ${n} files at a time.`,
+      no_subido: "could not be uploaded",
+      error: "The bills could not be read",
+      cerrar: "Close",
+      sin_suministro: "The supply of the bill cannot be found",
     },
   },
-  // Catalán, gallego y euskera: solo los textos que se pintan (los que falten salen en español).
   ca: {
     titulo: "Preu de la llum",
     anterior: "Factura del període anterior",
@@ -264,6 +362,124 @@ const TEXTOS = {
     hora_actual: "Hora actual",
     periodos: { P1: "punta", P2: "pla", P3: "vall" },
     sin_entidad: "No es troba el sensor de preu de PVPC + Bono Social",
+    comp: {
+      boton: "Comparar tarifes",
+      comparando: "Comparant…",
+      titulo: "Comparativa de tarifes",
+      ultima: "Última comparació",
+      facturas: (n) => (n === 1 ? "1 factura" : `${n} factures`),
+      dias: (n) => `${n} dies`,
+      ofertas: (n) => `${n} ofertes de la CNMC`,
+      tu_tarifa: "El que vas pagar (últim any)",
+      prevision: "PVPC previst (CNMC, pròxims 12 mesos)",
+      prevision_bono: "amb el teu bo, si es compleix la previsió",
+      prevision_sin_bono: "sense bo, si es compleix la previsió",
+      ultimo_anio: "últim any",
+      con_prevision: "previsió",
+      revision: (r) => `revisió ${r}`,
+      revisiones: { mensual: "mensual", trimestral: "trimestral", cuatrimestral: "tres vegades l'any", semestral: "semestral", anual: "anual", bienal: "cada dos anys", trienal: "cada tres anys", quinquenal: "cada cinc anys" },
+      depende: (pasadoOferta, x, futuroOferta, y) =>
+        `${pasadoOferta ? `Amb els preus de l'últim any, la millor oferta t'hauria sortit ${x} més barata` : `Amb els preus de l'últim any, el PVPC et va sortir ${x} més barat que la millor oferta`}; ${futuroOferta ? `amb la previsió de la CNMC per als pròxims 12 mesos, la millor oferta sortiria ${y} més barata` : `amb la previsió de la CNMC per als pròxims 12 mesos, el PVPC sortiria ${y} més barat`}. Torna a comparar abans de decidir.`,
+      pvpc_bono: "PVPC amb bo social",
+      pvpc: "PVPC sense bo",
+      al_anio: "/any",
+      sin_permanencia: "sense permanència",
+      permanencia: "permanència",
+      nuevos: "només clients nous",
+      verde: "verda",
+      espera: "Consultant la CNMC amb les teves factures. Pot trigar uns segons…",
+      error: "No s'ha pogut comparar",
+      sin_datos: "Encara no hi ha cap comparativa.",
+      sin_suministro: "No es troba el subministrament de la comparativa",
+      estados: {
+        sin_codigo_postal: "Falta el codi postal del subministrament (opcions del subministrament).",
+        sin_datos: "No hi ha prou factures per comparar.",
+        cnmc_no_responde: "El comparador de la CNMC no respon; torna-ho a provar més tard.",
+      },
+      veredictos: {
+        quedarse_con_bono: ["Continua amb PVPC + bo social", "Amb el teu bo, el PVPC continua sent el més barat: la millor oferta lliure et costaria {x} més l'any."],
+        libre_aunque_pierde_bono: ["Hi ha una oferta més barata", "La millor oferta lliure surt {x} més barata l'any que el que pagues amb bo, tot i que el perdries. Comprova les condicions abans de canviar."],
+        mercado_libre: ["Pots estalviar", "Amb la millor oferta t'estalviaries {x} l'any."],
+        quedarse: ["Continua amb la teva tarifa", "Cap oferta millora el que pagues: la millor et costaria {x} més l'any."],
+        depende_precios: ["Depèn dels preus", ""],
+      },
+      avisos: {
+        pierde_bono: "Amb una altra comercialitzadora perds el bo social.",
+        bono_perdido: "Ja no tens bo social: es compara amb el que pagaries sense.",
+        bono_nuevo: "Part del que s'ha pagat no portava el bo que tens ara: l'estalvi real seria menor.",
+        cobertura_incompleta: "No són al comparador: {ausentes}.",
+        datos_extrapolados: "Només hi ha {dias} dies de factures: el que s'ha pagat i el consum s'han extrapolat a un any.",
+        facturas_estimadas: "Hi ha factures estimades: concilia les reals per afinar.",
+        sin_ofertas: "La CNMC no ha retornat ofertes per al teu codi postal.",
+        revision_precios: "La millor oferta revisa els seus preus ({revision}); la CNMC en calcula els imports sense aquestes revisions.",
+        prevision_volatil: "La previsió de la CNMC per al PVPC surt dels preus del mercat de futurs d'avui i canvia molt d'un mes a l'altre: és un escenari, no el que pagaràs.",
+        bono_termico: "Si canvies de comercialitzadora abans de l'1 de gener, no tindràs el bo social a 31 de desembre i perdràs el bo social tèrmic que es cobra l'any vinent: un ajut en diners (mínim 50 €) que reps encara que no tinguis gas. Per no perdre'l, canvia a partir de l'1 de gener.",
+      },
+      cerrar: "Tanca la comparativa",
+      leer_avisos: "👇 Abans de decidir, llegeix els avisos del final.",
+      leer_avisos_termico: "👇 Abans de decidir, llegeix els avisos del final: n'hi ha un d'important sobre el bo social tèrmic.",
+      confirmar: "Els preus són els que publica la CNMC i poden estar desfasats: confirma'ls amb la comercialitzadora abans de contractar.",
+      ficha: "Fitxa de l'oferta a la CNMC (amb el web de la comercialitzadora)",
+      cnmc: "Veure totes les ofertes al comparador de la CNMC",
+      cnmc_datos: (n) => `${n ? `Les ${n} ofertes` : "Totes les ofertes"}, calculades amb el teu consum i la teva potència`,
+      pvpc_cnmc: (x, p, b) =>
+        b
+          ? `PVPC segons la CNMC: ${x} sense bo amb els preus de l'últim any · previsió per a l'any vinent: ${p} sense bo, ≈${b} amb el teu bo`
+          : p
+            ? `PVPC sense bo segons la CNMC: ${x} amb els preus de l'últim any · previsió per a l'any vinent: ${p}`
+            : `PVPC sense bo segons la CNMC: ${x} amb els preus de l'últim any`,
+      enviar: (a) => `Envia a ${a}`,
+      enviando: "Enviant…",
+      enviado: "Enviada ✓",
+      termometro: (pos, n, x, mesBarata, barata, mesCara, cara) =>
+        pos === "mas_barata"
+          ? `La millor oferta d'avui (${x}) és la més barata (en €/kWh) dels últims ${n} mesos.`
+          : pos === "mas_cara"
+            ? `La millor oferta d'avui (${x}) és la més cara (en €/kWh) dels últims ${n} mesos.`
+            : `La millor oferta d'avui (${x}) està entre la més barata (${mesBarata}, ${barata}) i la més cara (${mesCara}, ${cara}) dels últims ${n} mesos.`,
+    },
+    hist: {
+      boton: "Històric",
+      titulo: "Històric de comparatives",
+      intro: "Les 3 ofertes més barates de cada mes (import del primer any), la previsió més baixa de la CNMC per al PVPC i el que s'ha pagat segons l'última comparativa del mes.",
+      vacio: "Encara no hi ha comparatives desades.",
+      mejor: "millor oferta",
+      prevision: "CNMC",
+      pagado: "pagat",
+      kwh: (x) => `${x} kWh/any`,
+      cerrar: "Tanca l'històric",
+    },
+    sub: {
+      boton: "Pujar factura",
+      titulo: "Pujar factura",
+      intro: "Tria el PDF de la factura, diversos alhora o un ZIP amb diverses factures: se'n llegeixen les dades perquè les revisis abans de desar-les. Només es llegeixen les factures de la Comercializadora Regulada, Gas & Power (Naturgy); amb altres, afegeix-la a mà.",
+      elegir: "Tria un PDF o ZIP",
+      a_mano: "Afegeix a mà",
+      leyendo: "Llegint les factures…",
+      manual: "Factura a mà",
+      quitar: "Treu",
+      campos: {
+        inicio: "Inici del període",
+        fin: "Fi del període",
+        emision: "Data d'emissió",
+        total: "Total de la factura (€)",
+        kwh_p1: "Consum en P1 (kWh)",
+        kwh_p2: "Consum en P2 (kWh)",
+        kwh_p3: "Consum en P3 (kWh)",
+        kwh_bonificados: "Consum bonificat (kWh)",
+      },
+      revisar: "Revisa les dades tal com figuren a la factura. Una factura que se solapi amb una altra ja introduïda (per exemple, una rectificativa) la substitueix.",
+      fuera: "Queden fora:",
+      guardar: (n) => (n === 1 ? "Desa la factura" : `Desa ${n} factures`),
+      guardando: "Desant…",
+      hechas: (n) => (n === 1 ? "Factura introduïda ✓" : `${n} factures introduïdes ✓`),
+      faltan: "Falten dades: les dates del període, el consum de P1, P2 i P3 i el total són obligatoris.",
+      demasiados: (n) => `Com a màxim ${n} fitxers alhora.`,
+      no_subido: "no s'ha pogut pujar",
+      error: "No s'han pogut llegir les factures",
+      cerrar: "Tanca",
+      sin_suministro: "No es troba el subministrament de la factura",
+    },
   },
   gl: {
     titulo: "Prezo da luz",
@@ -286,6 +502,127 @@ const TEXTOS = {
     hora_actual: "Hora actual",
     periodos: { P1: "punta", P2: "chan", P3: "val" },
     sin_entidad: "Non se atopa o sensor de prezo de PVPC + Bono Social",
+    comp: {
+      boton: "Comparar tarifas",
+      comparando: "Comparando…",
+      titulo: "Comparativa de tarifas",
+      ultima: "Última comparación",
+      facturas: (n) => (n === 1 ? "1 factura" : `${n} facturas`),
+      dias: (n) => `${n} días`,
+      ofertas: (n) => `${n} ofertas da CNMC`,
+      tu_tarifa: "O que pagaches (último ano)",
+      prevision: "PVPC previsto (CNMC, próximos 12 meses)",
+      prevision_bono: "co teu bono, se se cumpre a previsión",
+      prevision_sin_bono: "sen bono, se se cumpre a previsión",
+      ultimo_anio: "último ano",
+      con_prevision: "previsión",
+      revision: (r) => `revisión ${r}`,
+      revisiones: { mensual: "mensual", trimestral: "trimestral", cuatrimestral: "tres veces ao ano", semestral: "semestral", anual: "anual", bienal: "cada dous anos", trienal: "cada tres anos", quinquenal: "cada cinco anos" },
+      depende: (pasadoOferta, x, futuroOferta, y) =>
+        `${pasadoOferta ? `Cos prezos do último ano, a mellor oferta saíriache ${x} máis barata` : `Cos prezos do último ano, o PVPC saíuche ${x} máis barato que a mellor oferta`}; ${futuroOferta ? `coa previsión da CNMC para os próximos 12 meses, a mellor oferta sairía ${y} máis barata` : `coa previsión da CNMC para os próximos 12 meses, o PVPC sairía ${y} máis barato`}. Volve comparar antes de decidir.`,
+      pvpc_bono: "PVPC con bono social",
+      pvpc: "PVPC sen bono",
+      al_anio: "/ano",
+      sin_permanencia: "sen permanencia",
+      permanencia: "permanencia",
+      nuevos: "só clientes novos",
+      verde: "verde",
+      espera: "Consultando a CNMC coas túas facturas. Pode tardar uns segundos…",
+      error: "Non foi posible comparar",
+      sin_datos: "Aínda non hai ningunha comparativa.",
+      sin_suministro: "Non se atopa a subministración da comparativa",
+      estados: {
+        sin_codigo_postal: "Falta o código postal da subministración (opcións da subministración).",
+        sin_datos: "Non hai facturas suficientes para comparar.",
+        cnmc_no_responde: "O comparador da CNMC non responde; téntao máis tarde.",
+      },
+      veredictos: {
+        quedarse_con_bono: ["Segue co PVPC + bono social", "Co teu bono, o PVPC segue sendo o máis barato: a mellor oferta libre custaríache {x} máis ao ano."],
+        libre_aunque_pierde_bono: ["Hai unha oferta máis barata", "A mellor oferta libre sae {x} máis barata ao ano do que pagas con bono, aínda que o perderías. Comproba as condicións antes de cambiar."],
+        mercado_libre: ["Podes aforrar", "Coa mellor oferta aforrarías {x} ao ano."],
+        quedarse: ["Segue coa túa tarifa", "Ningunha oferta mellora o que pagas: a mellor custaríache {x} máis ao ano."],
+        depende_precios: ["Depende dos prezos", ""],
+      },
+      avisos: {
+        pierde_bono: "Con outra comercializadora perdes o bono social.",
+        bono_perdido: "Xa non tes bono social: compárase co que pagarías sen el.",
+        bono_nuevo: "Parte do pagado non levaba o bono que tes agora: o aforro real sería menor.",
+        cobertura_incompleta: "Non están no comparador: {ausentes}.",
+        datos_extrapolados: "Só hai {dias} días de facturas: o pagado e o consumo leváronse a un ano.",
+        facturas_estimadas: "Hai facturas estimadas: concilia as reais para afinar.",
+        sin_ofertas: "A CNMC non devolveu ofertas para o teu código postal.",
+        revision_precios: "A mellor oferta revisa os seus prezos ({revision}); a CNMC calcula os seus importes sen esas revisións.",
+        prevision_volatil: "A previsión da CNMC para o PVPC sae dos prezos do mercado de futuros de hoxe e cambia moito dun mes a outro: é un escenario, non o que vas pagar.",
+        bono_termico: "Se cambias de comercializadora antes do 1 de xaneiro, non terás o bono social a 31 de decembro e perderás o bono social térmico que se cobra o próximo ano: unha axuda en diñeiro (mínimo 50 €) que recibes aínda que non teñas gas. Para non perdelo, cambia a partir do 1 de xaneiro.",
+      },
+      cerrar: "Pechar a comparativa",
+      leer_avisos: "👇 Antes de decidir, le os avisos do final.",
+      leer_avisos_termico: "👇 Antes de decidir, le os avisos do final: hai un importante sobre o bono social térmico.",
+      confirmar: "Os prezos son os que publica a CNMC e poden estar desfasados: confírmaos coa comercializadora antes de contratar.",
+      ficha: "Ficha da oferta na CNMC (coa web da comercializadora)",
+      cnmc: "Ver todas as ofertas no comparador da CNMC",
+      cnmc_datos: (n) => `${n ? `As ${n} ofertas` : "Todas as ofertas"}, calculadas co teu consumo e a túa potencia`,
+      pvpc_cnmc: (x, p, b) =>
+        b
+          ? `PVPC segundo a CNMC: ${x} sen bono cos prezos do último ano · previsión para o próximo ano: ${p} sen bono, ≈${b} co teu bono`
+          : p
+            ? `PVPC sen bono segundo a CNMC: ${x} cos prezos do último ano · previsión para o próximo ano: ${p}`
+            : `PVPC sen bono segundo a CNMC: ${x} cos prezos do último ano`,
+      enviar: (a) => `Enviar a ${a}`,
+      enviando: "Enviando…",
+      enviado: "Enviada ✓",
+      // Termómetro: la mejor oferta de hoy frente a la mejor de cada mes anterior guardado (€/kWh).
+      termometro: (pos, n, x, mesBarata, barata, mesCara, cara) =>
+        pos === "mas_barata"
+          ? `A mellor oferta de hoxe (${x}) é a máis barata (en €/kWh) dos últimos ${n} meses.`
+          : pos === "mas_cara"
+            ? `A mellor oferta de hoxe (${x}) é a máis cara (en €/kWh) dos últimos ${n} meses.`
+            : `A mellor oferta de hoxe (${x}) está entre a máis barata (${mesBarata}, ${barata}) e a máis cara (${mesCara}, ${cara}) dos últimos ${n} meses.`,
+    },
+    // «Histórico»: el podio de ofertas de cada mes (atributo `historico` de «Mejor alternativa»).
+    hist: {
+      boton: "Histórico",
+      titulo: "Histórico de comparativas",
+      intro: "As 3 ofertas máis baratas de cada mes (importe do primeiro ano), a previsión máis baixa da CNMC para o PVPC e o pagado segundo a última comparativa do mes.",
+      vacio: "Aínda non hai comparativas gardadas.",
+      mejor: "mellor oferta",
+      prevision: "CNMC",
+      pagado: "pagado",
+      kwh: (x) => `${x} kWh/ano`,
+      cerrar: "Pechar o histórico",
+    },
+    // «Subir factura»: el lector de «Factura real» (servicio leer_facturas) y conciliar_factura.
+    sub: {
+      boton: "Subir factura",
+      titulo: "Subir factura",
+      intro: "Escolle o PDF da factura, varios á vez ou un ZIP con varias: lense os seus datos para que os revises antes de gardalos. Só se len as facturas da Comercializadora Regulada, Gas & Power (Naturgy); con outras, engádea a man.",
+      elegir: "Escoller PDF ou ZIP",
+      a_mano: "Engadir a man",
+      leyendo: "Lendo as facturas…",
+      manual: "Factura a man",
+      quitar: "Quitar",
+      campos: {
+        inicio: "Inicio do período",
+        fin: "Fin do período",
+        emision: "Data de emisión",
+        total: "Total da factura (€)",
+        kwh_p1: "Consumo en P1 (kWh)",
+        kwh_p2: "Consumo en P2 (kWh)",
+        kwh_p3: "Consumo en P3 (kWh)",
+        kwh_bonificados: "Consumo bonificado (kWh)",
+      },
+      revisar: "Revisa os datos tal como veñen na factura. Unha factura que se solape con outra xa introducida (por exemplo, unha rectificativa) substitúea.",
+      fuera: "Quedan fóra:",
+      guardar: (n) => (n === 1 ? "Gardar a factura" : `Gardar ${n} facturas`),
+      guardando: "Gardando…",
+      hechas: (n) => (n === 1 ? "Factura introducida ✓" : `${n} facturas introducidas ✓`),
+      faltan: "Faltan datos: as datas do período, o consumo de P1, P2 e P3 e o total son obrigatorios.",
+      demasiados: (n) => `Como moito ${n} ficheiros á vez.`,
+      no_subido: "non foi posible subilo",
+      error: "Non foi posible ler as facturas",
+      cerrar: "Pechar",
+      sin_suministro: "Non se atopa a subministración da factura",
+    },
   },
   eu: {
     titulo: "Argindarraren prezioa",
@@ -306,12 +643,136 @@ const TEXTOS = {
     sin_precio: "Preziorik ez",
     no_disponible: "Ez dago erabilgarri",
     hora_actual: "Uneko ordua",
-    periodos: { P1: "punta", P2: "laua", P3: "harana" },
-    sin_entidad: "Ez da aurkitu PVPC + Bono Social-en prezio-sentsorea",
+    periodos: { P1: "puntakoa", P2: "laua", P3: "harana" },
+    sin_entidad: "Ez da aurkitu PVPC + Bono Social integrazioaren prezio-sentsorea",
+    comp: {
+      boton: "Alderatu tarifak",
+      comparando: "Alderatzen…",
+      titulo: "Tarifen konparaketa",
+      ultima: "Azken konparaketa",
+      facturas: (n) => (n === 1 ? "1 faktura" : `${n} faktura`),
+      dias: (n) => `${n} egun`,
+      ofertas: (n) => `CNMCren ${n} eskaintza`,
+      tu_tarifa: "Ordaindu zenuena (azken urtea)",
+      prevision: "Aurreikusitako PVPC (CNMC, hurrengo 12 hilabeteak)",
+      prevision_bono: "zure bonuarekin, aurreikuspena betetzen bada",
+      prevision_sin_bono: "bonurik gabe, aurreikuspena betetzen bada",
+      ultimo_anio: "azken urtea",
+      con_prevision: "aurreikuspena",
+      revision: (r) => `berrikuspena: ${r}`,
+      revisiones: { mensual: "hilero", trimestral: "hiru hilean behin", cuatrimestral: "urtean hiru aldiz", semestral: "sei hilean behin", anual: "urtero", bienal: "bi urtean behin", trienal: "hiru urtean behin", quinquenal: "bost urtean behin" },
+      depende: (pasadoOferta, x, futuroOferta, y) =>
+        `${pasadoOferta ? `Azken urteko prezioekin, eskaintza onenarekin ${x} gutxiago ordainduko zenukeen` : `Azken urteko prezioekin, PVPCarekin ${x} gutxiago ordaindu zenuen eskaintza onenarekin baino`}; ${futuroOferta ? `CNMCk hurrengo 12 hilabeteetarako egindako aurreikuspenarekin, eskaintza onenarekin ${y} gutxiago ordainduko zenuke` : `CNMCk hurrengo 12 hilabeteetarako egindako aurreikuspenarekin, PVPCarekin ${y} gutxiago ordainduko zenuke`}. Alderatu berriro erabaki aurretik.`,
+      pvpc_bono: "PVPC gizarte-bonuarekin",
+      pvpc: "PVPC bonurik gabe",
+      al_anio: "/urte",
+      sin_permanencia: "iraunkortasunik gabe",
+      permanencia: "iraunkortasuna",
+      nuevos: "bezero berrientzat soilik",
+      verde: "berdea",
+      espera: "CNMCri kontsultatzen zure fakturekin. Segundo batzuk behar izan ditzake…",
+      error: "Ezin izan da alderatu",
+      sin_datos: "Oraindik ez dago konparaketarik.",
+      sin_suministro: "Ez da aurkitu konparaketaren hornidura",
+      estados: {
+        sin_codigo_postal: "Hornidurako posta-kodea falta da (hornidurako aukerak).",
+        sin_datos: "Ez dago alderatzeko adina faktura.",
+        cnmc_no_responde: "CNMCren konparatzaileak ez du erantzuten; saiatu berriro geroago.",
+      },
+      veredictos: {
+        quedarse_con_bono: ["Jarraitu PVPC + gizarte-bonuarekin", "Zure bonuarekin, PVPC da oraindik merkeena: eskaintza libre onenak {x} gehiago kostatuko litzaizuke urtean."],
+        libre_aunque_pierde_bono: ["Eskaintza merkeago bat dago", "Eskaintza libre onena urtean {x} merkeagoa da bonuarekin ordaintzen duzuna baino, nahiz eta bonua galdu. Egiaztatu baldintzak aldatu aurretik."],
+        mercado_libre: ["Aurreztu dezakezu", "Eskaintza onenarekin {x} aurreztuko zenuke urtean."],
+        quedarse: ["Jarraitu zure tarifarekin", "Eskaintza batek ere ez du hobetzen ordaintzen duzuna: onenak {x} gehiago kostatuko litzaizuke urtean."],
+        depende_precios: ["Prezioen araberakoa da", ""],
+      },
+      avisos: {
+        pierde_bono: "Beste merkaturatzaile batekin, gizarte-bonua galtzen duzu.",
+        bono_perdido: "Jada ez duzu gizarte-bonurik: bonurik gabe ordainduko zenukeenarekin alderatzen da.",
+        bono_nuevo: "Ordaindutakoaren zati batek ez zuen orain duzun bonua: benetako aurrezpena txikiagoa izango litzateke.",
+        cobertura_incompleta: "Hauek ez daude konparatzailean: {ausentes}.",
+        datos_extrapolados: "{dias} egunetako fakturak baino ez daude: ordaindutakoa eta kontsumoa urtebetera eraman dira.",
+        facturas_estimadas: "Faktura zenbatetsiak daude: bateratu benetakoak doitzeko.",
+        sin_ofertas: "CNMCk ez du eskaintzarik itzuli zure posta-koderako.",
+        revision_precios: "Eskaintza onenak bere prezioak berrikusten ditu ({revision}); CNMCk berrikuspen horiek gabe kalkulatzen ditu zenbatekoak.",
+        prevision_volatil: "CNMCk PVPCrako egiten duen aurreikuspena gaurko etorkizun-merkatuko prezioetatik ateratzen da, eta asko aldatzen da hilabete batetik bestera: agertoki bat da, ez ordainduko duzuna.",
+        bono_termico: "Urtarrilaren 1a baino lehen merkaturatzailez aldatzen bazara, ez duzu gizarte-bonurik izango abenduaren 31n, eta hurrengo urtean kobratzen den gizarte-bono termikoa galduko duzu: diru-laguntza bat (gutxienez 50 €), gasik ez baduzu ere jasotzen duzuna. Ez galtzeko, aldatu urtarrilaren 1etik aurrera.",
+      },
+      cerrar: "Itxi konparaketa",
+      leer_avisos: "👇 Erabaki aurretik, irakurri amaierako abisuak.",
+      leer_avisos_termico: "👇 Erabaki aurretik, irakurri amaierako abisuak: bat garrantzitsua da gizarte-bono termikoari buruz.",
+      confirmar: "Prezioak CNMCk argitaratutakoak dira, eta zaharkituta egon daitezke: berretsi merkaturatzailearekin kontratatu aurretik.",
+      ficha: "Eskaintzaren fitxa CNMCn (merkaturatzailearen webgunearekin)",
+      cnmc: "Ikusi eskaintza guztiak CNMCren konparatzailean",
+      cnmc_datos: (n) => `${n ? `${n} eskaintzak` : "Eskaintza guztiak"}, zure kontsumoarekin eta potentziarekin kalkulatuta`,
+      pvpc_cnmc: (x, p, b) =>
+        b
+          ? `PVPC, CNMCren arabera: ${x} bonurik gabe, azken urteko prezioekin · hurrengo urteko aurreikuspena: ${p} bonurik gabe, ≈${b} zure bonuarekin`
+          : p
+            ? `PVPC bonurik gabe, CNMCren arabera: ${x}, azken urteko prezioekin · hurrengo urteko aurreikuspena: ${p}`
+            : `PVPC bonurik gabe, CNMCren arabera: ${x}, azken urteko prezioekin`,
+      enviar: (a) => `Bidali hona: ${a}`,
+      enviando: "Bidaltzen…",
+      enviado: "Bidalita ✓",
+      // Termómetro: la mejor oferta de hoy frente a la mejor de cada mes anterior guardado (€/kWh).
+      termometro: (pos, n, x, mesBarata, barata, mesCara, cara) =>
+        pos === "mas_barata"
+          ? `Gaurko eskaintza onena (${x}) azken ${n} hilabeteetako merkeena da (€/kWh-tan).`
+          : pos === "mas_cara"
+            ? `Gaurko eskaintza onena (${x}) azken ${n} hilabeteetako garestiena da (€/kWh-tan).`
+            : `Gaurko eskaintza onena (${x}) azken ${n} hilabeteetako merkeenaren (${mesBarata}, ${barata}) eta garestienaren (${mesCara}, ${cara}) artean dago.`,
+    },
+    // «Histórico»: el podio de ofertas de cada mes (atributo `historico` de «Mejor alternativa»).
+    hist: {
+      boton: "Historikoa",
+      titulo: "Konparaketen historikoa",
+      intro: "Hilabete bakoitzeko 3 eskaintza merkeenak (lehen urteko zenbatekoa), CNMCk PVPCrako egindako aurreikuspen baxuena eta ordaindutakoa, hilabeteko azken konparaketaren arabera.",
+      vacio: "Oraindik ez dago gordetako konparaketarik.",
+      mejor: "eskaintza onena",
+      prevision: "CNMC",
+      pagado: "ordaindua",
+      kwh: (x) => `${x} kWh/urte`,
+      cerrar: "Itxi historikoa",
+    },
+    // «Subir factura»: el lector de «Factura real» (servicio leer_facturas) y conciliar_factura.
+    sub: {
+      boton: "Igo faktura",
+      titulo: "Igo faktura",
+      intro: "Aukeratu fakturaren PDFa, hainbat batera edo hainbat dituen ZIP bat: haien datuak irakurtzen dira, gorde aurretik berrikus ditzazun. Comercializadora Regulada, Gas & Power (Naturgy) merkaturatzailearen fakturak soilik irakurtzen dira; besteekin, gehitu eskuz.",
+      elegir: "Aukeratu PDFa edo ZIPa",
+      a_mano: "Gehitu eskuz",
+      leyendo: "Fakturak irakurtzen…",
+      manual: "Eskuzko faktura",
+      quitar: "Kendu",
+      campos: {
+        inicio: "Aldiaren hasiera",
+        fin: "Aldiaren amaiera",
+        emision: "Jaulkipen-data",
+        total: "Fakturaren guztizkoa (€)",
+        kwh_p1: "Kontsumoa P1 aldian (kWh)",
+        kwh_p2: "Kontsumoa P2 aldian (kWh)",
+        kwh_p3: "Kontsumoa P3 aldian (kWh)",
+        kwh_bonificados: "Kontsumo hobariduna (kWh)",
+      },
+      revisar: "Berrikusi datuak fakturan datozen bezala. Jada sartutako beste batekin gainjartzen den faktura batek (adibidez, faktura zuzentzaile batek) hura ordezten du.",
+      fuera: "Kanpoan geratzen dira:",
+      guardar: (n) => (n === 1 ? "Gorde faktura" : `Gorde ${n} faktura`),
+      guardando: "Gordetzen…",
+      hechas: (n) => (n === 1 ? "Faktura sartu da ✓" : `${n} faktura sartu dira ✓`),
+      faltan: "Datuak falta dira: aldiaren datak, P1, P2 eta P3 aldietako kontsumoa eta guztizkoa derrigorrezkoak dira.",
+      demasiados: (n) => `Gehienez ${n} fitxategi aldi berean.`,
+      no_subido: "ezin izan da igo",
+      error: "Ezin izan dira fakturak irakurri",
+      cerrar: "Itxi",
+      sin_suministro: "Ez da aurkitu fakturaren hornidura",
+    },
   },
 };
 
-// Idiomas cooficiales con textos propios; lo que les falte, en español.
+// Archivos por subida en «Subir factura» (el máximo del servicio leer_facturas).
+const MAX_ARCHIVOS_FACTURA = 12;
+
+// Idiomas cooficiales: textos propios completos y, para `Intl`, el español de respaldo.
 const COOFICIALES = ["ca", "gl", "eu"];
 
 // --- tamaño de las gráficas ---------------------------------------------------------------
@@ -505,6 +966,8 @@ class PvpcBonoSocialCard extends LitElement {
     _ventana: { state: true },
     _anexo: { state: true },
     _envio: { state: true },
+    _subida: { state: true },
+    _historico: { state: true },
     comparando: { attribute: false },
     _anchoUtil: { state: true },
   };
@@ -512,6 +975,11 @@ class PvpcBonoSocialCard extends LitElement {
   static async getConfigElement() {
     await cargarHaForm();
     return document.createElement(ETIQUETA_EDITOR);
+  }
+
+  /** Los textos de todos los idiomas, para la prueba de humo (que no falte ninguno en ninguno). */
+  static get textos() {
+    return { tarjeta: TEXTOS, editor: TEXTOS_EDITOR };
   }
 
   /** Configuración inicial al añadir la tarjeta (la que eligió el titular, 13-oct-2026). */
@@ -548,9 +1016,10 @@ class PvpcBonoSocialCard extends LitElement {
   }
 
   _id = Math.random().toString(36).slice(2, 8);
+  _claveFactura = 0;
 
   setConfig(config) {
-    if (!config) throw new Error("Configuración no válida");
+    if (!config) throw new Error(textosEditor(idiomaPagina()).config_no_valida);
     this._config = conDefectos(config);
   }
 
@@ -573,6 +1042,24 @@ class PvpcBonoSocialCard extends LitElement {
 
   get _t() {
     return textosDe(this.hass);
+  }
+
+  /**
+   * Un error de un servicio en el idioma del usuario: los de la integración traen su `translation_key`
+   * (sección «exceptions» de translations/) y HA la traduce; los demás, con su mensaje tal cual.
+   */
+  async _mensajeError(error) {
+    const { translation_domain: dominio, translation_key: clave, translation_placeholders: datos } = error || {};
+    if (dominio && clave && this.hass?.loadBackendTranslation) {
+      try {
+        const localize = await this.hass.loadBackendTranslation("exceptions", dominio);
+        const texto = localize(`component.${dominio}.exceptions.${clave}.message`, datos || {});
+        if (texto) return texto;
+      } catch {
+        // Sin traducción: el mensaje que manda HA.
+      }
+    }
+    return error?.message || String(error);
   }
 
   /** Idioma para `Intl`: en catalán, gallego y euskera, con el español de respaldo (si el
@@ -710,15 +1197,33 @@ class PvpcBonoSocialCard extends LitElement {
             ? html`<div class="factura abajo derecha">${factura}</div>`
             : nothing}
           ${this._config.grafica_facturas ? this._graficaFacturas() : nothing}
-          ${this.enVentana && buscarEntidad(this.hass, "button.pvpc_bs_comparar_tarifas")
+          ${this.enVentana && (buscarEntidad(this.hass, "button.pvpc_bs_comparar_tarifas") || this._suministroFactura || this._conHistorico)
             ? html`<div class="comparar">
-                <button
-                  class="btn-comparar"
-                  ?disabled=${this.comparando}
-                  @click=${() => this.dispatchEvent(new CustomEvent("pvpc-bs-comparar", { bubbles: true, composed: true }))}
-                >
-                  ${this.comparando ? t.comp.comparando : t.comp.boton}
-                </button>
+                ${this._suministroFactura
+                  ? html`<button
+                      class="btn-subir"
+                      @click=${() => this.dispatchEvent(new CustomEvent("pvpc-bs-subir", { bubbles: true, composed: true }))}
+                    >
+                      ${t.sub.boton}
+                    </button>`
+                  : nothing}
+                ${buscarEntidad(this.hass, "button.pvpc_bs_comparar_tarifas")
+                  ? html`<button
+                      class="btn-comparar"
+                      ?disabled=${this.comparando}
+                      @click=${() => this.dispatchEvent(new CustomEvent("pvpc-bs-comparar", { bubbles: true, composed: true }))}
+                    >
+                      ${this.comparando ? t.comp.comparando : t.comp.boton}
+                    </button>`
+                  : nothing}
+                ${this._conHistorico
+                  ? html`<button
+                      class="btn-historico"
+                      @click=${() => this.dispatchEvent(new CustomEvent("pvpc-bs-historico", { bubbles: true, composed: true }))}
+                    >
+                      ${t.hist.boton}
+                    </button>`
+                  : nothing}
               </div>`
             : nothing}
         </div>
@@ -766,13 +1271,17 @@ class PvpcBonoSocialCard extends LitElement {
       title: "",
     };
     return html`<dialog
-      class="ventana ${this._anexo ? "con-anexo" : ""}"
+      class="ventana ${this._anexo || this._subida || this._historico ? "con-anexo" : ""}"
       @close=${() => {
         this._ventana = false;
         this._anexo = null;
+        this._subida = null;
+        this._historico = null;
       }}
       @click=${(ev) => ev.target === ev.currentTarget && this._cerrarVentana()}
       @pvpc-bs-comparar=${() => this._comparar()}
+      @pvpc-bs-subir=${() => this._abrirSubida()}
+      @pvpc-bs-historico=${() => this._abrirHistorico()}
     >
       <div class="ventana-cuerpo">
         <div class="ventana-principal">
@@ -790,7 +1299,13 @@ class PvpcBonoSocialCard extends LitElement {
           .comparando=${this._anexo?.estado === "cargando"}
         ></pvpc-bono-social-card>
         </div>
-        ${this._anexo ? this._anexoComparativa() : nothing}
+        ${this._anexo
+          ? this._anexoComparativa()
+          : this._subida
+            ? this._anexoSubida()
+            : this._historico
+              ? this._anexoHistorico()
+              : nothing}
       </div>
     </dialog>`;
   }
@@ -802,6 +1317,8 @@ class PvpcBonoSocialCard extends LitElement {
     if (this._anexo?.estado === "cargando") return;
     const boton = buscarEntidad(this.hass, "button.pvpc_bs_comparar_tarifas");
     if (!boton) return;
+    this._subida = null;
+    this._historico = null;
     this._anexo = { estado: "cargando" };
     this._envio = null;
     try {
@@ -813,7 +1330,7 @@ class PvpcBonoSocialCard extends LitElement {
       await this.hass.callService("pvpc_bonosocial", "comparar_tarifas", { suministro, enviar: false, notificacion: false });
       this._anexo = { estado: "ok" };
     } catch (error) {
-      this._anexo = { estado: "error", mensaje: error?.message || String(error) };
+      this._anexo = { estado: "error", mensaje: await this._mensajeError(error) };
     }
     await this.updateComplete;
     this.renderRoot.querySelector(".anexo")?.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
@@ -887,6 +1404,7 @@ class PvpcBonoSocialCard extends LitElement {
         ? html`<div class="anexo-veredicto ${bueno ? "bueno" : depende ? "depende" : "ahorro"}">
             <b>${bueno ? "✅" : depende ? "⚖️" : "💡"} ${veredicto[0]}</b>
             <div>${textoVeredicto}</div>
+            ${this._termometro(r.termometro)}
           </div>
           <div class="anexo-leer"><b>${termicoVisible ? c.leer_avisos_termico : c.leer_avisos}</b></div>`
         : nothing}
@@ -960,6 +1478,330 @@ class PvpcBonoSocialCard extends LitElement {
     </aside>`;
   }
 
+  /** Mes «AAAA-MM» con su nombre en el idioma de HA («noviembre de 2026»). */
+  _nombreMes(mes, formato = "long") {
+    const [a, m] = String(mes).split("-").map(Number);
+    if (!a || !m) return String(mes);
+    return new Intl.DateTimeFormat(this._idiomas, { month: formato, year: "numeric", timeZone: "UTC" }).format(new Date(Date.UTC(a, m - 1, 15)));
+  }
+
+  /** Línea «termómetro» bajo el veredicto: la mejor oferta de hoy frente a los meses anteriores. */
+  _termometro(t) {
+    if (!t || !t.mas_barata || !t.mas_cara) return nothing;
+    const k = (x) => `${this._num(x, 3)} €/kWh`;
+    const texto = this._t.comp.termometro(
+      t.posicion,
+      t.meses,
+      k(t.eur_kwh),
+      this._nombreMes(t.mas_barata.mes),
+      k(t.mas_barata.eur_kwh),
+      this._nombreMes(t.mas_cara.mes),
+      k(t.mas_cara.eur_kwh),
+    );
+    return html`<div class="anexo-termometro">🌡️ ${texto}</div>`;
+  }
+
+  // --- histórico de comparativas (anexo de la ventana) -----------------------------------
+
+  /** El sensor «Mejor alternativa» trae el histórico (aunque esté vacío): hay botón «Histórico». */
+  get _conHistorico() {
+    const id = buscarEntidad(this.hass, "sensor.pvpc_bs_mejor_alternativa");
+    return !!id && Array.isArray(this.hass.states[id]?.attributes?.historico);
+  }
+
+  _abrirHistorico() {
+    this._anexo = null;
+    this._subida = null;
+    this._historico = true;
+  }
+
+  _anexoHistorico() {
+    const h = this._t.hist;
+    const c = this._t.comp;
+    const cerrar = html`<button class="cerrar" aria-label=${h.cerrar} @click=${() => (this._historico = null)}>
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"></path>
+      </svg>
+    </button>`;
+    const id = buscarEntidad(this.hass, "sensor.pvpc_bs_mejor_alternativa");
+    const meses = (id && this.hass.states[id]?.attributes?.historico) || [];
+    const eur = (x) => `${this._num(x, 2)} €`;
+    const dia = (iso) => (typeof iso === "string" ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "");
+    const etiquetas = (o, kwhMes) =>
+      [
+        o.oferta,
+        o.permanencia ? c.permanencia : c.sin_permanencia,
+        o.revision && c.revision(c.revisiones[o.revision] || o.revision),
+        o.solo_nuevos_clientes && c.nuevos,
+        dia(o.fecha),
+        // Si su importe salió con otro consumo que el del mes, se dice con cuál.
+        o.kwh?.total && o.kwh.total !== kwhMes && h.kwh(this._num(o.kwh.total, 0)),
+      ]
+        .filter(Boolean)
+        .join(" · ");
+    return html`<aside class="anexo historico">
+      <div class="anexo-cabecera"><div class="ventana-titulo">${h.titulo}</div>${cerrar}</div>
+      <div class="anexo-resumen">${h.intro}</div>
+      ${meses.length
+        ? meses.map((m) => {
+            const ofertas = Array.isArray(m.ofertas) ? m.ofertas : [];
+            const mejor = ofertas[0];
+            const kwhMes = m.kwh?.total;
+            const detalle = [
+              m.prevision != null && `${h.prevision} ≈${eur(m.prevision)}`,
+              m.pagado_anual != null && `${h.pagado} ${eur(m.pagado_anual)}`,
+            ]
+              .filter(Boolean)
+              .join(" · ");
+            return html`<details class="hist-mes">
+              <summary class="anexo-fila">
+                <div>
+                  <div class="n"><span class="flecha" aria-hidden="true">›</span>${this._nombreMes(m.mes)}</div>
+                  ${detalle ? html`<div class="o">${detalle}</div>` : nothing}
+                  ${kwhMes ? html`<div class="o kwh">${h.kwh(this._num(kwhMes, 0))}</div>` : nothing}
+                </div>
+                <div>
+                  <div class="i">${mejor ? eur(mejor.importe_primer_anio) : "—"}</div>
+                  ${mejor ? html`<div class="d">${h.mejor}</div>` : nothing}
+                </div>
+              </summary>
+              ${ofertas.length
+                ? ofertas.map(
+                    (o) => html`<div class="anexo-fila hist-oferta">
+                      <div>
+                        ${o.enlace
+                          ? html`<a class="n enlace" href=${o.enlace} target="_blank" rel="noopener noreferrer" title=${c.ficha}
+                              >${o.comercializadora} ↗</a
+                            >`
+                          : html`<div class="n">${o.comercializadora}</div>`}
+                        <div class="o">${etiquetas(o, kwhMes)}</div>
+                      </div>
+                      <div class="i">${eur(o.importe_primer_anio)}</div>
+                    </div>`,
+                  )
+                : html`<div class="anexo-nota">${c.avisos.sin_ofertas}</div>`}
+            </details>`;
+          })
+        : html`<div class="anexo-aviso">${h.vacio}</div>`}
+    </aside>`;
+  }
+
+  // --- subir factura (anexo de la ventana) ------------------------------------------------
+
+  /** Dispositivo del suministro de la tarjeta (el del sensor de factura): el `suministro` de los
+   * servicios. Solo hay sensor de factura si el suministro tiene facturación. */
+  get _suministroFactura() {
+    const id = this._config.entity_factura_actual || buscarEntidad(this.hass, "sensor.pvpc_bs_factura_actual");
+    return (id && this.hass.entities?.[id]?.device_id) || null;
+  }
+
+  _abrirSubida() {
+    this._anexo = null;
+    this._historico = null;
+    if (!this._subida) this._subida = { estado: "elegir", facturas: [], rechazadas: [], hechas: 0 };
+  }
+
+  /** Sube cada archivo a /api/file_upload (lo mismo que el selector de archivos del flujo) y lee
+   * las facturas con el lector de «Factura real» (leer_facturas). No guarda nada. */
+  async _leerArchivos(ev) {
+    const s = this._t.sub;
+    const archivos = [...(ev.target.files || [])];
+    ev.target.value = "";
+    const subida = this._subida;
+    if (!archivos.length || !subida || subida.estado !== "elegir") return;
+    subida.mensaje = null;
+    if (archivos.length > MAX_ARCHIVOS_FACTURA) {
+      subida.mensaje = s.demasiados(MAX_ARCHIVOS_FACTURA);
+      this.requestUpdate();
+      return;
+    }
+    const suministro = this._suministroFactura;
+    if (!suministro) {
+      subida.mensaje = s.sin_suministro;
+      this.requestUpdate();
+      return;
+    }
+    subida.estado = "leyendo";
+    this.requestUpdate();
+    const nombres = {};
+    try {
+      for (const archivo of archivos) {
+        try {
+          const datos = new FormData();
+          datos.append("file", archivo);
+          const r = await this.hass.fetchWithAuth("/api/file_upload", { method: "POST", body: datos });
+          if (!r.ok) throw new Error(`${r.status}`);
+          nombres[(await r.json()).file_id] = archivo.name;
+        } catch (error) {
+          subida.rechazadas.push({ archivo: archivo.name, texto: `${s.no_subido} (${error?.message || error})` });
+        }
+      }
+      if (Object.keys(nombres).length) {
+        const { response } = await this.hass.callWS({
+          type: "call_service",
+          domain: "pvpc_bonosocial",
+          service: "leer_facturas",
+          service_data: { suministro, archivos: Object.keys(nombres) },
+          return_response: true,
+        });
+        for (const f of response?.facturas || []) {
+          const { id, archivo, ...datos } = f;
+          subida.facturas.push({ clave: ++this._claveFactura, archivo: archivo || nombres[id], datos });
+        }
+        for (const r of response?.rechazadas || []) {
+          subida.rechazadas.push({ archivo: r.archivo || nombres[r.id], texto: r.texto || r.motivo });
+        }
+      }
+    } catch (error) {
+      subida.mensaje = `${s.error}: ${await this._mensajeError(error)}`;
+    }
+    subida.estado = "elegir";
+    subida.hechas = 0;
+    this.requestUpdate();
+  }
+
+  _anadirAMano() {
+    const subida = this._subida;
+    if (!subida || subida.estado !== "elegir") return;
+    // Si ya hay una a mano sin rellenar, no se crea otra: se lleva el cursor a esa.
+    const vacia = subida.facturas.find(
+      (f) => !f.archivo && Object.values(f.datos).every((v) => v == null || String(v).trim() === ""),
+    );
+    if (!vacia) subida.facturas.push({ clave: ++this._claveFactura, archivo: null, datos: {} });
+    const clave = vacia ? vacia.clave : this._claveFactura;
+    subida.hechas = 0;
+    this.requestUpdate();
+    this.updateComplete.then(() => {
+      const bloque = this.renderRoot.querySelector(`.sub-factura[data-clave="${clave}"]`);
+      bloque?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      bloque?.querySelector("input")?.focus({ preventScroll: true });
+    });
+  }
+
+  _quitarFactura(f) {
+    const subida = this._subida;
+    if (!subida || subida.estado !== "elegir") return;
+    subida.facturas = subida.facturas.filter((x) => x !== f);
+    this.requestUpdate();
+  }
+
+  /** Introduce cada factura con conciliar_factura, en orden de fechas; la comprobación con la CNMC,
+   * solo con la última (como el lote ZIP del flujo). Las que fallan se quedan con su error. */
+  async _guardarFacturas() {
+    const s = this._t.sub;
+    const subida = this._subida;
+    const suministro = this._suministroFactura;
+    if (!subida || subida.estado !== "elegir" || !subida.facturas.length || !suministro) return;
+    const numero = (v) => (v === "" || v == null || !Number.isFinite(Number(v)) ? null : Number(v));
+    const pendientes = [];
+    for (const f of subida.facturas) {
+      const d = f.datos;
+      const datos = {
+        inicio: d.inicio || null,
+        fin: d.fin || null,
+        kwh_p1: numero(d.kwh_p1),
+        kwh_p2: numero(d.kwh_p2),
+        kwh_p3: numero(d.kwh_p3),
+        total: numero(d.total),
+      };
+      f.error = Object.values(datos).some((v) => v == null) ? s.faltan : null;
+      if (d.emision) datos.emision = d.emision;
+      if (numero(d.kwh_bonificados) != null) datos.kwh_bonificados = numero(d.kwh_bonificados);
+      if (!f.error) pendientes.push([f, datos]);
+    }
+    pendientes.sort(([, a], [, b]) => (a.inicio < b.inicio ? -1 : a.inicio > b.inicio ? 1 : 0));
+    subida.estado = "guardando";
+    subida.hechas = 0;
+    this.requestUpdate();
+    for (const [n, [f, datos]] of pendientes.entries()) {
+      try {
+        await this.hass.callWS({
+          type: "call_service",
+          domain: "pvpc_bonosocial",
+          service: "conciliar_factura",
+          service_data: { suministro, ...datos, comprobar: n === pendientes.length - 1 },
+        });
+        f.hecha = true;
+        subida.hechas += 1;
+      } catch (error) {
+        f.error = await this._mensajeError(error);
+      }
+      this.requestUpdate();
+    }
+    subida.facturas = subida.facturas.filter((f) => !f.hecha);
+    if (!subida.facturas.length) subida.rechazadas = [];
+    subida.estado = "elegir";
+    this.requestUpdate();
+  }
+
+  _anexoSubida() {
+    const s = this._t.sub;
+    const subida = this._subida;
+    const ocupada = subida.estado !== "elegir";
+    const cerrar = html`<button class="cerrar" aria-label=${s.cerrar} @click=${() => (this._subida = null)}>
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"></path>
+      </svg>
+    </button>`;
+    const campo = (f, clave, tipo) =>
+      html`<label class="sub-campo">
+        <span>${s.campos[clave]}</span>
+        <input
+          type=${tipo}
+          name=${clave}
+          min=${tipo === "number" ? "0" : nothing}
+          step=${tipo === "number" ? (clave === "total" ? "0.01" : "1") : nothing}
+          inputmode=${tipo === "number" ? (clave === "total" ? "decimal" : "numeric") : nothing}
+          .value=${f.datos[clave] == null ? "" : String(f.datos[clave])}
+          ?disabled=${ocupada}
+          @input=${(ev) => (f.datos[clave] = ev.target.value)}
+        />
+      </label>`;
+    return html`<aside class="anexo subida">
+      <div class="anexo-cabecera"><div class="ventana-titulo">${s.titulo}</div>${cerrar}</div>
+      <div class="anexo-resumen">${s.intro}</div>
+      <input class="sub-archivos" type="file" multiple accept=".pdf,.zip,application/pdf,application/zip" hidden @change=${(ev) => this._leerArchivos(ev)} />
+      <div class="sub-acciones">
+        <button class="btn-subir" ?disabled=${ocupada} @click=${() => this.renderRoot.querySelector("input.sub-archivos")?.click()}>${s.elegir}</button>
+        <button class="btn-subir secundario" ?disabled=${ocupada} @click=${() => this._anadirAMano()}>${s.a_mano}</button>
+      </div>
+      ${subida.estado === "leyendo" ? html`<div class="anexo-espera"><span class="girando"></span>${s.leyendo}</div>` : nothing}
+      ${subida.mensaje ? html`<div class="anexo-aviso error">⚠️ ${subida.mensaje}</div>` : nothing}
+      ${subida.hechas && !ocupada ? html`<div class="anexo-aviso hecho">${s.hechas(subida.hechas)}</div>` : nothing}
+      ${subida.facturas.length ? html`<div class="anexo-nota">${s.revisar}</div>` : nothing}
+      ${subida.facturas.map(
+        (f) => html`<div class="sub-factura ${f.error ? "con-error" : ""}" data-clave=${f.clave}>
+          <div class="sub-cabecera">
+            <b>${f.archivo || s.manual}</b>
+            <button class="sub-quitar" ?disabled=${ocupada} @click=${() => this._quitarFactura(f)}>${s.quitar}</button>
+          </div>
+          <div class="sub-campos">
+            ${campo(f, "inicio", "date")}${campo(f, "fin", "date")}${campo(f, "emision", "date")}${campo(f, "total", "number")}
+            ${campo(f, "kwh_p1", "number")}${campo(f, "kwh_p2", "number")}${campo(f, "kwh_p3", "number")}${campo(f, "kwh_bonificados", "number")}
+          </div>
+          ${f.error ? html`<div class="anexo-aviso error">⚠️ ${f.error}</div>` : nothing}
+        </div>`,
+      )}
+      ${subida.rechazadas.length
+        ? html`<div class="anexo-nota sub-fuera">
+            ${s.fuera}
+            <ul>
+              ${subida.rechazadas.map((r) => html`<li><b>${r.archivo}</b>: ${r.texto}</li>`)}
+            </ul>
+          </div>`
+        : nothing}
+      ${subida.facturas.length
+        ? html`<div class="anexo-pie">
+            <div class="comparar">
+              <button class="btn-subir" ?disabled=${ocupada} @click=${() => this._guardarFacturas()}>
+                ${subida.estado === "guardando" ? s.guardando : s.guardar(subida.facturas.length)}
+              </button>
+            </div>
+          </div>`
+        : nothing}
+    </aside>`;
+  }
+
   /** «Enviar a Telegram»: reenvía la comparativa guardada al destino de las opciones del suministro. */
   _botonEnviar(idSensor, destino) {
     const c = this._t.comp;
@@ -974,7 +1816,7 @@ class PvpcBonoSocialCard extends LitElement {
         await this.hass.callService("pvpc_bonosocial", "enviar_comparativa", { suministro: dispositivo });
         this._envio = "ok";
       } catch (error) {
-        this._envio = error?.message || String(error);
+        this._envio = await this._mensajeError(error);
       }
     };
     const texto = this._envio === "enviando" ? c.enviando : this._envio === "ok" ? c.enviado : c.enviar(nombre);
@@ -1127,8 +1969,9 @@ class PvpcBonoSocialCard extends LitElement {
     const periodo = (desde, hasta) => (desde && hasta ? ` (${dm(desde)} - ${dm(hasta)})` : "");
     // En la cabecera de una tarjeta estrecha (móvil) solo cabe el texto corto, sin fechas. Va en
     // ::before (atributo) para que el texto del DOM sea solo el largo.
-    const linea = (texto, fechas, importe, corto) =>
-      html`<div><span class="txt-largo">${texto}<span class="sin-corte">${fechas}</span></span><span class="txt-corto" data-t=${corto}></span>: <b class="sin-corte">${this._num(importe, 2)} €</b></div>`;
+    // `aprox`: cifra provisional (horas que la fuente aún no ha publicado, estimadas) o aproximada.
+    const linea = (texto, fechas, importe, corto, aprox = false) =>
+      html`<div><span class="txt-largo">${texto}<span class="sin-corte">${fechas}</span></span><span class="txt-corto" data-t=${corto}></span>: <b class="sin-corte">${aprox ? "≈" : ""}${this._num(importe, 2)} €</b></div>`;
 
     // 1. Periodo anterior
     const anterior = idAnterior && this.hass.states[idAnterior];
@@ -1142,11 +1985,21 @@ class PvpcBonoSocialCard extends LitElement {
     if (actual && Number.isFinite(Number(actual.state))) {
       const a = actual.attributes || {};
       const hoyIso = fechaIso(new Date(), zonaDeHA(this.hass));
+      // Datadis va con días de retraso: con «solo lo recibido» el periodo acaba en el último dato
+      // (datos_hasta es el fin de esa hora: a las 00:00 son los datos del día anterior).
+      let hasta = hoyIso;
+      if (a.provisional && a.factura_en_curso === "recibido" && typeof a.datos_hasta === "string") {
+        const fin = new Date(new Date(a.datos_hasta).getTime() - 1000);
+        hasta = fechaIso(fin, zonaDeHA(this.hass));
+      }
       if (this._config.factura_actual && typeof a.acumulado === "number") {
-        lineas.push(linea(t.en_curso, periodo(a.inicio, hoyIso), a.acumulado, t.en_curso_corto));
+        const aprox = a.provisional === true && a.factura_en_curso !== "recibido";
+        lineas.push(linea(t.en_curso, periodo(a.inicio, hasta), a.acumulado, t.en_curso_corto, aprox));
       }
       if (this._config.prevision !== false) {
-        lineas.push(linea(t.estimada_cierre, periodo(a.inicio, a.fin_previsto), Number(actual.state), t.estimada_corto));
+        lineas.push(
+          linea(t.estimada_cierre, periodo(a.inicio, a.fin_previsto), Number(actual.state), t.estimada_corto, a.aproximada === true),
+        );
       }
     }
     return lineas.length ? lineas : null;
@@ -2126,6 +2979,38 @@ class PvpcBonoSocialCard extends LitElement {
     .anexo-aviso.error {
       color: var(--error-color, #e57373);
     }
+    .anexo-termometro {
+      margin-top: 6px;
+      font-size: 0.9em;
+    }
+    /* Histórico: un mes por fila; al tocarlo, sus 3 ofertas. */
+    .hist-mes summary {
+      list-style: none;
+      cursor: pointer;
+    }
+    .hist-mes summary::-webkit-details-marker {
+      display: none;
+    }
+    .hist-mes .flecha {
+      display: inline-block;
+      width: 1em;
+      transition: transform 0.15s;
+    }
+    .hist-mes[open] .flecha {
+      transform: rotate(90deg);
+    }
+    .hist-mes[open] summary {
+      border-bottom-style: dashed;
+    }
+    .hist-oferta {
+      padding-left: 1em;
+    }
+    .hist-oferta .i {
+      font-weight: 600;
+    }
+    .anexo-fila .o.kwh {
+      opacity: 0.8;
+    }
     .girando {
       width: 18px;
       height: 18px;
@@ -2142,10 +3027,14 @@ class PvpcBonoSocialCard extends LitElement {
     }
     .comparar {
       display: flex;
+      flex-wrap: wrap;
       justify-content: center;
+      gap: 10px;
       margin: 14px 0 4px;
     }
-    .btn-comparar {
+    .btn-comparar,
+    .btn-subir,
+    .btn-historico {
       border: none;
       border-radius: 18px;
       padding: 8px 18px;
@@ -2155,9 +3044,77 @@ class PvpcBonoSocialCard extends LitElement {
       background: var(--primary-color, #03a9f4);
       color: var(--text-primary-color, #fff);
     }
-    .btn-comparar:disabled {
+    .btn-comparar:disabled,
+    .btn-subir:disabled {
       opacity: 0.6;
       cursor: progress;
+    }
+    .btn-subir.secundario {
+      background: none;
+      color: var(--primary-color, #03a9f4);
+      box-shadow: inset 0 0 0 1px var(--primary-color, #03a9f4);
+    }
+    .sub-acciones {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+      margin: 14px 0 4px;
+    }
+    .sub-factura {
+      border: 1px solid var(--divider-color, rgba(127, 127, 127, 0.25));
+      border-radius: 10px;
+      padding: 8px 12px 10px;
+      margin-top: 10px;
+    }
+    .sub-factura.con-error {
+      border-color: var(--error-color, #e57373);
+    }
+    .sub-cabecera {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 6px;
+      overflow-wrap: anywhere;
+    }
+    .sub-quitar {
+      border: none;
+      background: none;
+      font: inherit;
+      font-size: 0.85em;
+      color: var(--secondary-text-color);
+      cursor: pointer;
+      text-decoration: underline;
+    }
+    .sub-campos {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 8px 10px;
+    }
+    .sub-campo {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      font-size: 0.8em;
+      color: var(--secondary-text-color);
+    }
+    .sub-campo input {
+      font: inherit;
+      font-size: 1.15em;
+      padding: 5px 6px;
+      border: 1px solid var(--divider-color, rgba(127, 127, 127, 0.4));
+      border-radius: 6px;
+      background: var(--card-background-color, #fff);
+      color: var(--primary-text-color);
+      min-width: 0;
+    }
+    .sub-fuera ul {
+      margin: 4px 0 0;
+      padding-left: 18px;
+    }
+    .anexo-aviso.hecho {
+      color: var(--success-color, #43a047);
     }
     :host([en-ventana]) ha-card {
       box-shadow: none;
@@ -2175,10 +3132,14 @@ class PvpcBonoSocialCard extends LitElement {
 
 const ETIQUETA_EDITOR = `${ETIQUETA}-editor`;
 
-/** Parte de una etiqueta «español / inglés» para el idioma del usuario. */
-function enSuIdioma(etiqueta, idioma) {
-  const [es, en] = etiqueta.split(" / ");
-  return ["es", ...COOFICIALES].includes(idioma) ? es : (en ?? es);
+/** Sin `hass` (al cargar, `setConfig`): el idioma de la página, que HA pone en <html lang>. */
+function idiomaPagina() {
+  return (document.documentElement.lang || navigator.language || "en").slice(0, 2);
+}
+
+/** Los textos del editor en el idioma del usuario (en inglés si no es uno de los cinco). */
+function textosEditor(idioma) {
+  return TEXTOS_EDITOR[idioma] || TEXTOS_EDITOR.en;
 }
 
 /**
@@ -2186,10 +3147,11 @@ function enSuIdioma(etiqueta, idioma) {
  * siendo las mismas del YAML) y, con los datos actuales, sin lo que depende de algo apagado.
  */
 function esquemaEditor(idioma, d = {}) {
-  const opciones = (lista) => ({
+  const te = textosEditor(idioma);
+  const opciones = (clave, valores) => ({
     select: {
       mode: "dropdown",
-      options: lista.map(([value, label]) => ({ value, label: enSuIdioma(label, idioma) })),
+      options: valores.map((value) => ({ value, label: te.opciones[clave]?.[value] ?? value })),
     },
   });
   const si = (nombre) => ({ name: nombre, selector: { boolean: {} } });
@@ -2197,7 +3159,7 @@ function esquemaEditor(idioma, d = {}) {
     type: "expandable",
     name: "",
     flatten: true,
-    title: enSuIdioma(SECCIONES_EDITOR[clave], idioma),
+    title: te.secciones[clave],
     icon,
     expanded,
     schema: campos.filter(Boolean),
@@ -2211,11 +3173,7 @@ function esquemaEditor(idioma, d = {}) {
       si("current"),
       {
         name: "icon_color",
-        selector: opciones([
-          ["price", "Por precio / By price"],
-          ["period", "Por periodo P1-P3 / By period"],
-          ["fijo", "Azul fijo / Fixed blue"],
-        ]),
+        selector: opciones("icon_color", ["price", "period", "fijo"]),
       },
       { name: "title", selector: { text: {} } },
     ]),
@@ -2225,12 +3183,7 @@ function esquemaEditor(idioma, d = {}) {
       conFactura && si("prevision"),
       {
         name: "factura",
-        selector: opciones([
-          ["header", "Arriba, junto al precio / Top, next to the price"],
-          ["below_chart", "Bajo la gráfica, a la izquierda / Below the chart, left"],
-          ["below_chart_right", "Bajo la gráfica, a la derecha / Below the chart, right"],
-          ["hidden", "No mostrar / Don't show"],
-        ]),
+        selector: opciones("factura", ["header", "below_chart", "below_chart_right", "hidden"]),
       },
     ]),
     seccion("extremos", "mdi:arrow-up-down", false, [
@@ -2241,10 +3194,7 @@ function esquemaEditor(idioma, d = {}) {
       (d.details !== false || conGrafica) && (d.hay_excedentes || d.entity_injection) && si("mostrar_excedentes"),
       d.details !== false && {
         name: "extremos",
-        selector: opciones([
-          ["columnas", "Columnas: hoy | mañana / Columns: today | tomorrow"],
-          ["filas", "Filas: un día por fila / Rows: one day per row"],
-        ]),
+        selector: opciones("extremos", ["columnas", "filas"]),
       },
     ]),
     seccion("grafica", "mdi:chart-line", false, [
@@ -2255,18 +3205,11 @@ function esquemaEditor(idioma, d = {}) {
       conGrafica && { name: "titulo_grafica", selector: { text: {} } },
       conGrafica && {
         name: "grosor",
-        selector: opciones([
-          ["1.5", "Fino (1,5) / Thin (1.5)"],
-          ["2.5", "Normal (2,5) / Normal (2.5)"],
-        ]),
+        selector: opciones("grosor", ["1.5", "2.5"]),
       },
       conGrafica && {
         name: "colores",
-        selector: opciones([
-          ["fijo", "Un color por día / One colour per day"],
-          ["precio", "Hoy por precio / Today by price"],
-          d.next_day !== false && ["precio_manana", "Mañana por precio / Tomorrow by price"],
-        ].filter(Boolean)),
+        selector: opciones("colores", ["fijo", "precio", d.next_day !== false && "precio_manana"].filter(Boolean)),
       },
       conGrafica && { name: "color_hoy", selector: { color_rgb: {} } },
       conManana && { name: "color_manana", selector: { color_rgb: {} } },
@@ -2275,7 +3218,7 @@ function esquemaEditor(idioma, d = {}) {
       si("grafica_facturas"),
       conFacturas && si("facturas_importe"),
       conFacturas && si("facturas_tendencia"),
-      conFacturas && { name: "facturas_meses", selector: opciones(["3", "5", "6", "9", "12"].map((v) => [v, v])) },
+      conFacturas && { name: "facturas_meses", selector: opciones("facturas_meses", ["3", "5", "6", "9", "12"]) },
       conFacturas && { name: "titulo_facturas", selector: { text: {} } },
       conFacturas && { name: "color_facturas", selector: { color_rgb: {} } },
     ]),
@@ -2288,14 +3231,6 @@ function esquemaEditor(idioma, d = {}) {
   ];
 }
 
-const SECCIONES_EDITOR = {
-  cabecera: "Cabecera / Header",
-  factura: "Importes de la factura / Bill amounts",
-  extremos: "Mínimos y máximos / Min and max",
-  grafica: "Gráfica de precios / Price chart",
-  facturas: "Facturas / Bills",
-  avanzado: "Avanzado / Advanced",
-};
 
 /** [r, g, b] de un color de la configuración (el selector de color solo entiende eso). */
 function aRgb(valor, defecto) {
@@ -2340,10 +3275,9 @@ function datosEditor(config, hass) {
   };
 }
 
-/** Los textos de la tarjeta en el idioma de HA (como `_t`). */
+/** Los textos de la tarjeta en el idioma de HA (como `_t`); fuera de los cinco, en inglés. */
 function textosDe(hass) {
   const idioma = (hass?.locale?.language || hass?.language || "es").slice(0, 2);
-  if (COOFICIALES.includes(idioma)) return { ...TEXTOS.es, ...TEXTOS[idioma] };
   return TEXTOS[idioma] || TEXTOS.en;
 }
 
@@ -2380,8 +3314,8 @@ class PvpcBonoSocialCardEditor extends LitElement {
       .hass=${this.hass}
       .data=${datos}
       .schema=${esquemaEditor(this._idioma, datos)}
-      .computeLabel=${(s) => (ETIQUETAS_EDITOR[s.name] ? enSuIdioma(ETIQUETAS_EDITOR[s.name], this._idioma) : s.title ?? s.name)}
-      .computeHelper=${(s) => (AYUDAS_EDITOR[s.name] ? enSuIdioma(AYUDAS_EDITOR[s.name], this._idioma) : "")}
+      .computeLabel=${(s) => textosEditor(this._idioma).etiquetas[s.name] ?? s.title ?? s.name}
+      .computeHelper=${(s) => textosEditor(this._idioma).ayudas[s.name] ?? ""}
       @value-changed=${this._alCambiar}
     ></ha-form>`;
   }
@@ -2412,71 +3346,429 @@ class PvpcBonoSocialCardEditor extends LitElement {
   }
 }
 
-const ETIQUETAS_EDITOR = {
-  entity: "Sensor de precio / Price sensor",
-  title: "Título de la tarjeta / Card title",
-  factura: "Posición en la tarjeta / Position on the card",
-  factura_actual: "Factura periodo en curso / Current bill",
-  factura_anterior: "Factura periodo anterior / Previous bill",
-  prevision: "Factura estimada / Estimated bill",
-  current: "Precio actual / Current price",
-  details: "Mostrar mínimos y máximos / Show min and max",
-  extremos: "Disposición / Layout",
-  graph: "Mostrar la gráfica / Show the chart",
-  next_day: "Mostrar mañana / Show tomorrow",
-  extremos_manana: "Mostrar mañana / Show tomorrow",
-  icon_color: "Color del icono / Icon colour",
-  colores: "Colores de la gráfica / Chart colours",
-  grosor: "Grosor de las líneas / Line width",
-  color_hoy: "Color de hoy / Today's colour",
-  color_manana: "Color de mañana / Tomorrow's colour",
-  bandas: "Punta y llano sombreados / Shade peak hours",
-  entity_injection: "Sensor de precio de excedentes / Surplus price sensor",
-  mostrar_excedentes: "Mostrar precios de los excedentes / Show surplus prices",
-  excedentes_grafica: "Mostrar excedentes / Show surplus",
-  grafica_facturas: "Mostrar facturas / Show bills",
-  facturas_importe: "Importe sobre las barras / Amount above bars",
-  facturas_tendencia: "Línea de tendencia / Trend line",
-  facturas_meses: "Cantidad de facturas / Number of bills",
-  color_facturas: "Color de las barras / Bar colour",
-  titulo_grafica: "Título de la gráfica de precios / Price chart title",
-  titulo_facturas: "Título de la gráfica / Chart title",
-  entity_factura_actual: "Sensor de factura en curso / Current bill sensor",
-  entity_factura_anterior: "Sensor de factura anterior / Previous bill sensor",
-};
-
-/** Una línea de ayuda bajo cada campo del editor. */
-const AYUDAS_EDITOR = {
-  current: "Precio de esta hora, en grande; el icono sigue / This hour's price, in large type; the icon stays",
-  icon_color: "Por precio: verde barato, rojo caro / By price: green cheap, red expensive",
-  title: "Bórralo para dejar la tarjeta sin título / Clear it to leave the card untitled",
-  factura: "Dónde van las líneas de factura / Where the bill lines go",
-  factura_anterior: "Último periodo cerrado / Last closed period",
-  factura_actual: "Lo gastado en el periodo hasta hoy / Spent so far this period",
-  prevision: "Lo que se prevé pagar al cerrar el periodo / Expected total at the end of the period",
-  details: "Hora más barata y más cara de hoy y de mañana / Cheapest and most expensive hour today and tomorrow",
-  extremos: "Columnas: hoy a la izquierda y mañana a la derecha. Filas: hoy arriba y mañana debajo / Columns: today left, tomorrow right. Rows: today above, tomorrow below",
-  graph: "Precio de cada hora en escalones / Hourly price as steps",
-  next_day: "Solo en la gráfica, cuando ya hay precios (sobre las 20:30) / Chart only, once prices are out (around 20:30)",
-  extremos_manana: "Mínimo y máximo de mañana, cuando ya hay precios (sobre las 20:30) / Tomorrow's min and max, once prices are out (around 20:30)",
-  titulo_grafica: "Bórralo para dejar la gráfica sin título / Clear it to leave the chart untitled",
-  grosor: "De hoy, mañana y excedentes / Today, tomorrow and surplus",
-  colores: "«Por precio» colorea cada hora del día elegido según lo cara que es / «By price» colours each hour of that day by how expensive it is",
-  color_hoy: "La línea y los triángulos de hoy / Today's line and triangles",
-  color_manana: "La línea y los triángulos de mañana / Tomorrow's line and triangles",
-  facturas_importe: "El importe de cada factura encima de su barra / Each bill's amount above its bar",
-  facturas_meses: "Cuántas facturas cerradas se ven, las más recientes / How many closed bills are shown, the latest",
-  color_facturas: "El color de las barras / The bar colour",
-  bandas: "Fondo de color en las horas punta y llano de los laborables / Shaded peak and standard hours on working days",
-  entity_injection: "Se elige solo con «Mostrar precios de los excedentes» / Set by «Show surplus prices»",
-  mostrar_excedentes: "Activa los excedentes en la tarjeta (triángulos huecos); necesita la API privada de ESIOS / Enables surplus on the card (hollow triangles); needs the ESIOS private API",
-  excedentes_grafica: "Su precio en punteado en la gráfica / Its price, dotted, on the chart",
-  grafica_facturas: "Barras con las últimas facturas cerradas / Bars with the latest closed bills",
-  facturas_tendencia: "Línea discontinua con la tendencia / Dashed trend line",
-  titulo_facturas: "Bórralo para dejar la gráfica sin título / Clear it to leave the chart untitled",
-  entity: "Se detecta sola; cámbialo solo si tienes varias entradas / Detected automatically; change it only with several entries",
-  entity_factura_actual: "Se detecta solo / Detected automatically",
-  entity_factura_anterior: "Se detecta solo / Detected automatically",
+/**
+ * Textos del editor visual: secciones, opciones de los desplegables, etiquetas y una línea de ayuda
+ * bajo cada campo. Cada idioma, completo (la prueba de humo lo comprueba).
+ */
+const TEXTOS_EDITOR = {
+  es: {
+    // La descripción del selector de tarjetas de HA.
+    descripcion: "Precio del PVPC de hoy y mañana y la factura con o sin bono social.",
+    config_no_valida: "Configuración no válida",
+    secciones: {
+      cabecera: "Cabecera",
+      factura: "Importes de la factura",
+      extremos: "Mínimos y máximos",
+      grafica: "Gráfica de precios",
+      facturas: "Facturas",
+      avanzado: "Avanzado",
+    },
+    opciones: {
+      icon_color: { price: "Por precio", period: "Por periodo P1-P3", fijo: "Azul fijo" },
+      factura: { header: "Arriba, junto al precio", below_chart: "Bajo la gráfica, a la izquierda", below_chart_right: "Bajo la gráfica, a la derecha", hidden: "No mostrar" },
+      extremos: { columnas: "Columnas: hoy | mañana", filas: "Filas: un día por fila" },
+      grosor: { "1.5": "Fino (1,5)", "2.5": "Normal (2,5)" },
+      colores: { fijo: "Un color por día", precio: "Hoy por precio", precio_manana: "Mañana por precio" },
+    },
+    etiquetas: {
+      entity: "Sensor de precio",
+      title: "Título de la tarjeta",
+      factura: "Posición en la tarjeta",
+      factura_actual: "Factura periodo en curso",
+      factura_anterior: "Factura periodo anterior",
+      prevision: "Factura estimada",
+      current: "Precio actual",
+      details: "Mostrar mínimos y máximos",
+      extremos: "Disposición",
+      graph: "Mostrar la gráfica",
+      next_day: "Mostrar mañana",
+      extremos_manana: "Mostrar mañana",
+      icon_color: "Color del icono",
+      colores: "Colores de la gráfica",
+      grosor: "Grosor de las líneas",
+      color_hoy: "Color de hoy",
+      color_manana: "Color de mañana",
+      bandas: "Punta y llano sombreados",
+      entity_injection: "Sensor de precio de excedentes",
+      mostrar_excedentes: "Mostrar precios de los excedentes",
+      excedentes_grafica: "Mostrar excedentes",
+      grafica_facturas: "Mostrar facturas",
+      facturas_importe: "Importe sobre las barras",
+      facturas_tendencia: "Línea de tendencia",
+      facturas_meses: "Cantidad de facturas",
+      color_facturas: "Color de las barras",
+      titulo_grafica: "Título de la gráfica de precios",
+      titulo_facturas: "Título de la gráfica",
+      entity_factura_actual: "Sensor de factura en curso",
+      entity_factura_anterior: "Sensor de factura anterior",
+    },
+    ayudas: {
+      current: "Precio de esta hora, en grande; el icono sigue",
+      icon_color: "Por precio: verde barato, rojo caro",
+      title: "Bórralo para dejar la tarjeta sin título",
+      factura: "Dónde van las líneas de factura",
+      factura_anterior: "Último periodo cerrado",
+      factura_actual: "Lo gastado en el periodo hasta hoy",
+      prevision: "Lo que se prevé pagar al cerrar el periodo",
+      details: "Hora más barata y más cara de hoy y de mañana",
+      extremos: "Columnas: hoy a la izquierda y mañana a la derecha. Filas: hoy arriba y mañana debajo",
+      graph: "Precio de cada hora en escalones",
+      next_day: "Solo en la gráfica, cuando ya hay precios (sobre las 20:30)",
+      extremos_manana: "Mínimo y máximo de mañana, cuando ya hay precios (sobre las 20:30)",
+      titulo_grafica: "Bórralo para dejar la gráfica sin título",
+      grosor: "De hoy, mañana y excedentes",
+      colores: "«Por precio» colorea cada hora del día elegido según lo cara que es",
+      color_hoy: "La línea y los triángulos de hoy",
+      color_manana: "La línea y los triángulos de mañana",
+      facturas_importe: "El importe de cada factura encima de su barra",
+      facturas_meses: "Cuántas facturas cerradas se ven, las más recientes",
+      color_facturas: "El color de las barras",
+      bandas: "Fondo de color en las horas punta y llano de los laborables",
+      entity_injection: "Se elige solo con «Mostrar precios de los excedentes»",
+      mostrar_excedentes: "Activa los excedentes en la tarjeta (triángulos huecos); necesita la API privada de ESIOS",
+      excedentes_grafica: "Su precio en punteado en la gráfica",
+      grafica_facturas: "Barras con las últimas facturas cerradas",
+      facturas_tendencia: "Línea discontinua con la tendencia",
+      titulo_facturas: "Bórralo para dejar la gráfica sin título",
+      entity: "Se detecta sola; cámbialo solo si tienes varias entradas",
+      entity_factura_actual: "Se detecta solo",
+      entity_factura_anterior: "Se detecta solo",
+    },
+  },
+  en: {
+    descripcion: "Today's and tomorrow's PVPC price and the bill with or without the social bonus.",
+    config_no_valida: "Invalid configuration",
+    secciones: {
+      cabecera: "Header",
+      factura: "Bill amounts",
+      extremos: "Min and max",
+      grafica: "Price chart",
+      facturas: "Bills",
+      avanzado: "Advanced",
+    },
+    opciones: {
+      icon_color: { price: "By price", period: "By period", fijo: "Fixed blue" },
+      factura: { header: "Top, next to the price", below_chart: "Below the chart, left", below_chart_right: "Below the chart, right", hidden: "Don't show" },
+      extremos: { columnas: "Columns: today | tomorrow", filas: "Rows: one day per row" },
+      grosor: { "1.5": "Thin (1.5)", "2.5": "Normal (2.5)" },
+      colores: { fijo: "One colour per day", precio: "Today by price", precio_manana: "Tomorrow by price" },
+    },
+    etiquetas: {
+      entity: "Price sensor",
+      title: "Card title",
+      factura: "Position on the card",
+      factura_actual: "Current bill",
+      factura_anterior: "Previous bill",
+      prevision: "Estimated bill",
+      current: "Current price",
+      details: "Show min and max",
+      extremos: "Layout",
+      graph: "Show the chart",
+      next_day: "Show tomorrow",
+      extremos_manana: "Show tomorrow",
+      icon_color: "Icon colour",
+      colores: "Chart colours",
+      grosor: "Line width",
+      color_hoy: "Today's colour",
+      color_manana: "Tomorrow's colour",
+      bandas: "Shade peak hours",
+      entity_injection: "Surplus price sensor",
+      mostrar_excedentes: "Show surplus prices",
+      excedentes_grafica: "Show surplus",
+      grafica_facturas: "Show bills",
+      facturas_importe: "Amount above bars",
+      facturas_tendencia: "Trend line",
+      facturas_meses: "Number of bills",
+      color_facturas: "Bar colour",
+      titulo_grafica: "Price chart title",
+      titulo_facturas: "Chart title",
+      entity_factura_actual: "Current bill sensor",
+      entity_factura_anterior: "Previous bill sensor",
+    },
+    ayudas: {
+      current: "This hour's price, in large type; the icon stays",
+      icon_color: "By price: green cheap, red expensive",
+      title: "Clear it to leave the card untitled",
+      factura: "Where the bill lines go",
+      factura_anterior: "Last closed period",
+      factura_actual: "Spent so far this period",
+      prevision: "Expected total at the end of the period",
+      details: "Cheapest and most expensive hour today and tomorrow",
+      extremos: "Columns: today left, tomorrow right. Rows: today above, tomorrow below",
+      graph: "Hourly price as steps",
+      next_day: "Chart only, once prices are out (around 20:30)",
+      extremos_manana: "Tomorrow's min and max, once prices are out (around 20:30)",
+      titulo_grafica: "Clear it to leave the chart untitled",
+      grosor: "Today, tomorrow and surplus",
+      colores: "«By price» colours each hour of that day by how expensive it is",
+      color_hoy: "Today's line and triangles",
+      color_manana: "Tomorrow's line and triangles",
+      facturas_importe: "Each bill's amount above its bar",
+      facturas_meses: "How many closed bills are shown, the latest",
+      color_facturas: "The bar colour",
+      bandas: "Shaded peak and standard hours on working days",
+      entity_injection: "Set by «Show surplus prices»",
+      mostrar_excedentes: "Enables surplus on the card (hollow triangles); needs the ESIOS private API",
+      excedentes_grafica: "Its price, dotted, on the chart",
+      grafica_facturas: "Bars with the latest closed bills",
+      facturas_tendencia: "Dashed trend line",
+      titulo_facturas: "Clear it to leave the chart untitled",
+      entity: "Detected automatically; change it only with several entries",
+      entity_factura_actual: "Detected automatically",
+      entity_factura_anterior: "Detected automatically",
+    },
+  },
+  ca: {
+    descripcion: "Preu del PVPC d'avui i de demà i la factura amb bo social o sense.",
+    config_no_valida: "Configuració no vàlida",
+    secciones: {
+      cabecera: "Capçalera",
+      factura: "Imports de la factura",
+      extremos: "Mínims i màxims",
+      grafica: "Gràfic de preus",
+      facturas: "Factures",
+      avanzado: "Avançat",
+    },
+    opciones: {
+      icon_color: { price: "Per preu", period: "Per període P1-P3", fijo: "Blau fix" },
+      factura: { header: "A dalt, al costat del preu", below_chart: "Sota el gràfic, a l'esquerra", below_chart_right: "Sota el gràfic, a la dreta", hidden: "No mostrar" },
+      extremos: { columnas: "Columnes: avui | demà", filas: "Files: un dia per fila" },
+      grosor: { "1.5": "Fina (1,5)", "2.5": "Normal (2,5)" },
+      colores: { fijo: "Un color per dia", precio: "Avui per preu", precio_manana: "Demà per preu" },
+    },
+    etiquetas: {
+      entity: "Sensor de preu",
+      title: "Títol de la targeta",
+      factura: "Posició a la targeta",
+      factura_actual: "Factura del període en curs",
+      factura_anterior: "Factura del període anterior",
+      prevision: "Factura estimada",
+      current: "Preu actual",
+      details: "Mostrar mínims i màxims",
+      extremos: "Disposició",
+      graph: "Mostrar el gràfic",
+      next_day: "Mostrar demà",
+      extremos_manana: "Mostrar demà",
+      icon_color: "Color de la icona",
+      colores: "Colors del gràfic",
+      grosor: "Gruix de les línies",
+      color_hoy: "Color d'avui",
+      color_manana: "Color de demà",
+      bandas: "Punta i pla ombrejats",
+      entity_injection: "Sensor de preu dels excedents",
+      mostrar_excedentes: "Mostrar els preus dels excedents",
+      excedentes_grafica: "Mostrar els excedents",
+      grafica_facturas: "Mostrar les factures",
+      facturas_importe: "Import sobre les barres",
+      facturas_tendencia: "Línia de tendència",
+      facturas_meses: "Nombre de factures",
+      color_facturas: "Color de les barres",
+      titulo_grafica: "Títol del gràfic de preus",
+      titulo_facturas: "Títol del gràfic",
+      entity_factura_actual: "Sensor de la factura en curs",
+      entity_factura_anterior: "Sensor de la factura anterior",
+    },
+    ayudas: {
+      current: "Preu d'aquesta hora, en gran; la icona es manté",
+      icon_color: "Per preu: verd barat, vermell car",
+      title: "Esborra'l per deixar la targeta sense títol",
+      factura: "On van les línies de factura",
+      factura_anterior: "Últim període tancat",
+      factura_actual: "El que s'ha gastat en el període fins avui",
+      prevision: "El que es preveu pagar en tancar el període",
+      details: "Hora més barata i més cara d'avui i de demà",
+      extremos: "Columnes: avui a l'esquerra i demà a la dreta. Files: avui a dalt i demà a sota",
+      graph: "Preu de cada hora en esglaons",
+      next_day: "Només al gràfic, quan ja hi ha preus (cap a les 20:30)",
+      extremos_manana: "Mínim i màxim de demà, quan ja hi ha preus (cap a les 20:30)",
+      titulo_grafica: "Esborra'l per deixar el gràfic sense títol",
+      grosor: "D'avui, de demà i dels excedents",
+      colores: "«Per preu» pinta cada hora del dia triat segons com n'és de car",
+      color_hoy: "La línia i els triangles d'avui",
+      color_manana: "La línia i els triangles de demà",
+      facturas_importe: "L'import de cada factura damunt de la seva barra",
+      facturas_meses: "Quantes factures tancades es veuen, les més recents",
+      color_facturas: "El color de les barres",
+      bandas: "Fons de color a les hores punta i pla dels dies feiners",
+      entity_injection: "Es tria sol en activar «Mostrar els preus dels excedents»",
+      mostrar_excedentes: "Activa els excedents a la targeta (triangles buits); cal l'API privada d'ESIOS",
+      excedentes_grafica: "El seu preu en puntejat al gràfic",
+      grafica_facturas: "Barres amb les últimes factures tancades",
+      facturas_tendencia: "Línia discontínua amb la tendència",
+      titulo_facturas: "Esborra'l per deixar el gràfic sense títol",
+      entity: "Es detecta sol; canvia'l només si tens diverses entrades",
+      entity_factura_actual: "Es detecta sol",
+      entity_factura_anterior: "Es detecta sol",
+    },
+  },
+  gl: {
+    // La descripción del selector de tarjetas de HA.
+    descripcion: "Prezo do PVPC de hoxe e mañá e a factura con ou sen bono social.",
+    config_no_valida: "Configuración non válida",
+    secciones: {
+      cabecera: "Cabeceira",
+      factura: "Importes da factura",
+      extremos: "Mínimos e máximos",
+      grafica: "Gráfica de prezos",
+      facturas: "Facturas",
+      avanzado: "Avanzado",
+    },
+    opciones: {
+      icon_color: { price: "Por prezo", period: "Por período P1-P3", fijo: "Azul fixo" },
+      factura: { header: "Arriba, xunto ao prezo", below_chart: "Debaixo da gráfica, á esquerda", below_chart_right: "Debaixo da gráfica, á dereita", hidden: "Non amosar" },
+      extremos: { columnas: "Columnas: hoxe | mañá", filas: "Filas: un día por fila" },
+      grosor: { "1.5": "Fina (1,5)", "2.5": "Normal (2,5)" },
+      colores: { fijo: "Unha cor por día", precio: "Hoxe por prezo", precio_manana: "Mañá por prezo" },
+    },
+    etiquetas: {
+      entity: "Sensor de prezo",
+      title: "Título da tarxeta",
+      factura: "Posición na tarxeta",
+      factura_actual: "Factura do período en curso",
+      factura_anterior: "Factura do período anterior",
+      prevision: "Factura estimada",
+      current: "Prezo actual",
+      details: "Amosar mínimos e máximos",
+      extremos: "Disposición",
+      graph: "Amosar a gráfica",
+      next_day: "Amosar mañá",
+      extremos_manana: "Amosar mañá",
+      icon_color: "Cor da icona",
+      colores: "Cores da gráfica",
+      grosor: "Grosor das liñas",
+      color_hoy: "Cor de hoxe",
+      color_manana: "Cor de mañá",
+      bandas: "Punta e chan sombreados",
+      entity_injection: "Sensor de prezo dos excedentes",
+      mostrar_excedentes: "Amosar os prezos dos excedentes",
+      excedentes_grafica: "Amosar os excedentes",
+      grafica_facturas: "Amosar as facturas",
+      facturas_importe: "Importe sobre as barras",
+      facturas_tendencia: "Liña de tendencia",
+      facturas_meses: "Cantidade de facturas",
+      color_facturas: "Cor das barras",
+      titulo_grafica: "Título da gráfica de prezos",
+      titulo_facturas: "Título da gráfica",
+      entity_factura_actual: "Sensor de factura en curso",
+      entity_factura_anterior: "Sensor de factura anterior",
+    },
+    ayudas: {
+      current: "Prezo desta hora, en grande; a icona mantense",
+      icon_color: "Por prezo: verde barato, vermello caro",
+      title: "Bórrao para deixar a tarxeta sen título",
+      factura: "Onde van as liñas de factura",
+      factura_anterior: "Último período pechado",
+      factura_actual: "O gastado no período ata hoxe",
+      prevision: "O que se prevé pagar ao pechar o período",
+      details: "Hora máis barata e máis cara de hoxe e de mañá",
+      extremos: "Columnas: hoxe á esquerda e mañá á dereita. Filas: hoxe arriba e mañá debaixo",
+      graph: "Prezo de cada hora en chanzos",
+      next_day: "Só na gráfica, cando xa hai prezos (arredor das 20:30)",
+      extremos_manana: "Mínimo e máximo de mañá, cando xa hai prezos (arredor das 20:30)",
+      titulo_grafica: "Bórrao para deixar a gráfica sen título",
+      grosor: "De hoxe, mañá e excedentes",
+      colores: "«Por prezo» colorea cada hora do día escollido segundo o cara que sexa",
+      color_hoy: "A liña e os triángulos de hoxe",
+      color_manana: "A liña e os triángulos de mañá",
+      facturas_importe: "O importe de cada factura enriba da súa barra",
+      facturas_meses: "Cantas facturas pechadas se ven, as máis recentes",
+      color_facturas: "A cor das barras",
+      bandas: "Fondo de cor nas horas punta e chan dos laborables",
+      entity_injection: "Escóllese só con «Amosar os prezos dos excedentes»",
+      mostrar_excedentes: "Activa os excedentes na tarxeta (triángulos baleiros); necesita a API privada de ESIOS",
+      excedentes_grafica: "O seu prezo con liña de puntos na gráfica",
+      grafica_facturas: "Barras coas últimas facturas pechadas",
+      facturas_tendencia: "Liña descontinua coa tendencia",
+      titulo_facturas: "Bórrao para deixar a gráfica sen título",
+      entity: "Detéctase só; cámbiao só se tes varias entradas",
+      entity_factura_actual: "Detéctase só",
+      entity_factura_anterior: "Detéctase só",
+    },
+  },
+  eu: {
+    // La descripción del selector de tarjetas de HA.
+    descripcion: "Gaurko eta biharko PVPC prezioa eta faktura, gizarte-bonuarekin edo gabe.",
+    config_no_valida: "Konfigurazio baliogabea",
+    secciones: {
+      cabecera: "Goiburua",
+      factura: "Fakturaren zenbatekoak",
+      extremos: "Gutxienekoak eta gehienekoak",
+      grafica: "Prezioen grafikoa",
+      facturas: "Fakturak",
+      avanzado: "Aurreratua",
+    },
+    opciones: {
+      icon_color: { price: "Prezioaren arabera", period: "P1-P3 aldiaren arabera", fijo: "Urdin finkoa" },
+      factura: { header: "Goian, prezioaren ondoan", below_chart: "Grafikoaren azpian, ezkerrean", below_chart_right: "Grafikoaren azpian, eskuinean", hidden: "Ez erakutsi" },
+      extremos: { columnas: "Zutabeak: gaur | bihar", filas: "Errenkadak: egun bat errenkada bakoitzeko" },
+      grosor: { "1.5": "Mehea (1,5)", "2.5": "Normala (2,5)" },
+      colores: { fijo: "Kolore bat egun bakoitzeko", precio: "Gaur, prezioaren arabera", precio_manana: "Bihar, prezioaren arabera" },
+    },
+    etiquetas: {
+      entity: "Prezio-sentsorea",
+      title: "Txartelaren izenburua",
+      factura: "Kokapena txartelean",
+      factura_actual: "Uneko aldiko faktura",
+      factura_anterior: "Aurreko aldiko faktura",
+      prevision: "Zenbatetsitako faktura",
+      current: "Uneko prezioa",
+      details: "Erakutsi gutxienekoak eta gehienekoak",
+      extremos: "Antolaera",
+      graph: "Erakutsi grafikoa",
+      next_day: "Erakutsi bihar",
+      extremos_manana: "Erakutsi bihar",
+      icon_color: "Ikonoaren kolorea",
+      colores: "Grafikoaren koloreak",
+      grosor: "Marren lodiera",
+      color_hoy: "Gaurko kolorea",
+      color_manana: "Biharko kolorea",
+      bandas: "Puntakoa eta laua itzalduta",
+      entity_injection: "Soberakinen prezio-sentsorea",
+      mostrar_excedentes: "Erakutsi soberakinen prezioak",
+      excedentes_grafica: "Erakutsi soberakinak",
+      grafica_facturas: "Erakutsi fakturak",
+      facturas_importe: "Zenbatekoa barren gainean",
+      facturas_tendencia: "Joera-marra",
+      facturas_meses: "Faktura kopurua",
+      color_facturas: "Barren kolorea",
+      titulo_grafica: "Prezioen grafikoaren izenburua",
+      titulo_facturas: "Grafikoaren izenburua",
+      entity_factura_actual: "Uneko fakturaren sentsorea",
+      entity_factura_anterior: "Aurreko fakturaren sentsorea",
+    },
+    ayudas: {
+      current: "Ordu honetako prezioa, handian; ikonoa mantentzen da",
+      icon_color: "Prezioaren arabera: berdea merkea, gorria garestia",
+      title: "Ezabatu txartela izenbururik gabe uzteko",
+      factura: "Fakturaren lerroak non doazen",
+      factura_anterior: "Itxitako azken aldia",
+      factura_actual: "Aldian gaur arte gastatutakoa",
+      prevision: "Aldia ixtean ordaintzea aurreikusten dena",
+      details: "Gaurko eta biharko ordu merkeena eta garestiena",
+      extremos: "Zutabeak: gaur ezkerrean eta bihar eskuinean. Errenkadak: gaur goian eta bihar behean",
+      graph: "Ordu bakoitzeko prezioa, mailaka",
+      next_day: "Grafikoan soilik, prezioak daudenean (20:30 aldera)",
+      extremos_manana: "Biharko gutxienekoa eta gehienekoa, prezioak daudenean (20:30 aldera)",
+      titulo_grafica: "Ezabatu grafikoa izenbururik gabe uzteko",
+      grosor: "Gaurkoa, biharkoa eta soberakinak",
+      colores: "«Prezioaren arabera» aukerak aukeratutako eguneko ordu bakoitza koloreztatzen du, zein garestia den kontuan hartuta",
+      color_hoy: "Gaurko marra eta triangeluak",
+      color_manana: "Biharko marra eta triangeluak",
+      facturas_importe: "Faktura bakoitzaren zenbatekoa bere barraren gainean",
+      facturas_meses: "Zenbat faktura itxi ikusten diren, berrienak",
+      color_facturas: "Barren kolorea",
+      bandas: "Kolorezko hondoa lanegunetako aldi puntakoan eta lauan",
+      entity_injection: "«Erakutsi soberakinen prezioak» aktibatuta dagoenean bakarrik aukeratzen da",
+      mostrar_excedentes: "Soberakinak aktibatzen ditu txartelean (triangelu hutsak); ESIOSen API pribatua behar du",
+      excedentes_grafica: "Haien prezioa, puntuz, grafikoan",
+      grafica_facturas: "Itxitako azken fakturen barrak",
+      facturas_tendencia: "Joera erakusten duen marra etena",
+      titulo_facturas: "Ezabatu grafikoa izenbururik gabe uzteko",
+      entity: "Bere kabuz detektatzen da; aldatu hainbat sarrera badituzu soilik",
+      entity_factura_actual: "Bere kabuz detektatzen da",
+      entity_factura_anterior: "Bere kabuz detektatzen da",
+    },
+  },
 };
 
 if (!customElements.get(ETIQUETA)) {
@@ -2486,7 +3778,7 @@ if (!customElements.get(ETIQUETA)) {
   window.customCards.push({
     type: ETIQUETA,
     name: "PVPC + Bono Social",
-    description: "Precio del PVPC de hoy y mañana y la factura con o sin bono social.",
+    description: textosEditor(idiomaPagina()).descripcion,
     preview: true,
     documentationURL: "https://github.com/BaRDaHL/pvpc_bonosocial",
   });

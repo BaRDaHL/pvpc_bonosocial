@@ -47,18 +47,32 @@ async def async_descargar(session: aiohttp.ClientSession, ip: str, canal: int) -
         return await resp.text()
 
 
-def horas_completas(texto: str) -> dict[datetime, Decimal]:
-    """kWh de cada hora UTC con sus 6 intervalos de 10 minutos (las demás se descartan)."""
+def horas_completas(texto: str, desde: datetime | None = None) -> dict[datetime, Decimal]:
+    """kWh de cada hora UTC con sus 6 intervalos de 10 minutos (las demás se descartan).
+
+    `desde`: las horas anteriores no se devuelven (lo mismo que `recortar` después). Se descartan antes
+    de convertir la fecha y el valor: la memoria del Shelly guarda casi un año y solo se usan 70 días.
+    """
     suma: dict[datetime, Decimal] = {}
     cuenta: dict[datetime, int] = {}
     vistos: set[datetime] = set()
+    hora_desde = desde.astimezone(UTC).replace(minute=0, second=0, microsecond=0) if desde else None
+    if hora_desde is not None and hora_desde < desde:
+        hora_desde += timedelta(hours=1)  # primera hora entera que no es anterior a `desde`
+    texto_desde = hora_desde.strftime("%Y-%m-%d %H") if hora_desde else None
     for fila in csv.reader(io.StringIO(texto)):
         if len(fila) < 2 or not fila[0][:2].isdigit():
             continue
+        fecha = fila[0].strip()
+        # Con el formato del Shelly («AAAA-MM-DD HH:MM») la fecha se compara como texto, sin convertirla.
+        if texto_desde is not None and _canonica(fecha) and fecha[:13] < texto_desde:
+            continue
         try:
-            t = datetime.strptime(fila[0].strip(), "%Y-%m-%d %H:%M").replace(tzinfo=UTC)
+            t = datetime.strptime(fecha, "%Y-%m-%d %H:%M").replace(tzinfo=UTC)
             wh = Decimal(fila[1])
         except (ValueError, InvalidOperation):
+            continue
+        if hora_desde is not None and t < hora_desde:
             continue
         if not wh.is_finite():  # «nan»/«inf»: se descarta el intervalo (la hora queda incompleta)
             continue
@@ -69,6 +83,17 @@ def horas_completas(texto: str) -> dict[datetime, Decimal]:
         suma[h] = suma.get(h, Decimal(0)) + wh
         cuenta[h] = cuenta.get(h, 0) + 1
     return {h: (v / 1000).quantize(Decimal("0.0001")) for h, v in suma.items() if cuenta[h] == 6}
+
+
+def _canonica(fecha: str) -> bool:
+    """«AAAA-MM-DD HH:MM» con ceros a la izquierda: se puede comparar como texto."""
+    return (
+        len(fecha) == 16
+        and fecha[4] == fecha[7] == "-"
+        and fecha[10] == " "
+        and fecha[13] == ":"
+        and fecha.replace("-", "").replace(" ", "").replace(":", "").isdigit()
+    )
 
 
 def recortar(horas: Mapping[datetime, Decimal], ahora: datetime) -> dict[datetime, Decimal]:

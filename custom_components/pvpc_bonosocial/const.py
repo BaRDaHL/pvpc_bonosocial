@@ -10,7 +10,10 @@ DOMAIN = "pvpc_bonosocial"
 ENTRY_VERSION = 2
 # 2.2: el token de ESIOS vive solo en entry.data. 2.3: la potencia de la entrada (altas anteriores a la
 # v1.2.2) vive solo en entry.data; desde la v1.2.2 solo se pide al añadir el suministro.
-ENTRY_MINOR_VERSION = 3
+# (v1.4: lo nuevo de las subentradas, la estadística fija de Datadis y el UUID del medidor, se completa
+# al arrancar, sin cambiar de versión: migracion.async_completar_subentradas.) 2.4 (v2.0): fuera la
+# frecuencia de actualización de las cuentas atrás, que pasan a ser marcas de tiempo.
+ENTRY_MINOR_VERSION = 4
 
 # Subentradas «Suministro» (DISENO §2.1)
 SUBENTRY_SUMINISTRO = "suministro"
@@ -19,6 +22,8 @@ SUBENTRY_DATADIS = "datadis"
 CONF_DATADIS_USUARIO = "usuario"
 CONF_DATADIS_CLAVE = "clave"
 CONF_DATADIS_SUMINISTRO = "suministro_datadis"  # {cups, distributorCode, pointType}
+# Id de la estadística de energía de la cuenta, fijado al crearla (v1.4): no depende del título.
+CONF_DATADIS_ESTADISTICA = "estadistica"
 # Subentradas «Resumen por notificación» (DISENO §8): una por destino
 SUBENTRY_RESUMEN = "resumen"
 CONF_DESTINO = "destino"
@@ -50,6 +55,8 @@ CONF_ALQUILER = "alquiler_contador_eur_mes"
 CONF_ARRASTRE_INICIAL = "arrastre_inicial_kwh"
 CONF_CODIGO_POSTAL = "codigo_postal"  # solo para el comparador de tarifas (§8 bis)
 CONF_COMPARAR_MENSUAL = "comparar_mensual"
+# Histórico de comparativas: si en el mes no se ha comparado, comparar en silencio el último día.
+CONF_COMPARAR_FIN_MES = "comparar_fin_de_mes"
 # Envío de la comparativa de tarifas a una entidad `notify` (Telegram incluido), opcional.
 CONF_COMPARADOR_DESTINO = "comparador_destino"
 CONF_COMPARADOR_ENVIO = "comparador_envio"  # siempre | si_ahorra
@@ -70,9 +77,25 @@ CONF_SHELLY_IP = "shelly_ip"
 CONF_SHELLY_CANAL = "shelly_canal"
 CONF_SHELLY_FRECUENCIA = "shelly_frecuencia"
 FRECUENCIAS_SHELLY = ("diaria", "semanal", "desactivada")
-FUENTE_SENSOR = "sensor"
-FUENTE_ESTADISTICA = "estadistica"
-TIPOS_FUENTE = (FUENTE_SENSOR, FUENTE_ESTADISTICA)
+# Tipo de fuente del consumo (v1.4: el alta pregunta qué datos tiene el usuario).
+FUENTE_SENSOR = "sensor"  # un medidor de HA (Shelly, enchufe, pinza…)
+FUENTE_DATADIS = "datadis"  # la curva de una cuenta de Datadis de la integración
+FUENTE_AMBOS = "ambos"  # medidor para lo reciente y Datadis como dato oficial
+FUENTE_NINGUNA = "ninguna"  # solo facturas (PDF o a mano): previsión aproximada
+FUENTE_ESTADISTICA = "estadistica"  # avanzado: estadística externa de otra integración
+TIPOS_FUENTE = (FUENTE_SENSOR, FUENTE_DATADIS, FUENTE_AMBOS, FUENTE_NINGUNA, FUENTE_ESTADISTICA)
+# Fuentes que son una estadística externa que llega con días de retraso (no un medidor de HA).
+FUENTES_EXTERNAS = (FUENTE_DATADIS, FUENTE_ESTADISTICA)
+# Entrada del registro de entidades (UUID) del medidor: sigue a la entidad si se renombra.
+CONF_FUENTE_REGISTRO = "fuente_registro"
+# Con «ambos»: estadística de Datadis (dato oficial). CONF_FUENTE es el medidor.
+CONF_FUENTE_OFICIAL = "fuente_oficial"
+# Con «datadis» o «ambos»: subentrada de la cuenta de Datadis de la que sale la curva.
+CONF_DATADIS_CUENTA = "cuenta_datadis"
+# Factura en curso con horas que la fuente aún no ha publicado: estimarlas o enseñar solo lo recibido.
+CONF_FACTURA_EN_CURSO = "factura_en_curso"
+MODOS_EN_CURSO = ("estimar", "recibido")
+DEFAULT_EN_CURSO = "estimar"
 DEFAULT_DIAS_EMISION = 5
 DEFAULT_ALQUILER = 0.81
 
@@ -126,10 +149,6 @@ LEGACY_ATTR_ENABLE_INJECTION_PRICE = "enable_injection_price"
 LEGACY_ATTR_POWER = "power"
 LEGACY_ATTR_POWER_P2_P3 = "power_p2_p3"
 LEGACY_ATTR_POWER_P3 = "power_p3"
-ATTR_NEXT_PRICE_IN_UPDATE = "next_price_in_update"
-ATTR_NEXT_BEST_IN_UPDATE = "next_best_in_update"
-ATTR_NEXT_PERIOD_IN_UPDATE = "next_period_in_update"
-ATTR_NEXT_POWER_PERIOD_IN_UPDATE = "next_power_period_in_update"
 ATTR_TARIFF = "tariff"
 DEFAULT_NAME = "PVPC Bono Social"
 DEFAULT_TARIFF = TARIFFS[0]
@@ -141,14 +160,22 @@ DEFAULT_SHOW_REFERENCE_PRICE = False
 # PVPC Next guardaba «very cheap» (con espacio); se sigue aceptando al leer y se normaliza.
 BETTER_PRICE_TARGETS = ("neutral", "cheap", "very_cheap")
 PRICE_MODES = ("pvpc", "indexed")
-UPDATE_FREQUENCY_OPTIONS = ("disabled", "hourly", "minute")
-DEFAULT_UPDATE_FREQUENCY = "minute"
-UPDATE_FREQUENCY_BY_SENSOR = {
-    "pvpc_next_price_in": ATTR_NEXT_PRICE_IN_UPDATE,
-    "pvpc_time_to_next_best": ATTR_NEXT_BEST_IN_UPDATE,
-    "pvpc_next_period_in": ATTR_NEXT_PERIOD_IN_UPDATE,
-    "pvpc_next_power_period_in": ATTR_NEXT_POWER_PERIOD_IN_UPDATE,
-}
+# Sensores «… en» (siguiente precio, mejor precio, periodo y periodo de potencia). Hasta la v1.x eran
+# cuentas atrás en horas con una frecuencia de actualización configurable (cada minuto, cada hora o
+# desactivada); desde la v2.0 son marcas de tiempo que solo cambian cuando cambia el objetivo. Las
+# claves de esa frecuencia se quitan de la entrada al migrar (2.3 → 2.4) y no se importan de PVPC Next.
+SENSORES_CUENTA_ATRAS = (
+    "pvpc_next_price_in",
+    "pvpc_time_to_next_best",
+    "pvpc_next_period_in",
+    "pvpc_next_power_period_in",
+)
+CLAVES_FRECUENCIA_RETIRADAS = (
+    "next_price_in_update",
+    "next_best_in_update",
+    "next_period_in_update",
+    "next_power_period_in_update",
+)
 VALID_TARIFF = vol.In(TARIFFS)
 
 

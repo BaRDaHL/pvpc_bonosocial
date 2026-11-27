@@ -1,160 +1,144 @@
 {
   "config": {
     "abort": {
-      "already_configured": "Esta integración ya está configurada.",
-      "reauth_successful": "Reautenticación completada.",
-      "sin_pvpc_next": "Ya no hay ninguna entrada de PVPC Next con entidades.",
+      "already_configured": "Esta integración xa está configurada.",
+      "reauth_successful": "Completouse a reautenticación.",
+      "sin_pvpc_next": "Xa non hai ningunha entrada de PVPC Next con entidades.",
       "reconfigure_successful": "Token actualizado."
     },
     "error": {
-      "invalid_auth": "Autenticación inválida.",
-      "cannot_connect": "Error de conexión: no se ha podido acceder a la API de ESIOS.",
-      "falta_copia": "Hace falta una copia de seguridad antes de continuar.",
-      "esios_rechaza": "ESIOS ha rechazado la petición (403): el token no es válido o ESIOS está limitando el acceso. Revisa el token y vuelve a intentarlo dentro de un rato.",
-      "obligatorio": "Este campo es obligatorio."
+      "invalid_auth": "Autenticación non válida.",
+      "cannot_connect": "Erro de conexión: non foi posible acceder á API de ESIOS.",
+      "falta_copia": "Cómpre unha copia de seguranza antes de continuar.",
+      "esios_rechaza": "ESIOS rexeitou a petición (403): o token non é válido ou ESIOS está a limitar o acceso. Revisa o token e volve tentalo dentro dun anaco.",
+      "obligatorio": "Este campo é obrigatorio."
     },
     "step": {
       "api_token": {
         "data": {
-          "api_token": "Token personal de ESIOS"
+          "api_token": "Token persoal de ESIOS"
         },
-        "description": "Para usar la API ampliada debes solicitar un token personal enviando un correo a {mail_to_link}.",
-        "title": "Token de la API de ESIOS"
+        "description": "Para usar a API ampliada debes solicitar un token persoal enviando un correo a {mail_to_link}.",
+        "title": "Token da API de ESIOS"
       },
       "price_mode": {
         "data": {
-          "price_mode": "Modo de precio",
-          "show_reference_price": "Mostrar precio de referencia"
+          "price_mode": "Modo de prezo",
+          "show_reference_price": "Amosar o prezo de referencia"
         },
-        "description": "Selecciona qué serie debe usarse como Precio actual.",
-        "title": "Modo de precio"
+        "description": "Selecciona que serie se debe usar como Prezo actual.",
+        "title": "Modo de prezo"
       },
       "reauth_confirm": {
         "data": {
-          "api_token": "Token personal de ESIOS",
-          "description": "Reautentícate con un token válido"
+          "api_token": "Token persoal de ESIOS",
+          "description": "Volve autenticarte cun token válido"
         }
       },
       "user": {
-        "description": "PVPC + Bono Social funciona sin token (API pública de ESIOS). Con un token personal de ESIOS (API privada) se obtienen además el precio de los excedentes, el precio mayorista del día siguiente (OMIE), el ajuste del gas (MAG) y el modo de precio indexado. La potencia contratada se pide al añadir el suministro.",
+        "description": "PVPC + Bono Social funciona sen token (API pública de ESIOS). Cun token persoal de ESIOS (API privada) obtéñense ademais o prezo dos excedentes, o prezo maiorista do día seguinte (OMIE), o axuste do gas (MAG) e o modo de prezo indexado. A potencia contratada pídese ao engadir a subministración.",
         "data": {
-          "name": "Nombre de la entrada",
-          "tariff": "Tarifa aplicable por zona geográfica",
-          "better_price_target": "Objetivo de «Siguiente mejor precio»",
-          "next_price_in_update": "Actualización de «Siguiente precio en»",
-          "next_best_in_update": "Actualización de «Siguiente mejor precio en»",
-          "next_period_in_update": "Actualización de «Siguiente periodo en»",
-          "next_power_period_in_update": "Actualización de «Siguiente periodo de potencia en»",
-          "enable_private_api": "Usar la API privada de ESIOS (con token)"
+          "name": "Nome da entrada",
+          "tariff": "Tarifa aplicable por zona xeográfica",
+          "better_price_target": "Obxectivo de «Seguinte mellor prezo»",
+          "enable_private_api": "Usar a API privada de ESIOS (con token)"
         },
         "data_description": {
-          "next_price_in_update": "Cada minuto, cada hora o desactivado (la entidad se desactiva).",
-          "next_best_in_update": "Cada minuto, cada hora o desactivado (la entidad se desactiva).",
-          "next_period_in_update": "Cada minuto, cada hora o desactivado (la entidad se desactiva).",
-          "next_power_period_in_update": "Cada minuto, cada hora o desactivado (la entidad se desactiva).",
-          "better_price_target": "Nivel de precio que tiene que alcanzar una hora para que «Siguiente mejor precio» la elija.",
-          "name": "Nombre con el que aparece en Dispositivos y servicios. Los sensores se llaman siempre sensor.pvpc_bs_*."
+          "better_price_target": "Nivel de prezo que ten que acadar unha hora para que «Seguinte mellor prezo» a escolla.",
+          "name": "Nome co que aparece en Dispositivos e servizos. Os sensores chámanse sempre sensor.pvpc_bs_*."
         }
       },
       "origen": {
-        "title": "PVPC Next detectado",
-        "description": "Hay una instalación de PVPC Next. Puedes traer sus entidades con su historial y estadísticas; pasarán a llamarse sensor.pvpc_bs_*.",
+        "title": "Detectouse PVPC Next",
+        "description": "Hai unha instalación de PVPC Next. Podes traer as súas entidades co seu historial e as súas estatísticas; pasarán a chamarse sensor.pvpc_bs_*.",
         "menu_options": {
-          "importar_pvpc_next": "Importar de PVPC Next (recomendado)",
-          "nueva": "Empezar de cero"
+          "importar_pvpc_next": "Importar desde PVPC Next (recomendado)",
+          "nueva": "Comezar de cero"
         }
       },
       "importar_pvpc_next": {
-        "title": "Importar de PVPC Next",
-        "description": "Se moverán {total} entidades de «{titulo}» a esta integración con su historial y estadísticas: {entidades}.\n\nPasarán a llamarse **sensor.pvpc_bs_*** (por ejemplo, sensor.esios_pvpc → sensor.pvpc_bs_precio). El panel de Energía se actualiza solo; tus scripts, automatizaciones y paneles habrá que cambiarlos a mano: al terminar verás la lista completa en Reparaciones.\n\nOpciones que se importan: tarifa {tarifa}, potencias, objetivo de mejor precio, frecuencias, API privada y modo de precio (token: {token}).\n\nLa entrada de PVPC Next quedará desactivada; después podrás eliminarla y desinstalar PVPC Next y su tarjeta desde HACS.\n\n**Haz antes una copia de seguridad de Home Assistant.**",
+        "title": "Importar desde PVPC Next",
+        "description": "Moveranse {total} entidades de «{titulo}» a esta integración co seu historial e as súas estatísticas: {entidades}.\n\nPasarán a chamarse **sensor.pvpc_bs_*** (por exemplo, sensor.esios_pvpc → sensor.pvpc_bs_precio). O panel de Enerxía actualízase só; os teus scripts, automatizacións e paneis haberá que cambialos a man: ao rematar verás a lista completa en Reparacións.\n\nOpcións que se importan: tarifa {tarifa}, potencias, obxectivo de mellor prezo, frecuencias, API privada e modo de prezo (token: {token}).\n\nA entrada de PVPC Next quedará desactivada; despois poderás eliminala e desinstalar PVPC Next e a súa tarxeta desde HACS.\n\n**Fai antes unha copia de seguranza de Home Assistant.**",
         "data": {
-          "copia_seguridad": "He hecho una copia de seguridad de Home Assistant"
+          "copia_seguridad": "Fixen unha copia de seguranza de Home Assistant"
         }
       },
       "reconfigure": {
-        "title": "Token de la API de ESIOS",
-        "description": "Cambia el token personal de ESIOS. Se comprueba antes de guardarlo. Si no tienes uno, puedes pedirlo en {mail_to_link}.",
+        "title": "Token da API de ESIOS",
+        "description": "Cambia o token persoal de ESIOS. Compróbase antes de gardalo. Se non tes un, podes pedilo en {mail_to_link}.",
         "data": {
-          "api_token": "Token personal de ESIOS"
+          "api_token": "Token persoal de ESIOS"
         }
       }
     }
   },
   "options": {
     "error": {
-      "invalid_auth": "Autenticación inválida.",
-      "cannot_connect": "Error de conexión: no se ha podido acceder a la API de ESIOS.",
-      "esios_rechaza": "ESIOS ha rechazado la petición (403): el token no es válido o ESIOS está limitando el acceso. Revisa el token y vuelve a intentarlo dentro de un rato.",
-      "obligatorio": "Este campo es obligatorio."
+      "invalid_auth": "Autenticación non válida.",
+      "cannot_connect": "Erro de conexión: non foi posible acceder á API de ESIOS.",
+      "esios_rechaza": "ESIOS rexeitou a petición (403): o token non é válido ou ESIOS está a limitar o acceso. Revisa o token e volve tentalo dentro dun anaco.",
+      "obligatorio": "Este campo é obrigatorio."
     },
     "step": {
       "api_token": {
         "data": {
-          "api_token": "Token personal de ESIOS"
+          "api_token": "Token persoal de ESIOS"
         },
-        "description": "Para usar la API ampliada debes solicitar un token personal enviando un correo a {mail_to_link}.",
-        "title": "Token de la API de ESIOS"
+        "description": "Para usar a API ampliada debes solicitar un token persoal enviando un correo a {mail_to_link}.",
+        "title": "Token da API de ESIOS"
       },
       "init": {
-        "description": "PVPC + Bono Social funciona sin token (API pública de ESIOS). Con un token personal de ESIOS (API privada) se obtienen además el precio de los excedentes, el precio mayorista del día siguiente (OMIE), el ajuste del gas (MAG) y el modo de precio indexado. La potencia contratada se pide al añadir el suministro.",
+        "description": "PVPC + Bono Social funciona sen token (API pública de ESIOS). Cun token persoal de ESIOS (API privada) obtéñense ademais o prezo dos excedentes, o prezo maiorista do día seguinte (OMIE), o axuste do gas (MAG) e o modo de prezo indexado. A potencia contratada pídese ao engadir a subministración.",
         "data": {
-          "better_price_target": "Objetivo de «Siguiente mejor precio»",
-          "next_price_in_update": "Actualización de «Siguiente precio en»",
-          "next_best_in_update": "Actualización de «Siguiente mejor precio en»",
-          "next_period_in_update": "Actualización de «Siguiente periodo en»",
-          "next_power_period_in_update": "Actualización de «Siguiente periodo de potencia en»",
-          "enable_private_api": "Usar la API privada de ESIOS (con token)"
+          "better_price_target": "Obxectivo de «Seguinte mellor prezo»",
+          "enable_private_api": "Usar a API privada de ESIOS (con token)"
         },
         "data_description": {
-          "next_price_in_update": "Cada minuto, cada hora o desactivado (la entidad se desactiva).",
-          "next_best_in_update": "Cada minuto, cada hora o desactivado (la entidad se desactiva).",
-          "next_period_in_update": "Cada minuto, cada hora o desactivado (la entidad se desactiva).",
-          "next_power_period_in_update": "Cada minuto, cada hora o desactivado (la entidad se desactiva).",
-          "better_price_target": "Nivel de precio que tiene que alcanzar una hora para que «Siguiente mejor precio» la elija."
+          "better_price_target": "Nivel de prezo que ten que acadar unha hora para que «Seguinte mellor prezo» a escolla."
         }
       },
       "price_mode": {
         "data": {
-          "price_mode": "Modo de precio",
-          "show_reference_price": "Mostrar precio de referencia"
+          "price_mode": "Modo de prezo",
+          "show_reference_price": "Amosar o prezo de referencia"
         },
-        "description": "Selecciona qué serie debe usarse como Precio actual.",
-        "title": "Modo de precio"
+        "description": "Selecciona que serie se debe usar como Prezo actual.",
+        "title": "Modo de prezo"
       }
     }
   },
   "entity": {
     "sensor": {
       "precio": {
-        "name": "Precio actual"
+        "name": "Prezo actual"
       },
       "precio_excedentes": {
-        "name": "Precio de los excedentes"
+        "name": "Prezo dos excedentes"
       },
       "ajuste_gas": {
-        "name": "Ajuste del gas (MAG)"
+        "name": "Axuste do gas (MAG)"
       },
       "precio_omie": {
-        "name": "Precio mayorista (OMIE)"
+        "name": "Prezo maiorista (OMIE)"
       },
       "precio_indexado": {
-        "name": "Precio indexado"
+        "name": "Prezo indexado"
       },
       "precio_pvpc": {
-        "name": "Precio PVPC de referencia"
+        "name": "Prezo PVPC de referencia"
       },
       "id_dato_pvpc": {
-        "name": "ID del dato PVPC"
+        "name": "ID do dato PVPC"
       },
       "fuente_api": {
-        "name": "Fuente de los datos",
+        "name": "Fonte dos datos",
         "state": {
           "private": "Privada (con token)",
-          "public": "Pública (sin token)"
+          "public": "Pública (sen token)"
         }
       },
       "modo_precio": {
-        "name": "Modo de precio",
+        "name": "Modo de prezo",
         "state": {
           "pvpc": "PVPC (regulado)",
           "indexed": "Indexado (mercado libre)"
@@ -164,144 +148,147 @@
         "name": "Tarifa"
       },
       "periodo": {
-        "name": "Periodo actual"
+        "name": "Período actual"
       },
       "periodo_potencia": {
-        "name": "Periodo de potencia actual"
+        "name": "Período de potencia actual"
       },
       "siguiente_periodo_potencia": {
-        "name": "Siguiente periodo de potencia"
+        "name": "Seguinte período de potencia"
       },
       "siguiente_periodo_potencia_en": {
-        "name": "Siguiente periodo de potencia en"
+        "name": "Seguinte período de potencia en"
       },
       "potencia_disponible": {
-        "name": "Potencia disponible"
+        "name": "Potencia dispoñible"
       },
       "siguiente_periodo": {
-        "name": "Siguiente periodo"
+        "name": "Seguinte período"
       },
       "siguiente_periodo_en": {
-        "name": "Siguiente periodo en"
+        "name": "Seguinte período en"
       },
       "precio_minimo": {
-        "name": "Precio mínimo de hoy"
+        "name": "Prezo mínimo de hoxe"
       },
       "precio_maximo": {
-        "name": "Precio máximo de hoy"
+        "name": "Prezo máximo de hoxe"
       },
       "siguiente_mejor_precio": {
-        "name": "Siguiente mejor precio"
+        "name": "Seguinte mellor prezo"
       },
       "siguiente_precio": {
-        "name": "Siguiente precio"
+        "name": "Seguinte prezo"
       },
       "siguiente_precio_en": {
-        "name": "Siguiente precio en"
+        "name": "Seguinte prezo en"
       },
       "nivel_siguiente_precio": {
-        "name": "Nivel del siguiente precio",
+        "name": "Nivel do seguinte prezo",
         "state": {
-          "very_cheap": "Muy barato",
+          "very_cheap": "Moi barato",
           "cheap": "Barato",
           "neutral": "Neutral",
           "expensive": "Caro",
-          "very_expensive": "Muy caro"
+          "very_expensive": "Moi caro"
         }
       },
       "siguiente_mejor_precio_en": {
-        "name": "Siguiente mejor precio en"
+        "name": "Seguinte mellor prezo en"
       },
       "precios_mejores": {
-        "name": "Horas más baratas por delante"
+        "name": "Horas máis baratas por diante"
       },
       "precio_medio": {
-        "name": "Precio medio de hoy"
+        "name": "Prezo medio de hoxe"
       },
       "nivel_precio": {
-        "name": "Nivel del precio actual",
+        "name": "Nivel do prezo actual",
         "state": {
-          "very_cheap": "Muy barato",
+          "very_cheap": "Moi barato",
           "cheap": "Barato",
           "neutral": "Neutral",
           "expensive": "Caro",
-          "very_expensive": "Muy caro"
+          "very_expensive": "Moi caro"
         }
       },
       "nivel_siguiente_mejor_precio": {
-        "name": "Nivel del siguiente mejor precio",
+        "name": "Nivel do seguinte mellor prezo",
         "state": {
-          "very_cheap": "Muy barato",
+          "very_cheap": "Moi barato",
           "cheap": "Barato",
           "neutral": "Neutral",
           "expensive": "Caro",
-          "very_expensive": "Muy caro"
+          "very_expensive": "Moi caro"
         }
       },
       "id_dato_excedentes": {
-        "name": "ID del dato de excedentes"
+        "name": "ID do dato de excedentes"
       },
       "id_dato_ajuste_gas": {
-        "name": "ID del dato del ajuste del gas"
+        "name": "ID do dato do axuste do gas"
       },
       "id_dato_omie": {
-        "name": "ID del dato OMIE"
+        "name": "ID do dato OMIE"
       },
       "factura_actual": {
-        "name": "Previsión de factura del periodo"
+        "name": "Previsión de factura do período"
       },
       "factura_anterior": {
-        "name": "Factura del periodo anterior"
+        "name": "Factura do período anterior"
       },
       "coste_hoy": {
-        "name": "Coste de hoy"
+        "name": "Custo de hoxe"
       },
       "precio_real": {
-        "name": "Precio real por hora"
+        "name": "Prezo real por hora"
       },
       "kwh_bonificables": {
         "name": "kWh bonificables restantes"
       },
       "estado_datos": {
-        "name": "Estado de los datos",
+        "name": "Estado dos datos",
         "state": {
           "ok": "Correcto",
-          "sin_fecha": "Falta la fecha de la última factura",
-          "sin_consumo": "Sin datos de consumo",
-          "precios_incompletos": "Faltan precios",
-          "consumo_incompleto": "Faltan horas de consumo"
+          "sin_fecha": "Falta a data da última factura",
+          "sin_consumo": "Sen datos de consumo",
+          "precios_incompletos": "Faltan prezos",
+          "consumo_incompleto": "Faltan horas de consumo",
+          "datos_pendientes": "Pendente de datos (provisional)",
+          "sin_fuente": "Sen fonte de consumo (só facturas)"
         }
       },
       "estado_datadis": {
         "name": "Estado de Datadis",
         "state": {
           "ok": "Con datos",
-          "sin_datos": "Sin datos",
-          "sin_datos_recientes": "Sin datos recientes",
-          "esperando": "Esperando la primera consulta",
-          "credenciales": "Usuario o contraseña incorrectos",
-          "no_responde": "Datadis no responde"
+          "sin_datos": "Sen datos",
+          "sin_datos_recientes": "Sen datos recentes",
+          "esperando": "Agardando a primeira consulta",
+          "credenciales": "Usuario ou contrasinal incorrectos",
+          "no_responde": "Datadis non responde"
         }
       },
       "mejor_alternativa": {
-        "name": "Mejor alternativa de tarifa"
+        "name": "Mellor alternativa de tarifa"
       },
       "comprobacion_factura": {
-        "name": "Comprobación de la factura",
+        "name": "Comprobación da factura",
         "state": {
           "correcta": "Correcta",
-          "no_cuadra": "No cuadra",
-          "arrastre": "No comparable (arrastre del bono)",
-          "incompleta": "No comparable (faltan horas de consumo)",
-          "sin_comprobar": "Sin comprobar",
-          "cnmc_no_responde": "La CNMC no responde",
-          "desactivada": "Desactivada"
+          "no_cuadra": "Non cadra",
+          "arrastre": "Non comparable (arrastre do bono)",
+          "incompleta": "Non comparable (faltan horas de consumo)",
+          "sin_comprobar": "Sen comprobar",
+          "cnmc_no_responde": "A CNMC non responde",
+          "desactivada": "Desactivada",
+          "aproximada": "Aproximada (sen curva horaria)"
         }
       }
     },
     "date": {
       "fin_periodo": {
-        "name": "Fin del periodo de facturación"
+        "name": "Fin do período de facturación"
       }
     },
     "button": {
@@ -315,14 +302,7 @@
       "options": {
         "neutral": "Neutral",
         "cheap": "Barato",
-        "very_cheap": "Muy barato"
-      }
-    },
-    "update_frequency": {
-      "options": {
-        "disabled": "Desactivado",
-        "hourly": "Cada hora",
-        "minute": "Cada minuto"
+        "very_cheap": "Moi barato"
       }
     },
     "price_mode": {
@@ -333,30 +313,33 @@
     },
     "bono": {
       "options": {
-        "ninguno": "Sin bono social",
+        "ninguno": "Sen bono social",
         "vulnerable": "Vulnerable",
         "severo": "Vulnerable severo",
-        "severo_exclusion": "Vulnerable severo en riesgo de exclusión"
+        "severo_exclusion": "Vulnerable severo en risco de exclusión"
       }
     },
     "categoria": {
       "options": {
-        "individual_o_dos": "1 o 2 personas (1.587 kWh/año)",
-        "tres_o_pensionista_o_dos_con_menor": "3 personas, pensionista o 2 con un menor (2.222 kWh/año)",
-        "cuatro_o_tres_con_dos_menores": "4 personas o 3 con dos menores (2.698 kWh/año)",
-        "cinco_o_mas_o_familia_numerosa": "5 o más personas o familia numerosa (4.761 kWh/año)"
+        "individual_o_dos": "1 ou 2 persoas (1.587 kWh/ano)",
+        "tres_o_pensionista_o_dos_con_menor": "3 persoas, pensionista ou 2 cun menor (2.222 kWh/ano)",
+        "cuatro_o_tres_con_dos_menores": "4 persoas ou 3 con dous menores (2.698 kWh/ano)",
+        "cinco_o_mas_o_familia_numerosa": "5 ou máis persoas ou familia numerosa (4.761 kWh/ano)"
       }
     },
     "tipo_fuente": {
       "options": {
-        "sensor": "Sensor de energía de Home Assistant",
-        "estadistica": "Estadística externa (dominio:objeto)"
+        "sensor": "Un medidor de enerxía en Home Assistant (Shelly, Emporia, IoTaWatt, lector P1, pinza Zigbee…)",
+        "datadis": "Datadis (curva oficial do contador, con 1-5 días de atraso)",
+        "ambos": "As dúas: medidor para o recente e Datadis como dato oficial (o máis preciso)",
+        "ninguna": "Ningunha: só introducirei as miñas facturas (previsión aproximada)",
+        "estadistica": "Avanzado: estatística externa doutra integración (dominio:obxecto)"
       }
     },
     "shelly_frecuencia": {
       "options": {
-        "diaria": "Diaria (de madrugada)",
-        "semanal": "Semanal (los lunes)",
+        "diaria": "Diaria (pola madrugada)",
+        "semanal": "Semanal (os luns)",
         "desactivada": "Desactivada"
       }
     },
@@ -368,531 +351,697 @@
     },
     "color_valle": {
       "options": {
-        "laborables": "Respecto a los 5 laborables anteriores",
-        "dia": "Respecto al propio día"
+        "laborables": "Respecto aos 5 laborables anteriores",
+        "dia": "Respecto ao propio día"
       }
     },
     "comparador_envio": {
       "options": {
-        "siempre": "Siempre",
-        "si_ahorra": "Solo si hay una oferta que ahorre"
+        "siempre": "Sempre",
+        "si_ahorra": "Só se hai unha oferta que aforre"
       }
     },
     "comparador_formato": {
       "options": {
-        "completo": "Completo (como la notificación)",
-        "breve": "Breve (lo pagado, la mejor oferta y el veredicto)"
+        "completo": "Completo (como a notificación)",
+        "breve": "Breve (o pagado, a mellor oferta e o veredicto)"
       }
     },
     "formato_tabla": {
       "options": {
-        "barras": "Barras de color (precio detrás)",
-        "precio_delante": "Precio delante, barras de color detrás",
-        "color_precio": "Color en el precio, barra fina detrás",
-        "barra_fija": "Barra de ancho fijo, precio alineado detrás",
-        "dos_columnas": "Dos columnas (00–11 h y 12–23 h)"
+        "barras": "Barras de cor (prezo detrás)",
+        "precio_delante": "Prezo diante, barras de cor detrás",
+        "color_precio": "Cor no prezo, barra fina detrás",
+        "barra_fija": "Barra de largura fixa, prezo aliñado detrás",
+        "dos_columnas": "Dúas columnas (00–11 h e 12–23 h)"
+      }
+    },
+    "factura_en_curso": {
+      "options": {
+        "estimar": "Estimar o pendente (provisional)",
+        "recibido": "Só o recibido"
+      }
+    },
+    "cuenta": {
+      "options": {
+        "nueva": "Engadir unha conta de Datadis nova"
       }
     }
   },
   "issues": {
     "periodos_discrepantes": {
-      "title": "Periodos de ESIOS distintos del calendario",
-      "description": "En {total} horas con precio publicado, el periodo que aplicó ESIOS (según el peaje de cada hora) no coincide con el del calendario de festivos. La integración usa el de ESIOS. Últimas horas: {horas}. Si se repite, abre un issue."
+      "title": "Períodos de ESIOS distintos do calendario",
+      "description": "En {total} horas con prezo publicado, o período que aplicou ESIOS (segundo a peaxe de cada hora) non coincide co do calendario de festivos. A integración usa o de ESIOS. Últimas horas: {horas}. Se se repite, abre unha incidencia (issue)."
     },
     "tabla_peajes_desfasada": {
-      "title": "Tabla de peajes desfasada: actualiza la integración",
-      "description": "En {total} horas con precio publicado, el peaje + cargo de energía que aplicó ESIOS no coincide con ninguno de la tabla de la integración (versión {version}): los peajes o cargos han cambiado. Mientras tanto, la factura se calcula con los valores antiguos y el periodo de esas horas sale del calendario. Actualiza PVPC + Bono Social desde HACS; si ya tienes la última versión, abre un issue. Últimas horas: {horas}."
+      "title": "Táboa de peaxes desfasada: actualiza a integración",
+      "description": "En {total} horas con prezo publicado, a peaxe + cargo de enerxía que aplicou ESIOS non coincide con ningún valor da táboa da integración (versión {version}): as peaxes ou os cargos cambiaron. Mentres tanto, a factura calcúlase cos valores antigos e o período desas horas sae do calendario. Actualiza PVPC + Bono Social desde HACS; se xa tes a última versión, abre unha incidencia (issue). Últimas horas: {horas}."
     },
     "tarifas_por_revisar": {
-      "title": "Valores regulados de {anio} posiblemente desfasados",
-      "description": "Desde el {desde} pueden haber cambiado por norma algunos valores que usa la factura (peajes, cargos, financiación o porcentaje del bono social) y la tabla de la integración (versión {version}) aún no trae los nuevos. Mientras tanto, la factura se calcula con los últimos conocidos. Conceptos: {conceptos}. Actualiza PVPC + Bono Social desde HACS; el aviso desaparece cuando la tabla esté al día."
+      "title": "Valores regulados de {anio} que poden estar desfasados",
+      "description": "Desde o {desde} poden ter cambiado por norma algúns valores que usa a factura (peaxes, cargos, financiamento ou porcentaxe do bono social) e a táboa da integración (versión {version}) aínda non trae os novos. Mentres tanto, a factura calcúlase cos últimos coñecidos. Conceptos: {conceptos}. Actualiza PVPC + Bono Social desde HACS; o aviso desaparece cando a táboa estea ao día."
     },
     "importar_pvpc_next": {
-      "title": "Importar las entidades de PVPC Next",
+      "title": "Importar as entidades de PVPC Next",
       "fix_flow": {
         "step": {
           "confirmar": {
-            "title": "Importar de PVPC Next",
-            "description": "Se moverán {total} entidades de «{titulo}» a esta integración con su historial y estadísticas: {entidades}.\n\nPasarán a llamarse **sensor.pvpc_bs_*** (por ejemplo, sensor.esios_pvpc → sensor.pvpc_bs_precio). El panel de Energía se actualiza solo; tus scripts, automatizaciones y paneles habrá que cambiarlos a mano: al terminar verás la lista completa en Reparaciones.\n\nOpciones que se importan: tarifa {tarifa}, potencias, objetivo de mejor precio, frecuencias, API privada y modo de precio (token: {token}).\n\nLa entrada de PVPC Next quedará desactivada; después podrás eliminarla y desinstalar PVPC Next y su tarjeta desde HACS.\n\n**Haz antes una copia de seguridad de Home Assistant.**",
+            "title": "Importar desde PVPC Next",
+            "description": "Moveranse {total} entidades de «{titulo}» a esta integración co seu historial e as súas estatísticas: {entidades}.\n\nPasarán a chamarse **sensor.pvpc_bs_*** (por exemplo, sensor.esios_pvpc → sensor.pvpc_bs_precio). O panel de Enerxía actualízase só; os teus scripts, automatizacións e paneis haberá que cambialos a man: ao rematar verás a lista completa en Reparacións.\n\nOpcións que se importan: tarifa {tarifa}, potencias, obxectivo de mellor prezo, frecuencias, API privada e modo de prezo (token: {token}).\n\nA entrada de PVPC Next quedará desactivada; despois poderás eliminala e desinstalar PVPC Next e a súa tarxeta desde HACS.\n\n**Fai antes unha copia de seguranza de Home Assistant.**",
             "data": {
-              "copia_seguridad": "He hecho una copia de seguridad de Home Assistant"
+              "copia_seguridad": "Fixen unha copia de seguranza de Home Assistant"
             }
           }
         },
         "error": {
-          "falta_copia": "Hace falta una copia de seguridad antes de continuar."
+          "falta_copia": "Cómpre unha copia de seguranza antes de continuar."
         },
         "abort": {
-          "ya_no_existe": "La entrada de PVPC Next o la de esta integración ya no existe."
+          "ya_no_existe": "A entrada de PVPC Next ou a desta integración xa non existe."
         }
       }
     },
     "pvpc_next_vacia": {
-      "title": "PVPC Next ya no tiene entidades",
-      "description": "La entrada «{titulo}» de PVPC Next ya no tiene entidades (se importaron a PVPC + Bono Social). Elimínala en Ajustes → Dispositivos y servicios y desinstala PVPC Next y su tarjeta desde HACS para evitar descargas duplicadas."
+      "title": "PVPC Next xa non ten entidades",
+      "description": "A entrada «{titulo}» de PVPC Next xa non ten entidades (importáronse a PVPC + Bono Social). Elimínaa en Axustes → Dispositivos e servizos e desinstala PVPC Next e a súa tarxeta desde HACS para evitar descargas duplicadas."
     },
     "nombres_cambiados": {
-      "title": "Entidades renombradas a sensor.pvpc_bs_*",
-      "description": "Estas entidades han cambiado de nombre; su historial y sus estadísticas se conservan y el panel de Energía ya está actualizado. Cambia los nombres antiguos en tus scripts, automatizaciones y paneles:\n\n{cambios}\n\nCuando lo hayas hecho, puedes descartar este aviso."
+      "title": "Entidades renomeadas a sensor.pvpc_bs_*",
+      "description": "Estas entidades cambiaron de nome; o seu historial e as súas estatísticas consérvanse e o panel de Enerxía xa está actualizado. Cambia os nomes antigos nos teus scripts, automatizacións e paneis:\n\n{cambios}\n\nCando o fagas, podes descartar este aviso."
     },
     "falta_fecha_factura": {
-      "title": "Falta la fecha de la última factura de «{suministro}»",
-      "description": "Para saber qué periodo se está facturando hace falta la fecha de fin de la última factura (la que aparece como «del X al Y»: es Y). Añádela en Ajustes → Dispositivos y servicios → PVPC + Bono Social → rueda dentada ⚙ de «{suministro}» (Reconfigurar)."
+      "title": "Falta a data da última factura de «{suministro}»",
+      "description": "Para saber que período se está a facturar cómpre a data de fin da última factura (a que aparece como «do X ao Y»: é Y). Engádea en Axustes → Dispositivos e servizos → PVPC + Bono Social → roda dentada ⚙ de «{suministro}» (Reconfigurar)."
     },
     "dias_sin_factura": {
-      "title": "Días sin factura en «{suministro}»",
-      "description": "Entre dos periodos de factura de «{suministro}» quedan días que no cubre ninguna: {huecos}. Esos días no cuentan en la comparativa de tarifas ni en el arrastre del bono social. Si tienes la factura real que los cubre, introdúcela en Ajustes → Dispositivos y servicios → PVPC + Bono Social → rueda dentada ⚙ de «{suministro}» (Reconfigurar) → Factura real. El aviso desaparece cuando no quedan huecos."
+      "title": "Días sen factura en «{suministro}»",
+      "description": "Entre dous períodos de factura de «{suministro}» quedan días que non cobre ningunha: {huecos}. Eses días non contan na comparativa de tarifas nin no arrastre do bono social. Se tes a factura real que os cobre, introdúcea en Axustes → Dispositivos e servizos → PVPC + Bono Social → roda dentada ⚙ de «{suministro}» (Reconfigurar) → Factura real. O aviso desaparece cando non quedan ocos."
     },
     "usar_estadistica_coste": {
-      "title": "Usar el coste de PVPC + Bono Social en el panel de Energía («{suministro}»)",
+      "title": "Usar o custo de PVPC + Bono Social no panel de Enerxía («{suministro}»)",
       "fix_flow": {
         "step": {
           "confirmar": {
-            "title": "Cambiar el coste del panel de Energía",
-            "description": "El panel de Energía calcula el coste de la red con «{actual}». La estadística {nueva} lleva el coste de tu factura de la COR hora a hora (con bono, impuestos y fijos) y se corrige hacia atrás cuando cambia la estimación. ¿Quieres usarla como coste en el panel de Energía? Puedes volver atrás cuando quieras desde el propio panel.\n\nSe pondrá {nueva} como «coste» del consumo de la red en el panel de Energía."
+            "title": "Cambiar o custo do panel de Enerxía",
+            "description": "O panel de Enerxía calcula o custo da rede con «{actual}». A estatística {nueva} leva o custo da túa factura da COR hora a hora (con bono, impostos e fixos) e corríxese cara a atrás cando cambia a estimación. Queres usala como custo no panel de Enerxía? Podes volver atrás cando queiras desde o propio panel.\n\nPoñerase {nueva} como «custo» do consumo da rede no panel de Enerxía."
           }
         }
       }
     },
     "shelly_no_coincide": {
-      "title": "El Shelly no coincide con HA en «{suministro}»",
-      "description": "En los últimos 7 días el consumo del Shelly ({ip}) y el de HA se diferencian un {diferencia} %. No se corrige nada hasta que vuelvan a coincidir. Comprueba que la IP y el canal son los del medidor que usa el suministro."
+      "title": "O Shelly non coincide con HA en «{suministro}»",
+      "description": "Nos últimos 7 días o consumo do Shelly ({ip}) e o de HA diferéncianse nun {diferencia} %. Non se corrixe nada ata que volvan coincidir. Comproba que a IP e a canle son as do medidor que usa a subministración."
     },
     "factura_no_cuadra": {
-      "title": "La factura de «{suministro}» del {inicio} al {fin} no cuadra con la CNMC",
-      "description": "Factura: {factura} €. El simulador oficial de la CNMC, con los mismos kWh del contador, tu potencia y tu bono, calcula {cnmc} € ({diferencia} € de diferencia). Revisa la factura con tu comercializadora. Si ya lo has revisado, ignora este aviso: no volverá a salir para esta factura."
+      "title": "A factura de «{suministro}» do {inicio} ao {fin} non cadra coa CNMC",
+      "description": "Factura: {factura} €. O simulador oficial da CNMC, cos mesmos kWh do contador, a túa potencia e o teu bono, calcula {cnmc} € ({diferencia} € de diferenza). Revisa a factura coa túa comercializadora. Se xa o revisaches, ignora este aviso: non volverá saír para esta factura."
     },
     "facturacion_no_soportada": {
-      "title": "La factura no se calcula en {territorio}",
-      "description": "La factura (periodo en curso, previsión, coste de hoy, comparador y comprobación con la CNMC) solo está hecha para la Península y Baleares: usa la hora de Madrid, sus periodos y el IVA. En {territorio} saldría mal, así que los suministros no se cargan y sus entidades quedan no disponibles. Los precios del PVPC siguen funcionando.\n\nSi los suministros no te sirven, bórralos en Ajustes → Dispositivos y servicios → PVPC + Bono Social. Si en realidad estás en la Península o Baleares, revisa la tarifa elegida y la zona horaria de Home Assistant."
+      "title": "A factura non se calcula en {territorio}",
+      "description": "A factura (período en curso, previsión, custo de hoxe, comparador e comprobación coa CNMC) só está feita para a Península e Baleares: usa a hora de Madrid, os seus períodos e o IVE. En {territorio} sairía mal, así que as subministracións non se cargan e as súas entidades quedan non dispoñibles. Os prezos do PVPC seguen funcionando.\n\nSe as subministracións non che serven, bórraas en Axustes → Dispositivos e servizos → PVPC + Bono Social. Se en realidade estás na Península ou en Baleares, revisa a tarifa escollida e o fuso horario de Home Assistant."
     },
     "subentrada_no_cargada": {
-      "title": "No se ha podido cargar «{nombre}»",
-      "description": "Al arrancar, «{nombre}» ha fallado ({error}) y sus entidades quedan no disponibles. Los precios y los demás suministros siguen funcionando. Se vuelve a intentar en cada recarga de la integración; si se repite, revisa el registro de Home Assistant o reconfigura «{nombre}». El aviso desaparece en cuanto carga bien."
+      "title": "Non foi posible cargar «{nombre}»",
+      "description": "Ao arrincar, «{nombre}» fallou ({error}) e as súas entidades quedan non dispoñibles. Os prezos e as demais subministracións seguen funcionando. Vólvese tentar en cada recarga da integración; se se repite, revisa o rexistro de Home Assistant ou reconfigura «{nombre}». O aviso desaparece en canto cargue ben."
     },
     "periodo_cerrado_incompleto": {
-      "title": "Periodo cerrado con horas sin consumo en «{suministro}»",
-      "description": "Al cerrar estos periodos faltaba el consumo de algunas horas (por ejemplo, Datadis aún no lo había publicado), que se han contado como 0 kWh: {periodos}. En total, {horas} horas. El periodo se recalcula solo en cuanto llega el consumo, y el aviso desaparece. Si no llega en {dias} días, se queda como está: introduce la factura real del periodo para corregirlo."
+      "title": "Período pechado con horas sen consumo en «{suministro}»",
+      "description": "Ao pechar estes períodos faltaba o consumo dalgunhas horas e xa non se espera que chegue pronto (ocos, ou a fonte leva máis do normal sen publicar): {periodos}. En total, {horas} horas. As horas que só estaban pendentes de publicar estimáronse; os ocos contan como 0 kWh. O período recalcúlase só en canto chega o consumo, e o aviso desaparece. Se non chega en {dias} días, queda como está: introduce a factura real do período para corrixilo."
     },
     "factura_no_cuadra_medidor": {
-      "title": "Una factura de «{suministro}» no cuadra con el medidor",
-      "description": "Los kWh de estas facturas se alejan demasiado de lo que midió el medidor en el mismo periodo (contador ÷ medidor fuera de {minimo}–{maximo}): {facturas}. No se usan para calibrar el medidor; las demás facturas sí. Suele ser una factura mal introducida (revisa los kWh por periodo y las fechas) o un medidor que no mide todo el suministro. Si corriges la factura (introdúcela otra vez con las mismas fechas), el aviso desaparece."
+      "title": "Unha factura de «{suministro}» non cadra co medidor",
+      "description": "Os kWh destas facturas afástanse demasiado do que mediu o medidor no mesmo período (contador ÷ medidor fóra de {minimo}–{maximo}): {facturas}. Non se usan para calibrar o medidor; as demais facturas si. Adoita ser unha factura mal introducida (revisa os kWh por período e as datas) ou un medidor que non mide toda a subministración. Se corrixes a factura (introdúcea outra vez coas mesmas datas), o aviso desaparece."
+    },
+    "fuente_sin_datos": {
+      "title": "A fonte de consumo de «{suministro}» non dá datos",
+      "description": "A fonte {fuente} non ten ningún dato desde hai máis de {horas} horas (último dato: {desde}). Renomeouse ou borrouse a entidade, ou a integración que a importa deixou de funcionar? Se a entidade cambiou de nome no rexistro de entidades, a integración séguea soa; se non, abre este aviso e escolle a fonte correcta. Para cambiar de perfil (Datadis, sen fonte…), reconfigura a subministración. O aviso desaparece en canto volven os datos.",
+      "fix_flow": {
+        "step": {
+          "fuente": {
+            "title": "Outra fonte para «{suministro}»",
+            "description": "A fonte {fuente} non ten ningún dato desde hai máis de {horas} horas (último dato: {desde}). Renomeouse ou borrouse a entidade, ou a integración que a importa deixou de funcionar? Se a entidade cambiou de nome no rexistro de entidades, a integración séguea soa e abonda con agardar.\n\nSe non, escolle a fonte correcta: o medidor (un sensor de enerxía acumulada: kWh ou Wh, total ou total_increasing) ou, se a subministración usa unha estatística externa, a estatística (dominio:obxecto). Consérvanse as facturas e o resto de datos da subministración; o calculado coa fonte anterior revísase coa nova cando teña datos. Para cambiar de perfil (Datadis, sen fonte…), reconfigura a subministración.",
+            "data": {
+              "fuente": "Fonte"
+            }
+          }
+        },
+        "error": {
+          "obligatorio": "Este campo é obrigatorio.",
+          "misma_fuente": "É a fonte que xa usa a subministración: escolle outra.",
+          "fuente_en_uso": "Esa fonte xa a usa outra subministración.",
+          "estadistica_no_externa": "Escolle unha estatística externa (dominio:obxecto). Para usar un sensor, reconfigura a subministración e escolle «Un medidor de enerxía en Home Assistant».",
+          "fuente_no_encontrada": "Non existe esa entidade ou aínda non ten estado.",
+          "fuente_no_energia": "O sensor debe ser de enerxía (kWh, Wh ou MWh) con state_class total ou total_increasing."
+        },
+        "abort": {
+          "ya_no_existe": "A subministración xa non existe.",
+          "perfil_cambiado": "A subministración xa non usa un medidor nin unha estatística externa: aquí non hai fonte que cambiar."
+        }
+      }
+    },
+    "fuente_sin_datos_datadis": {
+      "title": "Datadis non dá datos de «{suministro}»",
+      "description": "A estatística de Datadis {fuente} non ten ningún dato desde hai máis de {horas} horas (último dato: {desde}). Datadis publica con 1-5 días de atraso, pero tanto tempo adoita ser un problema da conta: revisa que o usuario e o contrasinal da conta de Datadis sigan valendo (reconfigura a conta se os cambiaches) ou se Datadis está caído. Para usar outra fonte (un medidor, sen fonte…), reconfigura a subministración. O aviso desaparece en canto volven os datos."
+    },
+    "medidor_no_coincide_datadis": {
+      "title": "O medidor de «{suministro}» non coincide con Datadis",
+      "description": "Nos últimos días completos con datos das dúas fontes, Datadis ({datadis}) dá un {diferencia} % fronte ao medidor {medidor}. Para as horas que Datadis aínda non publicou úsase o medidor calibrado contra Datadis. Comproba que o medidor mide toda a subministración (todas as fases, a pinza na acometida) e que a conta de Datadis é a desta subministración."
+    },
+    "medidor_no_coincide_datadis_sin_calibrar": {
+      "title": "O medidor de «{suministro}» non coincide con Datadis",
+      "description": "Nos últimos días completos con datos das dúas fontes, Datadis ({datadis}) dá un {diferencia} % fronte ao medidor {medidor}. A diferenza é demasiado grande para calibrar o medidor contra Datadis, así que para as horas que Datadis aínda non publicou úsase o medidor tal cal. Comproba que o medidor mide toda a subministración (todas as fases, a pinza na acometida) e que a conta de Datadis é a desta subministración."
     }
   },
   "config_subentries": {
     "suministro": {
       "initiate_flow": {
-        "user": "Añadir suministro",
-        "reconfigure": "Reconfigurar suministro"
+        "user": "Engadir subministración",
+        "reconfigure": "Reconfigurar subministración"
       },
-      "entry_type": "Suministro",
+      "entry_type": "Subministración",
       "step": {
         "user": {
-          "title": "Añadir suministro",
-          "description": "Datos del contrato de luz de este suministro (PVPC con la comercializadora de referencia).",
+          "title": "Engadir subministración",
+          "description": "Datos do contrato de luz desta subministración (PVPC coa comercializadora de referencia).",
           "data": {
-            "name": "Nombre",
+            "name": "Nome",
             "potencia_p1_kw": "Potencia contratada P1 (punta)",
-            "potencia_p2_kw": "Potencia contratada P2 (valle)",
+            "potencia_p2_kw": "Potencia contratada P2 (val)",
             "bono": "Bono social",
-            "categoria": "Unidad de convivencia",
-            "tipo_fuente": "Fuente del consumo"
+            "categoria": "Unidade de convivencia",
+            "tipo_fuente": "Fonte do consumo"
           },
           "data_description": {
-            "categoria": "Fija el límite anual de kWh con descuento (RD 897/2017). Obligatoria con bono social.",
-            "tipo_fuente": "Sin una fuente de consumo horario no se puede calcular la factura.",
-            "potencia_p1_kw": "Entre 0,1 y 15 kW.",
-            "potencia_p2_kw": "Entre 0,1 y 15 kW."
+            "categoria": "Fixa o límite anual de kWh con desconto (RD 897/2017). Obrigatoria con bono social.",
+            "tipo_fuente": "De onde sae o consumo hora a hora. Con Datadis as cifras recentes son provisionais (Datadis publica con días de atraso). Sen fonte, a factura en curso é unha previsión aproximada coa última factura real, e non hai custo de hoxe nin kWh bonificables restantes.",
+            "potencia_p1_kw": "Entre 0,1 e 15 kW.",
+            "potencia_p2_kw": "Entre 0,1 e 15 kW."
           }
         },
         "reconfigure": {
-          "title": "Suministro",
-          "description": "¿Qué quieres hacer?",
+          "title": "Subministración",
+          "description": "Que queres facer?",
           "menu_options": {
             "factura_real": "Introducir factura real",
-            "datos": "Cambiar datos del suministro"
+            "datos": "Cambiar datos da subministración"
           }
         },
         "datos": {
-          "title": "Cambiar datos del suministro",
+          "title": "Cambiar datos da subministración",
           "data": {
-            "name": "Nombre",
+            "name": "Nome",
             "potencia_p1_kw": "Potencia contratada P1 (punta)",
-            "potencia_p2_kw": "Potencia contratada P2 (valle)",
+            "potencia_p2_kw": "Potencia contratada P2 (val)",
             "bono": "Bono social",
-            "categoria": "Unidad de convivencia",
-            "tipo_fuente": "Fuente del consumo"
+            "categoria": "Unidade de convivencia",
+            "tipo_fuente": "Fonte do consumo"
           },
           "data_description": {
-            "categoria": "Fija el límite anual de kWh con descuento (RD 897/2017). Obligatoria con bono social.",
-            "tipo_fuente": "Sin una fuente de consumo horario no se puede calcular la factura.",
-            "potencia_p1_kw": "Entre 0,1 y 15 kW.",
-            "potencia_p2_kw": "Entre 0,1 y 15 kW."
+            "categoria": "Fixa o límite anual de kWh con desconto (RD 897/2017). Obrigatoria con bono social.",
+            "tipo_fuente": "De onde sae o consumo hora a hora. Con Datadis as cifras recentes son provisionais (Datadis publica con días de atraso). Sen fonte, a factura en curso é unha previsión aproximada coa última factura real, e non hai custo de hoxe nin kWh bonificables restantes.",
+            "potencia_p1_kw": "Entre 0,1 e 15 kW.",
+            "potencia_p2_kw": "Entre 0,1 e 15 kW."
           }
         },
         "fuente": {
-          "title": "Fuente del consumo",
-          "description": "Un sensor de energía (kWh, acumulado) o una estadística externa que importe la curva horaria (por ejemplo, de Datadis).",
+          "title": "Fonte do consumo",
+          "description": "Escolle o medidor: calquera sensor de enerxía acumulada (kWh ou Wh, total ou total_increasing) de calquera marca (Shelly, Emporia, IoTaWatt, lector P1/DSMR, pinza Tuya/Zigbee, un utility_meter ou unha integración de Riemann…). Na opción avanzada, unha estatística externa que importe a curva horaria.",
           "data": {
-            "fuente": "Fuente"
+            "fuente": "Fonte"
           }
         },
         "factura": {
           "title": "Factura",
-          "description": "La fecha de fin de la última factura fija el periodo de facturación en curso. Si no la sabes, déjala vacía: se podrá ajustar al conciliar la primera factura.",
+          "description": "A data de fin da última factura fixa o período de facturación en curso. Se non a sabes, déixaa baleira: poderase axustar ao conciliar a primeira factura.",
           "data": {
-            "fin_ultima_factura": "Fin de la última factura",
-            "dias_hasta_emision": "Días entre el fin del periodo y la emisión",
-            "alquiler_contador_eur_mes": "Alquiler del contador (€/mes)",
-            "arrastre_inicial_kwh": "kWh con descuento acumulados (arrastre)",
-            "codigo_postal": "Código postal (para las opciones de la CNMC)",
+            "fin_ultima_factura": "Fin da última factura",
+            "dias_hasta_emision": "Días entre o fin do período e a emisión",
+            "alquiler_contador_eur_mes": "Aluguer do contador (€/mes)",
+            "arrastre_inicial_kwh": "kWh con desconto acumulados (arrastre)",
+            "codigo_postal": "Código postal (para as opcións da CNMC)",
             "comparar_mensual": "Comparar tarifas cada mes",
-            "segunda_opinion_cnmc": "Comprobar cada factura con la CNMC",
-            "comparador_destino": "Enviar la comparativa de tarifas a",
-            "comparador_envio": "Cuándo enviarla",
-            "comparador_umbral_eur": "Ahorro mínimo para enviarla (€/año)",
-            "comparador_formato": "Formato del mensaje"
+            "comparar_fin_de_mes": "Completar o histórico de comparativas a fin de mes",
+            "segunda_opinion_cnmc": "Comprobar cada factura coa CNMC",
+            "comparador_destino": "Enviar a comparativa de tarifas a",
+            "comparador_envio": "Cando enviala",
+            "comparador_umbral_eur": "Aforro mínimo para enviala (€/ano)",
+            "comparador_formato": "Formato da mensaxe",
+            "factura_en_curso": "Factura en curso"
           },
           "data_description": {
-            "arrastre_inicial_kwh": "Los kWh bonificables que te sobraron en los últimos 12 meses y que aún no has gastado. Si no lo sabes, deja 0: se corregirá al conciliar las facturas.",
-            "codigo_postal": "Opcional: solo hace falta para las dos opciones de abajo, que envían datos a la CNMC. Comparar tarifas envía el código postal, las potencias y los kWh anuales por periodo. Comprobar cada factura envía además el consumo hora a hora del periodo y el tipo de bono. Sin esas opciones no se envía nada.",
-            "comparar_mensual": "El día 2 de cada mes compara tus últimos 12 meses con las ofertas de la CNMC y deja una notificación. Necesita el código postal.",
-            "segunda_opinion_cnmc": "Al introducir una factura real, la integración pide la misma factura al simulador oficial de la CNMC (con los kWh del contador de la factura) y te avisa si no cuadra. Se envían el consumo hora a hora del periodo, las potencias, el tipo de bono y el código postal (sin CUPS). Necesita el código postal.",
-            "comparador_destino": "Opcional. Una entidad notify (un chat de Telegram, el móvil…). Para Telegram hace falta la integración Telegram bot configurada en Home Assistant. Además de la notificación de Home Assistant, la comparativa (botón o mensual) se envía ahí.",
-            "comparador_umbral_eur": "Solo con «Solo si hay una oferta que ahorre»: la mejor oferta tiene que ahorrar más que esto al año.",
-            "fin_ultima_factura": "Fin de la última factura: es el inicio del periodo en curso. Al reconfigurar se propone el que rige ahora; si lo cambias, el periodo en curso pasa a empezar ese día (también hacia atrás) y se recalculan los periodos estimados posteriores.",
-            "dias_hasta_emision": "Entre 0 y 30 días.",
-            "alquiler_contador_eur_mes": "Entre 0 y 5 €."
+            "arrastre_inicial_kwh": "Os kWh bonificables que che sobraron nos últimos 12 meses e que aínda non gastaches. Se non o sabes, deixa 0: corrixirase ao conciliar as facturas.",
+            "codigo_postal": "Opcional: só fai falta para as opcións de abaixo, que envían datos á CNMC. Comparar tarifas envía o código postal, as potencias e os kWh anuais por período. Comprobar cada factura envía ademais o consumo hora a hora do período e o tipo de bono. Sen esas opcións non se envía nada.",
+            "comparar_mensual": "O día 2 de cada mes compara os teus últimos 12 meses coas ofertas da CNMC e deixa unha notificación. Necesita o código postal.",
+            "comparar_fin_de_mes": "Completar o histórico: se no mes non se comparou, compara o último día (ás 21:43) sen notificación nin envío, só para encher o histórico de comparativas da tarxeta. Envía á CNMC o mesmo ca «Comparar tarifas cada mes». Necesita o código postal.",
+            "segunda_opinion_cnmc": "Ao introducir unha factura real, a integración pídelle a mesma factura ao simulador oficial da CNMC (cos kWh do contador da factura) e avísate se non cadra. Envíanse o consumo hora a hora do período, as potencias, o tipo de bono e o código postal (sen CUPS). Necesita o código postal.",
+            "comparador_destino": "Opcional. Unha entidade notify (un chat de Telegram, o móbil…). Para Telegram cómpre a integración Telegram bot configurada en Home Assistant. Ademais da notificación de Home Assistant, a comparativa (botón ou mensual) envíase alí.",
+            "comparador_umbral_eur": "Só con «Só se hai unha oferta que aforre»: a mellor oferta ten que aforrar máis ca isto ao ano.",
+            "fin_ultima_factura": "Fin da última factura: é o inicio do período en curso. Ao reconfigurar proponse o que rexe agora; se o cambias, o período en curso pasa a comezar ese día (tamén cara a atrás) e recalcúlanse os períodos estimados posteriores.",
+            "dias_hasta_emision": "Entre 0 e 30 días.",
+            "alquiler_contador_eur_mes": "Entre 0 e 5 €.",
+            "factura_en_curso": "Mentres a fonte non publicou as últimas horas (Datadis tarda de 1 a 5 días): estimalas co teu consumo das últimas semanas (cifras provisionais, marcadas con ≈) ou amosar só o recibido («datos ata …»). A previsión ao peche sempre as estima, e os kWh bonificables restantes cóntanas como gastadas."
           }
         },
         "comprobacion": {
           "title": "Comprobación con Shelly EM (opcional)",
-          "description": "Si el medidor es un Shelly EM de 1.ª generación, la integración puede descargar cada noche su memoria interna (10 minutos de casi un año) y corregir las horas que falten o estén mal en las estadísticas de HA. Deja la IP vacía para no usarlo.",
+          "description": "Se o medidor é un Shelly EM de 1.ª xeración, a integración pode descargar cada noite a súa memoria interna (10 minutos de case un ano) e corrixir as horas que falten ou estean mal nas estatísticas de HA. Deixa a IP baleira para non usalo.",
           "data": {
-            "shelly_ip": "IP del Shelly (por ejemplo, 192.168.0.50)",
-            "shelly_canal": "Canal del Shelly",
-            "shelly_frecuencia": "Frecuencia de la comprobación"
+            "shelly_ip": "IP do Shelly (por exemplo, 192.168.0.50)",
+            "shelly_canal": "Canle do Shelly",
+            "shelly_frecuencia": "Frecuencia da comprobación"
           }
         },
         "factura_real": {
           "title": "Factura real",
-          "description": "Sube el PDF de la factura para leer los datos automáticamente, o un **ZIP con varias facturas** para introducirlas todas de una vez (solo facturas de la Comercializadora Regulada, Gas & Power, de Naturgy). También puedes dejarlo vacío y escribirlos a mano en el paso siguiente.",
+          "description": "Sube o PDF da factura para ler os datos automaticamente, ou un **ZIP con varias facturas** para introducilas todas dunha vez (só facturas da Comercializadora Regulada, Gas & Power, de Naturgy). Tamén podes deixalo baleiro e escribilos a man no paso seguinte.",
           "data": {
-            "pdf": "PDF de la factura (o ZIP con varias)"
+            "pdf": "PDF da factura (ou ZIP con varias)"
           }
         },
         "factura_datos": {
-          "title": "Datos de la factura real",
-          "description": "Revisa los datos tal como vienen en la factura. Con ellos se fija el periodo real, se recalibra el medidor, se corrige el arrastre del bono y se reescribe el coste del periodo en el panel de Energía. Una factura que se solape con otra ya introducida (por ejemplo, una rectificativa) la sustituye.",
+          "title": "Datos da factura real",
+          "description": "Revisa os datos tal como veñen na factura. Con eles fíxase o período real, recalíbrase o medidor, corríxese o arrastre do bono e reescríbese o custo do período no panel de Enerxía. Unha factura que se solape con outra xa introducida (por exemplo, unha rectificativa) substitúea.",
           "data": {
-            "inicio": "Inicio del periodo",
-            "fin": "Fin del periodo",
-            "emision": "Fecha de emisión",
+            "inicio": "Inicio do período",
+            "fin": "Fin do período",
+            "emision": "Data de emisión",
             "kwh_p1": "Consumo en P1 (punta)",
-            "kwh_p2": "Consumo en P2 (llano)",
-            "kwh_p3": "Consumo en P3 (valle)",
-            "total": "Total de la factura",
+            "kwh_p2": "Consumo en P2 (chan)",
+            "kwh_p3": "Consumo en P3 (val)",
+            "total": "Total da factura",
             "kwh_bonificados": "Consumo bonificado"
           },
           "data_description": {
-            "inicio": "El día que figura como inicio del periodo («del … al …»).",
-            "kwh_bonificados": "Los kWh con descuento del bono social que aparecen en la factura. Déjalo vacío si no tienes bono."
+            "inicio": "O día que figura como inicio do período («do … ao …»).",
+            "kwh_bonificados": "Os kWh con desconto do bono social que aparecen na factura. Déixao baleiro se non tes bono."
           }
         },
         "cambio_contrato": {
           "title": "Cambio de contrato",
-          "description": "Has cambiado la potencia, el bono social o la unidad de convivencia. Indica desde qué día rige el contrato nuevo: los días anteriores del periodo se calculan con el antiguo. Si solo estás corrigiendo un dato mal puesto, deja la fecha vacía y se aplicará a todo.",
+          "description": "Cambiaches a potencia, o bono social ou a unidade de convivencia. Indica desde que día rexe o contrato novo: os días anteriores do período calcúlanse co antigo. Se só estás a corrixir un dato mal posto, deixa a data baleira e aplicarase a todo.",
           "data": {
-            "vigente_desde": "En vigor desde"
+            "vigente_desde": "Vixente desde"
           },
           "data_description": {
-            "vigente_desde": "El primer día con el contrato nuevo (lo pone la carta de la comercializadora o la factura)."
+            "vigente_desde": "O primeiro día co contrato novo (indícao a carta da comercializadora ou a factura)."
           }
         },
         "factura_lote": {
-          "title": "Facturas del ZIP",
-          "description": "Se han leído {n} facturas:\n\n{lista}{descartadas}\n\nPulsa Enviar para introducirlas todas. Si alguna se solapa con otra ya introducida, la sustituye."
+          "title": "Facturas do ZIP",
+          "description": "Leronse {n} facturas:\n\n{lista}{descartadas}\n\nPreme Enviar para introducilas todas. Se algunha se solapa con outra xa introducida, substitúea."
         },
         "factura_hecha": {
           "title": "Factura introducida",
-          "description": "Factura del {inicio} al {fin} introducida. ¿Quieres añadir otra?",
+          "description": "Factura do {inicio} ao {fin} introducida. Queres engadir outra?",
           "menu_options": {
-            "factura_real": "Añadir otra factura",
-            "terminar": "Terminar"
+            "factura_real": "Engadir outra factura",
+            "terminar": "Rematar"
+          }
+        },
+        "datadis": {
+          "title": "Conta de Datadis",
+          "description": "Escolle a conta de Datadis da que sae a curva horaria desta subministración, ou engade unha nova.",
+          "data": {
+            "cuenta": "Conta"
+          }
+        },
+        "datadis_nueva": {
+          "title": "Conta de Datadis nova",
+          "description": "Usuario e contrasinal de datadis.es. A conta créase ao rematar a alta da subministración; a primeira descarga tarda uns minutos e, ata entón, a factura non ten consumo.",
+          "data": {
+            "usuario": "Usuario (NIF/NIE)",
+            "clave": "Contrasinal"
+          }
+        },
+        "datadis_cups": {
+          "title": "Subministración de Datadis",
+          "description": "A túa conta de Datadis ten varias subministracións: escolle a desta.",
+          "data": {
+            "cups": "Subministración"
           }
         }
       },
       "error": {
-        "categoria_requerida": "Con bono social hay que indicar la unidad de convivencia.",
-        "fuente_en_uso": "Esa fuente ya la usa otro suministro.",
-        "estadistica_no_externa": "Elige una estadística externa (dominio:objeto). Para un sensor, vuelve atrás y elige «Sensor de energía».",
-        "fuente_no_encontrada": "No existe esa entidad o todavía no tiene estado.",
-        "fuente_no_energia": "El sensor debe ser de energía (kWh, Wh o MWh) con state_class total o total_increasing.",
-        "pdf_no_reconocido": "No se reconoce el PDF. Solo se leen las facturas de la Comercializadora Regulada, Gas & Power (Naturgy); con otras, deja el archivo vacío e introduce los datos a mano.",
-        "demasiado_grande": "El archivo es demasiado grande: como máximo 4 MiB por PDF, y un ZIP de hasta 50 MiB con 12 PDF.",
-        "pdf_no_subido": "No se ha podido leer el archivo subido. Vuelve a subirlo.",
-        "es_abono": "Es un abono (factura rectificativa con importe negativo). Sube la factura que la sustituye.",
-        "factura_futura": "La factura no puede acabar después de hoy: revisa la fecha de fin.",
-        "periodo_no_valido": "El periodo de la factura debe tener entre 1 y 62 días.",
-        "fecha_futura": "No puede ser una fecha futura: haz el cambio el mismo día que empiece.",
-        "codigo_postal_invalido": "El código postal debe tener 5 cifras",
-        "zip_sin_facturas": "El ZIP no tiene ninguna factura que se pueda leer (solo se leen los PDF de la Comercializadora Regulada, Gas & Power).",
-        "antes_de_factura_real": "Ya hay una factura real que acaba después de esa fecha: el periodo en curso no puede empezar antes del fin de esa factura.",
-        "obligatorio": "Este campo es obligatorio.",
-        "fin_factura_futura": "La última factura no puede acabar después de hoy: revisa la fecha.",
-        "importe_a_cero": "El total de la factura no puede ser cero: la potencia y el alquiler siempre se facturan.",
-        "bonificados_mayor_que_consumo": "Los kWh bonificados no pueden superar al consumo total de la factura.",
-        "rango_potencia": "La potencia debe estar entre 0,1 y 15 kW.",
-        "rango_dias_emision": "Debe estar entre 0 y 30 días.",
-        "rango_arrastre": "Debe estar entre 0 y 5000 kWh.",
-        "rango_alquiler": "Debe estar entre 0 y 5 € al mes.",
-        "rango_umbral": "Debe estar entre 0 y 5000 € al año.",
-        "rango_kwh": "Debe estar entre 0 y 100000 kWh.",
-        "rango_total": "Debe estar entre 0 y 100000 €.",
-        "codigo_postal_requerido": "Para comparar tarifas o comprobar las facturas con la CNMC hace falta el código postal.",
-        "nombre_en_uso": "Ya hay un suministro con ese nombre: elige otro para que no se mezclen sus costes en el panel de Energía."
+        "categoria_requerida": "Con bono social hai que indicar a unidade de convivencia.",
+        "fuente_en_uso": "Esa fonte xa a usa outra subministración.",
+        "estadistica_no_externa": "Escolle unha estatística externa (dominio:obxecto). Para usar un sensor, pecha este asistente, volve comezar e escolle «Un medidor de enerxía en Home Assistant».",
+        "fuente_no_encontrada": "Non existe esa entidade ou aínda non ten estado.",
+        "fuente_no_energia": "O sensor debe ser de enerxía (kWh, Wh ou MWh) con state_class total ou total_increasing.",
+        "pdf_no_reconocido": "Non se recoñece o PDF. Só se len as facturas da Comercializadora Regulada, Gas & Power (Naturgy); con outras, deixa o ficheiro baleiro e introduce os datos a man.",
+        "demasiado_grande": "O ficheiro é demasiado grande: como máximo 4 MiB por PDF, e un ZIP de ata 50 MiB con 12 PDF.",
+        "pdf_no_subido": "Non foi posible ler o ficheiro subido. Volve subilo.",
+        "es_abono": "É un abono (factura rectificativa con importe negativo). Sube a factura que a substitúe.",
+        "factura_futura": "A factura non pode rematar despois de hoxe: revisa a data de fin.",
+        "periodo_no_valido": "O período da factura debe ter entre 1 e 62 días.",
+        "fecha_futura": "Non pode ser unha data futura: fai o cambio o mesmo día que comece.",
+        "codigo_postal_invalido": "O código postal debe ter 5 cifras",
+        "zip_sin_facturas": "O ZIP non ten ningunha factura que se poida ler (só se len os PDF da Comercializadora Regulada, Gas & Power).",
+        "antes_de_factura_real": "Xa hai unha factura real que remata despois desa data: o período en curso non pode comezar antes do fin desa factura.",
+        "obligatorio": "Este campo é obrigatorio.",
+        "fin_factura_futura": "A última factura non pode rematar despois de hoxe: revisa a data.",
+        "importe_a_cero": "O total da factura non pode ser cero: a potencia e o aluguer sempre se facturan.",
+        "bonificados_mayor_que_consumo": "Os kWh bonificados non poden superar o consumo total da factura.",
+        "rango_potencia": "A potencia debe estar entre 0,1 e 15 kW.",
+        "rango_dias_emision": "Debe estar entre 0 e 30 días.",
+        "rango_arrastre": "Debe estar entre 0 e 5000 kWh.",
+        "rango_alquiler": "Debe estar entre 0 e 5 € ao mes.",
+        "rango_umbral": "Debe estar entre 0 e 5000 € ao ano.",
+        "rango_kwh": "Debe estar entre 0 e 100000 kWh.",
+        "rango_total": "Debe estar entre 0 e 100000 €.",
+        "codigo_postal_requerido": "Para comparar tarifas ou comprobar as facturas coa CNMC cómpre o código postal.",
+        "nombre_en_uso": "Xa hai unha subministración con ese nome: escolle outro para que non se mesturen os seus custos no panel de Enerxía.",
+        "credenciales": "Usuario ou contrasinal de Datadis incorrectos.",
+        "no_responde": "Datadis non responde. Téntao máis tarde.",
+        "sin_suministros": "Datadis non devolve ningunha subministración para esta conta."
       },
       "abort": {
-        "reconfigure_successful": "Suministro actualizado.",
-        "periodo_cambiado": "Suministro actualizado. El periodo en curso empieza ahora el {inicio} y se recalcula desde ese día.",
-        "factura_conciliada": "Factura del {inicio} al {fin} conciliada.",
-        "no_cargada": "La integración no está cargada. Actívala y vuelve a intentarlo.",
+        "reconfigure_successful": "Subministración actualizada.",
+        "periodo_cambiado": "Subministración actualizada. O período en curso comeza agora o {inicio} e recalcúlase desde ese día.",
+        "factura_conciliada": "Factura do {inicio} ao {fin} conciliada.",
+        "no_cargada": "A integración non está cargada. Actívaa e volve tentalo.",
         "lote_conciliado": "{n} facturas introducidas.{fallidas}",
-        "no_soportado_canarias": "La factura solo se calcula para la Península y Baleares. En Canarias (zona horaria de Home Assistant Atlantic/Canary) rigen la hora canaria y el IGIC, y la integración no los tiene en cuenta. Los precios del PVPC sí funcionan.",
-        "no_soportado_ceuta_melilla": "La factura solo se calcula para la Península y Baleares. En Ceuta y Melilla rigen otros periodos y el IPSI, y la integración no los tiene en cuenta. Los precios del PVPC sí funcionan."
+        "no_soportado_canarias": "A factura só se calcula para a Península e Baleares. En Canarias (fuso horario de Home Assistant Atlantic/Canary) rexen a hora canaria e o IGIC, e a integración non os ten en conta. Os prezos do PVPC si funcionan.",
+        "no_soportado_ceuta_melilla": "A factura só se calcula para a Península e Baleares. En Ceuta e Melilla rexen outros períodos e o IPSI, e a integración non os ten en conta. Os prezos do PVPC si funcionan."
       }
     },
     "resumen": {
       "initiate_flow": {
-        "user": "Añadir resumen por notificación",
-        "reconfigure": "Cambiar resumen"
+        "user": "Engadir resumo por notificación",
+        "reconfigure": "Cambiar resumo"
       },
-      "entry_type": "Resumen de precios por notificación",
+      "entry_type": "Resumo de prezos por notificación",
       "step": {
         "user": {
-          "title": "Resumen de precios por notificación",
-          "description": "Un mensaje por la mañana con los precios de hoy y otro por la noche con los de mañana comparados con hoy, como gráfico de barras hecho con emojis.",
+          "title": "Resumo de prezos por notificación",
+          "description": "Unha mensaxe pola mañá cos prezos de hoxe e outra pola noite cos de mañá comparados cos de hoxe, como gráfico de barras feito con emojis.",
           "data": {
             "destino": "Destino",
-            "suministro": "Suministro (consumo y factura)",
-            "hoy_activo": "Enviar el resumen de hoy",
-            "hoy_hora": "Hora del resumen de hoy",
-            "manana_activo": "Enviar el resumen de mañana",
-            "manana_hora": "Hora del resumen de mañana",
-            "franjas_hoy": "Mejores franjas de hoy",
-            "franjas_manana": "Mejores franjas de mañana",
-            "duracion_franja": "Horas de cada franja",
-            "incluir_consumo": "Incluir el consumo y el coste de hoy",
-            "incluir_factura": "Incluir la factura en curso",
-            "color_valle": "Color en los días valle",
-            "mostrar_periodo": "Indicar el periodo de cada hora (laborables)",
-            "formato_tabla": "Formato de la tabla",
-            "resto_hoy": "Por la noche, incluir las horas que quedan de hoy"
+            "suministro": "Subministración (consumo e factura)",
+            "hoy_activo": "Enviar o resumo de hoxe",
+            "hoy_hora": "Hora do resumo de hoxe",
+            "manana_activo": "Enviar o resumo de mañá",
+            "manana_hora": "Hora do resumo de mañá",
+            "franjas_hoy": "Mellores franxas de hoxe",
+            "franjas_manana": "Mellores franxas de mañá",
+            "duracion_franja": "Horas de cada franxa",
+            "incluir_consumo": "Incluír o consumo e o custo de hoxe",
+            "incluir_factura": "Incluír a factura en curso",
+            "color_valle": "Cor nos días val",
+            "mostrar_periodo": "Indicar o período de cada hora (laborables)",
+            "formato_tabla": "Formato da táboa",
+            "resto_hoy": "Pola noite, incluír as horas que quedan de hoxe"
           },
           "data_description": {
-            "destino": "Cualquier entidad de notificación. Para Telegram, configura antes la integración Telegram bot en Home Assistant (crea una entidad de notificación por cada chat permitido); el mensaje va con formato (columnas alineadas) y no hace falta escribir el ID del chat.",
-            "manana_hora": "ESIOS publica los precios de mañana hacia las 20:20. Si aún no están, se reintenta cada 10 minutos hasta las 23:00.",
-            "color_valle": "En fines de semana y festivos todo el día es valle: con «laborables», sus horas se colorean comparando con los 5 días laborables anteriores.",
-            "mostrar_periodo": "Tras la hora, P punta, L llano o V valle. En fines de semana y festivos todo el día es valle y no se indica.",
-            "formato_tabla": "Cómo se dibuja cada hora. En «Dos columnas» no caben las flechas frente a hoy.",
-            "resto_hoy": "Antes de las 24 horas de mañana, las que quedan de hoy para compararlas. Las flechas frente a hoy salen igual."
+            "destino": "Calquera entidade de notificación. Para Telegram, configura antes a integración Telegram bot en Home Assistant (crea unha entidade de notificación por cada chat permitido); a mensaxe vai con formato (columnas aliñadas) e non fai falta escribir o ID do chat.",
+            "manana_hora": "ESIOS publica os prezos de mañá arredor das 20:20. Se aínda non están, vólvese tentar cada 10 minutos ata as 23:00.",
+            "color_valle": "Nas fins de semana e nos festivos todo o día é val: con «laborables», as súas horas coloréanse comparándoas cos 5 días laborables anteriores.",
+            "mostrar_periodo": "Despois da hora, P punta, C chan ou V val. Nas fins de semana e nos festivos todo o día é val e non se indica.",
+            "formato_tabla": "Como se debuxa cada hora. En «Dúas columnas» non caben as frechas fronte a hoxe.",
+            "resto_hoy": "Antes das 24 horas de mañá, as que quedan de hoxe para comparalas. As frechas fronte a hoxe saen igual."
           }
         },
         "reconfigure": {
-          "title": "Resumen de precios por notificación",
-          "description": "Un mensaje por la mañana con los precios de hoy y otro por la noche con los de mañana comparados con hoy, como gráfico de barras hecho con emojis.",
+          "title": "Resumo de prezos por notificación",
+          "description": "Unha mensaxe pola mañá cos prezos de hoxe e outra pola noite cos de mañá comparados cos de hoxe, como gráfico de barras feito con emojis.",
           "data": {
             "destino": "Destino",
-            "suministro": "Suministro (consumo y factura)",
-            "hoy_activo": "Enviar el resumen de hoy",
-            "hoy_hora": "Hora del resumen de hoy",
-            "manana_activo": "Enviar el resumen de mañana",
-            "manana_hora": "Hora del resumen de mañana",
-            "franjas_hoy": "Mejores franjas de hoy",
-            "franjas_manana": "Mejores franjas de mañana",
-            "duracion_franja": "Horas de cada franja",
-            "incluir_consumo": "Incluir el consumo y el coste de hoy",
-            "incluir_factura": "Incluir la factura en curso",
-            "color_valle": "Color en los días valle",
-            "mostrar_periodo": "Indicar el periodo de cada hora (laborables)",
-            "formato_tabla": "Formato de la tabla",
-            "resto_hoy": "Por la noche, incluir las horas que quedan de hoy"
+            "suministro": "Subministración (consumo e factura)",
+            "hoy_activo": "Enviar o resumo de hoxe",
+            "hoy_hora": "Hora do resumo de hoxe",
+            "manana_activo": "Enviar o resumo de mañá",
+            "manana_hora": "Hora do resumo de mañá",
+            "franjas_hoy": "Mellores franxas de hoxe",
+            "franjas_manana": "Mellores franxas de mañá",
+            "duracion_franja": "Horas de cada franxa",
+            "incluir_consumo": "Incluír o consumo e o custo de hoxe",
+            "incluir_factura": "Incluír a factura en curso",
+            "color_valle": "Cor nos días val",
+            "mostrar_periodo": "Indicar o período de cada hora (laborables)",
+            "formato_tabla": "Formato da táboa",
+            "resto_hoy": "Pola noite, incluír as horas que quedan de hoxe"
           },
           "data_description": {
-            "destino": "Cualquier entidad de notificación. Para Telegram, configura antes la integración Telegram bot en Home Assistant (crea una entidad de notificación por cada chat permitido); el mensaje va con formato (columnas alineadas) y no hace falta escribir el ID del chat.",
-            "manana_hora": "ESIOS publica los precios de mañana hacia las 20:20. Si aún no están, se reintenta cada 10 minutos hasta las 23:00.",
-            "color_valle": "En fines de semana y festivos todo el día es valle: con «laborables», sus horas se colorean comparando con los 5 días laborables anteriores.",
-            "mostrar_periodo": "Tras la hora, P punta, L llano o V valle. En fines de semana y festivos todo el día es valle y no se indica.",
-            "formato_tabla": "Cómo se dibuja cada hora. En «Dos columnas» no caben las flechas frente a hoy.",
-            "resto_hoy": "Antes de las 24 horas de mañana, las que quedan de hoy para compararlas. Las flechas frente a hoy salen igual."
+            "destino": "Calquera entidade de notificación. Para Telegram, configura antes a integración Telegram bot en Home Assistant (crea unha entidade de notificación por cada chat permitido); a mensaxe vai con formato (columnas aliñadas) e non fai falta escribir o ID do chat.",
+            "manana_hora": "ESIOS publica os prezos de mañá arredor das 20:20. Se aínda non están, vólvese tentar cada 10 minutos ata as 23:00.",
+            "color_valle": "Nas fins de semana e nos festivos todo o día é val: con «laborables», as súas horas coloréanse comparándoas cos 5 días laborables anteriores.",
+            "mostrar_periodo": "Despois da hora, P punta, C chan ou V val. Nas fins de semana e nos festivos todo o día é val e non se indica.",
+            "formato_tabla": "Como se debuxa cada hora. En «Dúas columnas» non caben as frechas fronte a hoxe.",
+            "resto_hoy": "Antes das 24 horas de mañá, as que quedan de hoxe para comparalas. As frechas fronte a hoxe saen igual."
           }
         }
       },
       "abort": {
-        "reconfigure_successful": "Resumen actualizado."
+        "reconfigure_successful": "Resumo actualizado."
       },
       "error": {
-        "rango_franjas": "Debe estar entre 0 y 6.",
-        "rango_duracion": "Debe estar entre 1 y 6 horas.",
-        "hora_no_valida": "Esa hora no es válida."
+        "rango_franjas": "Debe estar entre 0 e 6.",
+        "rango_duracion": "Debe estar entre 1 e 6 horas.",
+        "hora_no_valida": "Esa hora non é válida."
       }
     },
     "datadis": {
       "initiate_flow": {
-        "user": "Añadir cuenta de Datadis",
+        "user": "Engadir conta de Datadis",
         "reconfigure": "Datadis"
       },
-      "entry_type": "Cuenta de Datadis",
+      "entry_type": "Conta de Datadis",
       "step": {
         "user": {
-          "title": "Cuenta de Datadis",
-          "description": "Opcional: el consumo horario oficial del contador, desde datadis.es. Se descarga una vez al día y se guarda como estadística de energía, que puedes elegir como fuente de consumo de un suministro o usar como referencia. Si Datadis no da datos, todo sigue funcionando con tu medidor.",
+          "title": "Conta de Datadis",
+          "description": "Opcional: o consumo horario oficial do contador, desde datadis.es. Descárgase unha vez ao día e gárdase como estatística de enerxía, que podes escoller como fonte de consumo dunha subministración ou usar como referencia. Se Datadis non dá datos, todo segue funcionando co teu medidor.",
           "data": {
             "usuario": "Usuario (NIF/NIE)",
-            "clave": "Contraseña"
+            "clave": "Contrasinal"
           }
         },
         "suministro": {
-          "title": "Suministro",
-          "description": "Tu cuenta tiene varios suministros: elige uno (puedes añadir otra cuenta de Datadis para cada uno).",
+          "title": "Subministración",
+          "description": "A túa conta ten varias subministracións: escolle unha (podes engadir outra conta de Datadis para cada unha).",
           "data": {
-            "cups": "Suministro"
+            "cups": "Subministración"
           }
         },
         "reconfigure": {
           "title": "Datadis",
-          "description": "¿Qué quieres hacer?",
+          "description": "Que queres facer?",
           "menu_options": {
             "importar_csv": "Importar un CSV de datadis.es",
-            "cuenta": "Cambiar usuario o contraseña"
+            "historico": "Descargar o histórico completo",
+            "cuenta": "Cambiar usuario ou contrasinal"
           }
         },
         "importar_csv": {
           "title": "Importar CSV de Datadis",
-          "description": "Sube el CSV de consumo que se descarga en datadis.es (Consumo_….csv). Se comprueba igual que lo que llega por la API: se descartan los días con horas repetidas o idénticos a otro día.",
+          "description": "Sube o CSV de consumo que se descarga en datadis.es (Consumo_….csv). Compróbase igual que o que chega pola API: descártanse os días con horas repetidas ou idénticos a outro día.",
           "data": {
             "csv": "CSV de consumo"
           }
         },
+        "historico": {
+          "title": "Descargar o histórico completo",
+          "description": "Pídeselle a Datadis todo o consumo horario que permite (como moito dous anos): de {desde} a {hasta}. O máis recente xa o trae a consulta diaria. Vai en segundo plano e pode tardar uns minutos; ao rematar sairá unha notificación. As horas que xa teñas gardadas neses meses substitúense polas de Datadis, igual que ao importar un CSV. Se Datadis non responde ou pide agardar (só deixa repetir unha consulta cada 24 h), vólvese tentar máis tarde."
+        },
         "cuenta": {
-          "title": "Cuenta de Datadis",
+          "title": "Conta de Datadis",
           "data": {
             "usuario": "Usuario (NIF/NIE)",
-            "clave": "Contraseña"
+            "clave": "Contrasinal"
           }
         }
       },
       "error": {
-        "credenciales": "Usuario o contraseña de Datadis incorrectos.",
-        "no_responde": "Datadis no responde. Inténtalo más tarde.",
-        "sin_suministros": "Datadis no devuelve ningún suministro para esta cuenta.",
-        "csv_no_valido": "No es un CSV de consumo de Datadis (faltan las columnas de fecha, hora y consumo).",
-        "csv_vacio": "El CSV no tiene consumos."
+        "credenciales": "Usuario ou contrasinal de Datadis incorrectos.",
+        "no_responde": "Datadis non responde. Téntao máis tarde.",
+        "sin_suministros": "Datadis non devolve ningunha subministración para esta conta.",
+        "csv_no_valido": "Non é un CSV de consumo de Datadis (faltan as columnas de data, hora e consumo).",
+        "csv_vacio": "O CSV non ten consumos."
       },
       "abort": {
-        "ya_configurado": "Ese suministro ya está configurado.",
-        "reconfigure_successful": "Cuenta actualizada: se consultará Datadis ahora.",
-        "no_cargada": "La integración no está cargada. Actívala y vuelve a intentarlo.",
-        "csv_importado": "Importadas {horas} horas. Días descartados: {rechazados}."
+        "ya_configurado": "Esa subministración xa está configurada.",
+        "reconfigure_successful": "Conta actualizada: consultarase Datadis agora.",
+        "no_cargada": "A integración non está cargada. Actívaa e volve tentalo.",
+        "csv_importado": "Importáronse {horas} horas. Días descartados: {rechazados}.",
+        "historico_iniciado": "Descarga iniciada ({desde} – {hasta}). Ao rematar sairá unha notificación; mentres, o atributo «historico» do sensor de estado de Datadis indica como vai.",
+        "historico_nada": "Non hai nada máis que descargar: a consulta diaria xa cobre todo o que deixa Datadis."
       }
     }
   },
   "services": {
     "conciliar_factura": {
       "name": "Conciliar factura",
-      "description": "Introduce la factura real de un periodo. Fija el corte real, recalibra el medidor, corrige el saldo del bono y reescribe la estadística de coste del periodo con el total real.",
+      "description": "Introduce a factura real dun período. Fixa o corte real, recalibra o medidor, corrixe o saldo do bono e reescribe a estatística de custo do período co total real.",
       "fields": {
         "suministro": {
-          "name": "Suministro",
-          "description": "El suministro de la factura."
+          "name": "Subministración",
+          "description": "A subministración da factura."
         },
         "inicio": {
-          "name": "Inicio del periodo",
-          "description": "La fecha «del X» de la factura (ese día no se factura)."
+          "name": "Inicio do período",
+          "description": "A data «do X» da factura (ese día non se factura)."
         },
         "fin": {
-          "name": "Fin del periodo",
-          "description": "La fecha «al Y» de la factura."
+          "name": "Fin do período",
+          "description": "A data «ao Y» da factura."
         },
         "emision": {
-          "name": "Fecha de emisión",
-          "description": "La fecha de la factura (si no se indica, fin + días hasta la emisión)."
+          "name": "Data de emisión",
+          "description": "A data da factura (se non se indica, fin + días ata a emisión)."
         },
         "kwh_p1": {
           "name": "kWh en P1 (punta)",
-          "description": "Consumo de P1 de la factura."
+          "description": "Consumo de P1 da factura."
         },
         "kwh_p2": {
-          "name": "kWh en P2 (llano)",
-          "description": "Consumo de P2 de la factura."
+          "name": "kWh en P2 (chan)",
+          "description": "Consumo de P2 da factura."
         },
         "kwh_p3": {
-          "name": "kWh en P3 (valle)",
-          "description": "Consumo de P3 de la factura."
+          "name": "kWh en P3 (val)",
+          "description": "Consumo de P3 da factura."
         },
         "total": {
-          "name": "Total de la factura",
-          "description": "Importe total con impuestos."
+          "name": "Total da factura",
+          "description": "Importe total con impostos."
         },
         "kwh_bonificados": {
           "name": "kWh bonificados",
-          "description": "Suma de los kWh con descuento de la factura (opcional, mejora el cálculo del bono)."
+          "description": "Suma dos kWh con desconto da factura (opcional, mellora o cálculo do bono)."
+        },
+        "comprobar": {
+          "name": "Comprobar coa CNMC",
+          "description": "Pídelle á CNMC a comprobación da última factura (se a subministración a ten activada). Ao introducir varias seguidas, abonda coa última."
+        }
+      }
+    },
+    "leer_facturas": {
+      "name": "Ler facturas",
+      "description": "Le os PDF de factura subidos (ou ZIP con varios) co mesmo lector ca «Factura real» e devolve os seus datos para revisalos, sen introducir nada. Só se len as facturas da Comercializadora Regulada, Gas & Power (Naturgy).",
+      "fields": {
+        "suministro": {
+          "name": "Subministración",
+          "description": "A subministración das facturas."
+        },
+        "archivos": {
+          "name": "Ficheiros",
+          "description": "IDs dos ficheiros subidos a Home Assistant (PDF ou ZIP), ata 12."
         }
       }
     },
     "enviar_resumen": {
-      "name": "Enviar resumen de precios",
-      "description": "Envía el resumen de precios de hoy o de mañana a los destinos configurados o a uno concreto. Con «Solo devolver el texto» no envía nada y devuelve el mensaje.",
+      "name": "Enviar resumo de prezos",
+      "description": "Envía o resumo de prezos de hoxe ou de mañá aos destinos configurados ou a un concreto. Con «Só devolver o texto» non envía nada e devolve a mensaxe.",
       "fields": {
         "manana": {
-          "name": "Mañana",
-          "description": "El resumen de mañana comparado con hoy (si no, el de hoy)."
+          "name": "Mañá",
+          "description": "O resumo de mañá comparado co de hoxe (se non, o de hoxe)."
         },
         "destino": {
           "name": "Destino",
-          "description": "Entidad de notificación. Si no se indica, se envía a todos los resúmenes configurados."
+          "description": "Entidade de notificación. Se non se indica, envíase a todos os resumos configurados."
         },
         "dry_run": {
-          "name": "Solo devolver el texto",
-          "description": "No envía nada: devuelve el texto en la respuesta del servicio."
+          "name": "Só devolver o texto",
+          "description": "Non envía nada: devolve o texto na resposta do servizo."
         }
       }
     },
     "comparar_tarifas": {
       "name": "Comparar tarifas",
-      "description": "Compara lo pagado en los últimos 12 meses con las ofertas del comparador de la CNMC para el código postal del suministro y deja el resultado en el sensor «Mejor alternativa de tarifa».",
+      "description": "Compara o pagado nos últimos 12 meses coas ofertas do comparador da CNMC para o código postal da subministración e deixa o resultado no sensor «Mellor alternativa de tarifa».",
       "fields": {
         "suministro": {
-          "name": "Suministro",
-          "description": "Dispositivo del suministro."
+          "name": "Subministración",
+          "description": "Dispositivo da subministración."
         },
         "destino": {
           "name": "Destino",
-          "description": "Entidad de notificación (por ejemplo, un chat de Telegram) a la que enviar también el resultado."
+          "description": "Entidade de notificación (por exemplo, un chat de Telegram) á que enviar tamén o resultado."
         },
         "notificacion": {
           "name": "Notificación persistente",
-          "description": "Deja el resultado (o el error) en una notificación persistente."
+          "description": "Deixa o resultado (ou o erro) nunha notificación persistente."
         },
         "enviar": {
-          "name": "Enviar al destino del suministro",
-          "description": "Envía el resultado al destino de las opciones del suministro (con su filtro de ahorro). Desactívalo para comparar sin enviar."
+          "name": "Enviar ao destino da subministración",
+          "description": "Envía o resultado ao destino das opcións da subministración (co seu filtro de aforro). Desactívao para comparar sen enviar."
         }
       }
     },
     "enviar_comparativa": {
-      "name": "Enviar la comparativa",
-      "description": "Reenvía la última comparativa de tarifas guardada (sin volver a consultar a la CNMC) al destino indicado o al de las opciones del suministro.",
+      "name": "Enviar a comparativa",
+      "description": "Reenvía a última comparativa de tarifas gardada (sen volver consultar a CNMC) ao destino indicado ou ao das opcións da subministración.",
       "fields": {
         "suministro": {
-          "name": "Suministro",
-          "description": "Dispositivo del suministro."
+          "name": "Subministración",
+          "description": "Dispositivo da subministración."
         },
         "destino": {
           "name": "Destino",
-          "description": "Entidad de notificación (por ejemplo, un chat de Telegram). Si no se indica, la de las opciones del suministro."
+          "description": "Entidade de notificación (por exemplo, un chat de Telegram). Se non se indica, a das opcións da subministración."
         }
       }
+    }
+  },
+  "exceptions": {
+    "sin_historico": {
+      "message": "Aínda non hai histórico de prezos."
+    },
+    "dispositivo_no_existe": {
+      "message": "Non existe o dispositivo {device_id}."
+    },
+    "no_es_suministro": {
+      "message": "Ese dispositivo non é unha subministración de PVPC + Bono Social."
+    },
+    "importe_a_cero": {
+      "message": "O total da factura non pode ser cero."
+    },
+    "bonificados_mayor_que_consumo": {
+      "message": "Os kWh bonificados non poden superar o consumo."
+    },
+    "periodo_factura_no_valido": {
+      "message": "O período da factura debe ter entre 1 e 62 días."
+    },
+    "factura_futura": {
+      "message": "A factura non pode rematar despois de hoxe."
+    },
+    "factura_no_guardada": {
+      "message": "Non foi posible gardar a factura: {error}"
+    },
+    "no_cargada": {
+      "message": "PVPC + Bono Social non está cargada."
+    },
+    "sin_resumen": {
+      "message": "Non hai ningún resumo configurado: engade un ou indica o destino."
+    },
+    "resumen_no_enviado": {
+      "message": "Non foi posible enviar o resumo a {destinos}"
+    },
+    "manana_sin_precios": {
+      "message": "Mañá aínda non ten prezos publicados."
+    },
+    "sin_comparativa": {
+      "message": "Aínda non hai ningunha comparativa: compara as tarifas antes de enviala."
+    },
+    "comparativa_sin_destino": {
+      "message": "A subministración non ten destino para a comparativa: escólleo nas opcións da subministración."
+    },
+    "comparar_sin_codigo_postal": {
+      "message": "Falta o código postal da subministración: engádeo coa roda dentada ⚙ da subministración (Reconfigurar) para comparar tarifas."
+    },
+    "comparar_sin_datos": {
+      "message": "Aínda non hai ningún período de factura pechado: cómpre polo menos un para comparar."
+    },
+    "comparar_cnmc_no_responde": {
+      "message": "O comparador da CNMC non responde; téntao máis tarde."
+    },
+    "fin_periodo_no_valido": {
+      "message": "O fin do período ten que ser posterior ao {inicio} e como moito o {fin}."
+    },
+    "sin_periodo_en_curso": {
+      "message": "Aínda non hai un período en curso."
+    },
+    "subentrada_error": {
+      "message": "erro inesperado: {tipo}"
     }
   }
 }

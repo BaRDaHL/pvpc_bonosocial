@@ -27,10 +27,6 @@ from .const import (
     ATTR_BETTER_PRICE_TARGET,
     ATTR_ENABLE_PRIVATE_API,
     ATTR_HOLIDAY_SOURCE,
-    ATTR_NEXT_BEST_IN_UPDATE,
-    ATTR_NEXT_PERIOD_IN_UPDATE,
-    ATTR_NEXT_POWER_PERIOD_IN_UPDATE,
-    ATTR_NEXT_PRICE_IN_UPDATE,
     ATTR_POWER_P1,
     ATTR_POWER_P3,
     ATTR_PRICE_MODE,
@@ -46,19 +42,25 @@ from .const import (
     CONF_COMPARADOR_ENVIO,
     CONF_COMPARADOR_FORMATO,
     CONF_COMPARADOR_UMBRAL,
+    CONF_COMPARAR_FIN_MES,
     CONF_COMPARAR_MENSUAL,
     CONF_CONTRATOS_ANTERIORES,
     CONF_DATADIS_CLAVE,
+    CONF_DATADIS_CUENTA,
+    CONF_DATADIS_ESTADISTICA,
     CONF_DATADIS_SUMINISTRO,
     CONF_DATADIS_USUARIO,
     CONF_DESTINO,
     CONF_DIAS_EMISION,
     CONF_DURACION_FRANJA,
+    CONF_FACTURA_EN_CURSO,
     CONF_FIN_ULTIMA_FACTURA,
     CONF_FORMATO_TABLA,
     CONF_FRANJAS_HOY,
     CONF_FRANJAS_MANANA,
     CONF_FUENTE,
+    CONF_FUENTE_OFICIAL,
+    CONF_FUENTE_REGISTRO,
     CONF_HOY_ACTIVO,
     CONF_HOY_HORA,
     CONF_IDS_HEREDADOS,
@@ -99,10 +101,6 @@ PUBLICO = frozenset(
         ATTR_PRICE_MODE,
         ATTR_SHOW_REFERENCE_PRICE,
         ATTR_HOLIDAY_SOURCE,
-        ATTR_NEXT_PRICE_IN_UPDATE,
-        ATTR_NEXT_BEST_IN_UPDATE,
-        ATTR_NEXT_PERIOD_IN_UPDATE,
-        ATTR_NEXT_POWER_PERIOD_IN_UPDATE,
         LEGACY_ATTR_ENABLE_INJECTION_PRICE,
         LEGACY_ATTR_POWER,
         LEGACY_ATTR_POWER_P2_P3,
@@ -112,6 +110,11 @@ PUBLICO = frozenset(
         CONF_POTENCIA_P2,
         CONF_TIPO_FUENTE,
         CONF_FUENTE,
+        CONF_FUENTE_OFICIAL,
+        CONF_FUENTE_REGISTRO,
+        CONF_DATADIS_CUENTA,
+        CONF_DATADIS_ESTADISTICA,
+        CONF_FACTURA_EN_CURSO,
         CONF_FIN_ULTIMA_FACTURA,
         CONF_DIAS_EMISION,
         CONF_ALQUILER,
@@ -119,6 +122,7 @@ PUBLICO = frozenset(
         CONF_CONTRATOS_ANTERIORES,
         CONF_IDS_HEREDADOS,
         CONF_COMPARAR_MENSUAL,
+        CONF_COMPARAR_FIN_MES,
         CONF_COMPARADOR_ENVIO,
         CONF_COMPARADOR_UMBRAL,
         CONF_COMPARADOR_FORMATO,
@@ -237,6 +241,10 @@ def _suministro(facturacion: Any) -> dict[str, Any]:
                 "problema": d.problema,
                 "horas_sin_precio": d.horas_sin_precio,
                 "horas_sin_consumo": d.horas_sin_consumo,
+                "horas_pendientes": d.horas_pendientes,
+                "datos_hasta": d.datos_hasta.isoformat() if d.datos_hasta else None,
+                "estado_consumo": d.estado_consumo,
+                "provisional": d.provisional,
                 "horas_corregidas_shelly": d.horas_corregidas_shelly,
                 "ultima_hora_medida": d.ultima_hora_medida.isoformat() if d.ultima_hora_medida else None,
                 "arrastre_kwh": d.arrastre_kwh,
@@ -260,6 +268,13 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: PVPCCon
         }
         if sub.subentry_type == SUBENTRY_SUMINISTRO and subentry_id in suministros:
             info["estado"] = _suministro(suministros[subentry_id])
+        comparador = (getattr(coordinador, "comparadores", {}) or {}).get(subentry_id)
+        if sub.subentry_type == SUBENTRY_SUMINISTRO and comparador is not None:
+            # Sin importes ni ofertas: cuántos meses hay y si se completa a fin de mes.
+            info["historico_comparativas"] = {
+                "meses": len(comparador.historico),
+                "comparar_fin_de_mes": bool(sub.data.get(CONF_COMPARAR_FIN_MES)),
+            }
         cuenta = (getattr(coordinador, "datadis", {}) or {}).get(subentry_id)
         if sub.subentry_type == SUBENTRY_DATADIS and cuenta is not None and cuenta.data:
             info["estado"] = {k: sin_cups(v) for k, v in cuenta.data.items() if k != "estadistica"}

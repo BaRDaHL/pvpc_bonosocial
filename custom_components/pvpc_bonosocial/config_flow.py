@@ -28,10 +28,6 @@ from homeassistant.util import dt as dt_util
 from .const import (
     ATTR_BETTER_PRICE_TARGET,
     ATTR_ENABLE_PRIVATE_API,
-    ATTR_NEXT_BEST_IN_UPDATE,
-    ATTR_NEXT_PERIOD_IN_UPDATE,
-    ATTR_NEXT_POWER_PERIOD_IN_UPDATE,
-    ATTR_NEXT_PRICE_IN_UPDATE,
     ATTR_PRICE_MODE,
     ATTR_SHOW_REFERENCE_PRICE,
     ATTR_TARIFF,
@@ -42,7 +38,6 @@ from .const import (
     DEFAULT_PRICE_MODE,
     DEFAULT_SHOW_REFERENCE_PRICE,
     DEFAULT_TARIFF,
-    DEFAULT_UPDATE_FREQUENCY,
     DOMAIN,
     ENTRY_MINOR_VERSION,
     ENTRY_VERSION,
@@ -51,7 +46,6 @@ from .const import (
     SUBENTRY_DATADIS,
     SUBENTRY_RESUMEN,
     SUBENTRY_SUMINISTRO,
-    UPDATE_FREQUENCY_OPTIONS,
     VALID_TARIFF,
     normalize_better_price_target,
     normalize_price_mode,
@@ -84,10 +78,6 @@ async def _async_comprobar_token(hass, api: PVPCData | None, token: str) -> tupl
 # dos veces, con valores por defecto distintos.
 _PREFERENCIAS_POR_DEFECTO = {
     ATTR_BETTER_PRICE_TARGET: DEFAULT_BETTER_PRICE_TARGET,
-    ATTR_NEXT_PRICE_IN_UPDATE: DEFAULT_UPDATE_FREQUENCY,
-    ATTR_NEXT_BEST_IN_UPDATE: DEFAULT_UPDATE_FREQUENCY,
-    ATTR_NEXT_PERIOD_IN_UPDATE: DEFAULT_UPDATE_FREQUENCY,
-    ATTR_NEXT_POWER_PERIOD_IN_UPDATE: DEFAULT_UPDATE_FREQUENCY,
     ATTR_ENABLE_PRIVATE_API: DEFAULT_ENABLE_PRIVATE_API,
 }
 
@@ -105,15 +95,6 @@ def _campos_preferencias(valores: Mapping[str, Any]) -> dict[Any, Any]:
             BETTER_PRICE_TARGETS, "better_price_target"
         ),
     }
-    for clave in (
-        ATTR_NEXT_PRICE_IN_UPDATE,
-        ATTR_NEXT_BEST_IN_UPDATE,
-        ATTR_NEXT_PERIOD_IN_UPDATE,
-        ATTR_NEXT_POWER_PERIOD_IN_UPDATE,
-    ):
-        campos[vol.Required(clave, default=valores[clave])] = _select(
-            UPDATE_FREQUENCY_OPTIONS, "update_frequency"
-        )
     campos[vol.Required(ATTR_ENABLE_PRIVATE_API, default=valores[ATTR_ENABLE_PRIVATE_API])] = bool
     return campos
 
@@ -143,10 +124,6 @@ class PVPCOptionsFlowHandler(OptionsFlow):
     _enable_private_api: bool | None = None
     _price_mode: str | None = None
     _show_reference_price: bool | None = None
-    _next_price_in_update: str | None = None
-    _next_best_in_update: str | None = None
-    _next_period_in_update: str | None = None
-    _next_power_period_in_update: str | None = None
     _api_token: str | None = None
     _api: PVPCData | None = None
 
@@ -156,22 +133,6 @@ class PVPCOptionsFlowHandler(OptionsFlow):
         data = self.config_entry.data
         better_price_target = normalize_better_price_target(
             options.get(ATTR_BETTER_PRICE_TARGET, data.get(ATTR_BETTER_PRICE_TARGET))
-        )
-        next_price_in_update = options.get(
-            ATTR_NEXT_PRICE_IN_UPDATE,
-            data.get(ATTR_NEXT_PRICE_IN_UPDATE, DEFAULT_UPDATE_FREQUENCY),
-        )
-        next_best_in_update = options.get(
-            ATTR_NEXT_BEST_IN_UPDATE,
-            data.get(ATTR_NEXT_BEST_IN_UPDATE, DEFAULT_UPDATE_FREQUENCY),
-        )
-        next_period_in_update = options.get(
-            ATTR_NEXT_PERIOD_IN_UPDATE,
-            data.get(ATTR_NEXT_PERIOD_IN_UPDATE, DEFAULT_UPDATE_FREQUENCY),
-        )
-        next_power_period_in_update = options.get(
-            ATTR_NEXT_POWER_PERIOD_IN_UPDATE,
-            data.get(ATTR_NEXT_POWER_PERIOD_IN_UPDATE, DEFAULT_UPDATE_FREQUENCY),
         )
         show_reference_price = options.get(
             ATTR_SHOW_REFERENCE_PRICE,
@@ -191,19 +152,11 @@ class PVPCOptionsFlowHandler(OptionsFlow):
 
         valores = {
             ATTR_BETTER_PRICE_TARGET: better_price_target,
-            ATTR_NEXT_PRICE_IN_UPDATE: next_price_in_update,
-            ATTR_NEXT_BEST_IN_UPDATE: next_best_in_update,
-            ATTR_NEXT_PERIOD_IN_UPDATE: next_period_in_update,
-            ATTR_NEXT_POWER_PERIOD_IN_UPDATE: next_power_period_in_update,
             ATTR_ENABLE_PRIVATE_API: enable_private_api,
         }
         if user_input is not None:
             valores.update(user_input)
             self._better_price_target = user_input[ATTR_BETTER_PRICE_TARGET]
-            self._next_price_in_update = user_input[ATTR_NEXT_PRICE_IN_UPDATE]
-            self._next_best_in_update = user_input[ATTR_NEXT_BEST_IN_UPDATE]
-            self._next_period_in_update = user_input[ATTR_NEXT_PERIOD_IN_UPDATE]
-            self._next_power_period_in_update = user_input[ATTR_NEXT_POWER_PERIOD_IN_UPDATE]
             self._enable_private_api = user_input[ATTR_ENABLE_PRIVATE_API]
             self._show_reference_price = bool(show_reference_price)
             if self._enable_private_api:
@@ -247,10 +200,6 @@ class PVPCOptionsFlowHandler(OptionsFlow):
         """
         opciones = {
             ATTR_BETTER_PRICE_TARGET: self._better_price_target,
-            ATTR_NEXT_PRICE_IN_UPDATE: self._next_price_in_update,
-            ATTR_NEXT_BEST_IN_UPDATE: self._next_best_in_update,
-            ATTR_NEXT_PERIOD_IN_UPDATE: self._next_period_in_update,
-            ATTR_NEXT_POWER_PERIOD_IN_UPDATE: self._next_power_period_in_update,
             ATTR_ENABLE_PRIVATE_API: bool(self._enable_private_api),
             ATTR_PRICE_MODE: self._price_mode,
             ATTR_SHOW_REFERENCE_PRICE: bool(self._show_reference_price),
@@ -301,10 +250,6 @@ class TariffSelectorConfigFlow(ConfigFlow, domain=DOMAIN):
     _enable_private_api: bool | None = None
     _price_mode: str | None = None
     _show_reference_price: bool | None = None
-    _next_price_in_update: str | None = None
-    _next_best_in_update: str | None = None
-    _next_period_in_update: str | None = None
-    _next_power_period_in_update: str | None = None
     _api_token: str | None = None
     _api: PVPCData | None = None
     _origen_elegido: bool = False
@@ -341,10 +286,6 @@ class TariffSelectorConfigFlow(ConfigFlow, domain=DOMAIN):
             self._name = user_input[CONF_NAME]
             self._tariff = user_input[ATTR_TARIFF]
             self._better_price_target = user_input[ATTR_BETTER_PRICE_TARGET]
-            self._next_price_in_update = user_input[ATTR_NEXT_PRICE_IN_UPDATE]
-            self._next_best_in_update = user_input[ATTR_NEXT_BEST_IN_UPDATE]
-            self._next_period_in_update = user_input[ATTR_NEXT_PERIOD_IN_UPDATE]
-            self._next_power_period_in_update = user_input[ATTR_NEXT_POWER_PERIOD_IN_UPDATE]
             self._enable_private_api = user_input[ATTR_ENABLE_PRIVATE_API]
             if self._enable_private_api:
                 return await self.async_step_api_token()
@@ -471,10 +412,6 @@ class TariffSelectorConfigFlow(ConfigFlow, domain=DOMAIN):
             CONF_NAME: self._name,
             ATTR_TARIFF: self._tariff,
             ATTR_BETTER_PRICE_TARGET: self._better_price_target,
-            ATTR_NEXT_PRICE_IN_UPDATE: self._next_price_in_update,
-            ATTR_NEXT_BEST_IN_UPDATE: self._next_best_in_update,
-            ATTR_NEXT_PERIOD_IN_UPDATE: self._next_period_in_update,
-            ATTR_NEXT_POWER_PERIOD_IN_UPDATE: self._next_power_period_in_update,
             ATTR_ENABLE_PRIVATE_API: bool(self._enable_private_api),
             ATTR_PRICE_MODE: normalize_price_mode(self._price_mode),
             ATTR_SHOW_REFERENCE_PRICE: bool(self._show_reference_price),

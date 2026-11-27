@@ -67,6 +67,7 @@ def ordenar_avisos(avisos: Sequence[str]) -> list[str]:
     """Los avisos en el orden de ORDEN_AVISOS; los desconocidos, al final en su orden."""
     return sorted(avisos, key=lambda a: ORDEN_AVISOS.index(a) if a in ORDEN_AVISOS else len(ORDEN_AVISOS))
 
+
 # Conclusión de la comparativa.
 VEREDICTO_QUEDARSE_CON_BONO = "quedarse_con_bono"  # con bono, ninguna oferta libre mejora lo pagado
 VEREDICTO_LIBRE_PIERDE_BONO = (

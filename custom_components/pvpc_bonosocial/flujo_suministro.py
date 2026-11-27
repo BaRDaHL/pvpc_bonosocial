@@ -1,7 +1,9 @@
 """Flujo de las subentradas «Suministro» (DISENO §2.1): alta, reconfiguración y factura real.
 
-Cada suministro necesita su propia fuente de consumo horario: un sensor de energía de HA
-(sus estadísticas horarias) o una estadística externa (`dominio:objeto`).
+El alta pregunta de dónde sale el consumo (v1.4): un medidor de HA (sus estadísticas horarias),
+Datadis (la curva oficial de una cuenta de Datadis de la integración, que se puede crear en el mismo
+flujo), las dos cosas (Datadis como dato oficial y el medidor para lo reciente), ninguna (solo
+facturas: previsión aproximada) o, como opción avanzada, una estadística externa (`dominio:objeto`).
 
 «Reconfigurar» abre un menú: cambiar los datos del suministro o introducir una factura real
 (a mano o leyendo el PDF de la Comercializadora Regulada, Gas & Power) para conciliarla.
@@ -18,22 +20,29 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 import voluptuous as vol
-from homeassistant.config_entries import ConfigSubentryFlow, SubentryFlowResult
+from homeassistant.config_entries import ConfigEntry, ConfigSubentry, ConfigSubentryFlow, SubentryFlowResult
 from homeassistant.const import CONF_NAME, UnitOfEnergy
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.selector import (
     DateSelector,
     EntitySelector,
     EntitySelectorConfig,
     FileSelector,
     FileSelectorConfig,
+    SelectOptionDict,
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
     StatisticSelector,
     StatisticSelectorConfig,
+    TextSelector,
+    TextSelectorConfig,
+    TextSelectorType,
 )
 from homeassistant.util import dt as dt_util
 
@@ -49,11 +58,18 @@ from .const import (
     CONF_COMPARADOR_ENVIO,
     CONF_COMPARADOR_FORMATO,
     CONF_COMPARADOR_UMBRAL,
+    CONF_COMPARAR_FIN_MES,
     CONF_COMPARAR_MENSUAL,
     CONF_CONTRATOS_ANTERIORES,
+    CONF_DATADIS_CLAVE,
+    CONF_DATADIS_CUENTA,
+    CONF_DATADIS_USUARIO,
     CONF_DIAS_EMISION,
+    CONF_FACTURA_EN_CURSO,
     CONF_FIN_ULTIMA_FACTURA,
     CONF_FUENTE,
+    CONF_FUENTE_OFICIAL,
+    CONF_FUENTE_REGISTRO,
     CONF_IDS_HEREDADOS,
     CONF_POTENCIA_P1,
     CONF_POTENCIA_P2,
@@ -64,19 +80,28 @@ from .const import (
     CONF_TIPO_FUENTE,
     DEFAULT_ALQUILER,
     DEFAULT_DIAS_EMISION,
+    DEFAULT_EN_CURSO,
     ENVIOS_COMPARADOR,
     FORMATOS_COMPARADOR,
     FRECUENCIAS_SHELLY,
+    FUENTE_AMBOS,
+    FUENTE_DATADIS,
     FUENTE_ESTADISTICA,
+    FUENTE_NINGUNA,
     FUENTE_SENSOR,
+    MODOS_EN_CURSO,
+    SUBENTRY_DATADIS,
     SUBENTRY_SUMINISTRO,
     TIPOS_FUENTE,
 )
+from .cuenta_datadis import estadistica_de
 from .engine import LIMITES_ANUALES_KWH, Bono
 from .estadistica import id_estadistica
 from .factura_pdf import DatosFactura, FacturaNoReconocida, leer_factura
 from .facturacion import FacturaFutura
+from .flujo_datadis import async_probar, cups_configurados, datos_cuenta
 from .helpers import TERRITORIO_PENINSULA, config_entrada, territorio
+from .idiomas import idioma
 from .prices.aiopvpc.const import REFERENCE_TZ
 from .validacion import (
     MAX_KWH_FACTURA,
@@ -118,7 +143,55 @@ def _select(opciones: list[str], clave: str) -> SelectSelector:
 
 
 def fuente_en_uso(datos_suministros: list[dict[str, Any]], tipo: str, fuente: str) -> bool:
-    return any(d.get(CONF_TIPO_FUENTE) == tipo and d.get(CONF_FUENTE) == fuente for d in datos_suministros)
+    """Otro suministro ya usa esa fuente (un medidor cuenta igual con «sensor» que con «ambos»)."""
+    con_medidor = (FUENTE_SENSOR, FUENTE_AMBOS)
+    tipos = con_medidor if tipo in con_medidor else (tipo,)
+    return any(d.get(CONF_TIPO_FUENTE) in tipos and d.get(CONF_FUENTE) == fuente for d in datos_suministros)
+
+
+def selector_fuente(tipo: str) -> Any:
+    """Selector del paso «fuente»: un sensor de energía (medidor) o una estadística externa."""
+    if tipo in (FUENTE_SENSOR, FUENTE_AMBOS):
+        return EntitySelector(EntitySelectorConfig(domain="sensor", device_class="energy"))
+    return StatisticSelector(StatisticSelectorConfig())
+
+
+def validar_fuente(
+    hass: HomeAssistant, entry: ConfigEntry, tipo: str, fuente: str | None, excluir: str | None = None
+) -> str | None:
+    """Error del campo «fuente» (o None si vale). `excluir`: el suministro que se está cambiando."""
+    if not fuente:
+        return "obligatorio"
+    otros = [dict(s.data) for sid, s in entry.subentries.items() if sid != excluir]
+    if fuente_en_uso(otros, tipo, fuente):
+        return "fuente_en_uso"
+    if tipo == FUENTE_ESTADISTICA:
+        # Las estadísticas de entidades (sensor.x) se eligen como sensor.
+        if fuente_en_uso(otros, FUENTE_DATADIS, fuente):
+            return "fuente_en_uso"
+        return None if ":" in fuente else "estadistica_no_externa"
+    estado = hass.states.get(fuente)
+    if estado is None:
+        return "fuente_no_encontrada"
+    if (
+        estado.attributes.get("device_class") != "energy"
+        or estado.attributes.get("unit_of_measurement") not in UNIDADES_ENERGIA
+        or estado.attributes.get("state_class") not in STATE_CLASSES_ENERGIA
+    ):
+        return "fuente_no_energia"
+    return None
+
+
+def poner_fuente(hass: HomeAssistant, datos: dict[str, Any], tipo: str, fuente: str) -> None:
+    """Guarda la fuente en los datos del suministro; un medidor, también con su UUID del registro."""
+    datos[CONF_FUENTE] = fuente
+    if tipo in (FUENTE_SENSOR, FUENTE_AMBOS):
+        # El UUID del registro sigue a la entidad si se renombra (fuentes.py).
+        entidad = er.async_get(hass).async_get(fuente)
+        if entidad is not None:
+            datos[CONF_FUENTE_REGISTRO] = entidad.id
+        else:  # sin entrada en el registro (p. ej. un sensor de YAML sin unique_id)
+            datos.pop(CONF_FUENTE_REGISTRO, None)
 
 
 class SuministroSubentryFlow(ConfigSubentryFlow):
@@ -130,6 +203,11 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
         self._leida: DatosFactura | None = None
         self._lote: Subida | None = None
         self._hecha: tuple[date, date] | None = None
+        # Cuenta de Datadis nueva que se crea con el suministro (título, datos) y lo que hace falta
+        # para elegir el CUPS si la cuenta tiene varios.
+        self._cuenta_nueva: tuple[str, dict[str, Any]] | None = None
+        self._credenciales: dict[str, Any] = {}
+        self._cups: list[dict[str, Any]] = []
 
     # --- entradas -------------------------------------------------------------------
 
@@ -248,30 +326,186 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
         )
         return self.async_show_form(step_id=step_id, data_schema=esquema, errors=errores)
 
+    def _sin_shelly(self) -> None:
+        self._datos.update({CONF_SHELLY_IP: None, CONF_SHELLY_FRECUENCIA: "desactivada"})
+
+    def _puede_ser_shelly(self, fuente: str) -> bool:
+        """El paso de la memoria del Shelly EM solo tiene sentido con un Shelly. Cualquier otro medidor de
+        energía (Emporia, IoTaWatt, lector P1, pinza Zigbee, utility_meter…) funciona igual sin él. Si no
+        se sabe (entidad sin registro, p. ej. de YAML), se ofrece, como antes."""
+        if self._datos.get(CONF_SHELLY_IP):
+            return True
+        entidad = er.async_get(self.hass).async_get(fuente)
+        return entidad is None or entidad.platform == "shelly" or "shelly" in fuente.lower()
+
+    async def _comprobacion_o_factura(self) -> SubentryFlowResult:
+        if self._puede_ser_shelly(self._datos[CONF_FUENTE]):
+            return await self.async_step_comprobacion()
+        self._sin_shelly()
+        return await self.async_step_factura()
+
     async def async_step_fuente(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         tipo = self._datos[CONF_TIPO_FUENTE]
+        if tipo != FUENTE_AMBOS:
+            self._datos.pop(CONF_FUENTE_OFICIAL, None)
+        if tipo not in (FUENTE_DATADIS, FUENTE_AMBOS):
+            self._datos.pop(CONF_DATADIS_CUENTA, None)
+        if tipo not in (FUENTE_SENSOR, FUENTE_AMBOS):
+            self._datos.pop(CONF_FUENTE_REGISTRO, None)
+        if tipo == FUENTE_NINGUNA:  # solo facturas: ni medidor ni Datadis
+            self._datos[CONF_FUENTE] = None
+            self._sin_shelly()
+            return await self.async_step_factura()
+        if tipo == FUENTE_DATADIS:
+            return await self.async_step_datadis()
         errores: dict[str, str] = {}
         if user_input is not None:
             fuente = user_input.get(CONF_FUENTE)
-            error = self._validar_fuente(tipo, fuente) if fuente else "obligatorio"
-            if error:
+            if error := self._validar_fuente(tipo, fuente):
                 errores[CONF_FUENTE] = error
             else:
-                self._datos[CONF_FUENTE] = fuente
+                poner_fuente(self.hass, self._datos, tipo, fuente)
                 if tipo == FUENTE_SENSOR:
-                    return await self.async_step_comprobacion()
-                self._datos.update({CONF_SHELLY_IP: None, CONF_SHELLY_FRECUENCIA: "desactivada"})
+                    return await self._comprobacion_o_factura()
+                if tipo == FUENTE_AMBOS:
+                    return await self.async_step_datadis()
+                self._sin_shelly()
                 return await self.async_step_factura()
 
-        if tipo == FUENTE_SENSOR:
-            selector: Any = EntitySelector(EntitySelectorConfig(domain="sensor", device_class="energy"))
-        else:
-            selector = StatisticSelector(StatisticSelectorConfig())
         actual = (user_input or {}).get(CONF_FUENTE, self._datos.get(CONF_FUENTE))
         # El frontend no sabe dar valor inicial a un selector de estadística obligatorio: con
         # vol.Required y sin valor pinta un formulario vacío. Lo obligatorio se comprueba arriba.
-        esquema = vol.Schema({vol.Optional(CONF_FUENTE, description={"suggested_value": actual}): selector})
+        esquema = vol.Schema(
+            {vol.Optional(CONF_FUENTE, description={"suggested_value": actual}): selector_fuente(tipo)}
+        )
         return self.async_show_form(step_id="fuente", data_schema=esquema, errors=errores)
+
+    # --- Datadis (fuente «datadis» o «ambos») -------------------------------------------
+
+    def _cuentas_datadis(self) -> dict[str, ConfigSubentry]:
+        return {
+            sid: s for sid, s in self._get_entry().subentries.items() if s.subentry_type == SUBENTRY_DATADIS
+        }
+
+    async def async_step_datadis(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        """Qué cuenta de Datadis da la curva: una que ya existe o una nueva (se crea con el suministro)."""
+        cuentas = self._cuentas_datadis()
+        if not cuentas:
+            return await self.async_step_datadis_nueva()
+        errores: dict[str, str] = {}
+        if user_input is not None:
+            elegida = user_input["cuenta"]
+            if elegida == "nueva":
+                return await self.async_step_datadis_nueva()
+            if elegida in cuentas:
+                estadistica = estadistica_de(cuentas[elegida])
+                if self._datos[CONF_TIPO_FUENTE] == FUENTE_DATADIS and self._validar_fuente(
+                    FUENTE_ESTADISTICA, estadistica
+                ):
+                    errores["cuenta"] = "fuente_en_uso"
+                else:
+                    self._cuenta_nueva = None
+                    return await self._usar_datadis(elegida, estadistica)
+        opciones = [
+            SelectOptionDict(value=sid, label=f"{s.title} ({estadistica_de(s)})")
+            for sid, s in cuentas.items()
+        ]
+        opciones.append(SelectOptionDict(value="nueva", label="+"))
+        actual = self._datos.get(CONF_DATADIS_CUENTA)
+        esquema = vol.Schema(
+            {
+                vol.Required(
+                    "cuenta", default=actual if actual in cuentas else next(iter(cuentas))
+                ): SelectSelector(
+                    SelectSelectorConfig(
+                        options=opciones, mode=SelectSelectorMode.LIST, translation_key="cuenta"
+                    )
+                )
+            }
+        )
+        return self.async_show_form(step_id="datadis", data_schema=esquema, errors=errores)
+
+    async def async_step_datadis_nueva(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        """Usuario y contraseña de datadis.es: la cuenta se crea al terminar el alta del suministro."""
+        errores: dict[str, str] = {}
+        if user_input is not None:
+            usuario = user_input[CONF_DATADIS_USUARIO].strip().upper()
+            suministros, error = await async_probar(self.hass, usuario, user_input[CONF_DATADIS_CLAVE])
+            if error:
+                errores["base"] = error
+            elif not suministros:
+                errores["base"] = "sin_suministros"
+            else:
+                self._credenciales = {
+                    CONF_DATADIS_USUARIO: usuario,
+                    CONF_DATADIS_CLAVE: user_input[CONF_DATADIS_CLAVE],
+                }
+                self._cups = [s for s in suministros if s.get("cups")]
+                if len(self._cups) == 1:
+                    return await self._usar_cups(self._cups[0])
+                return await self.async_step_datadis_cups()
+        esquema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_DATADIS_USUARIO, default=(user_input or {}).get(CONF_DATADIS_USUARIO, "")
+                ): TextSelector(),
+                vol.Required(CONF_DATADIS_CLAVE): TextSelector(
+                    TextSelectorConfig(type=TextSelectorType.PASSWORD)
+                ),
+            }
+        )
+        return self.async_show_form(step_id="datadis_nueva", data_schema=esquema, errors=errores)
+
+    async def async_step_datadis_cups(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        if user_input is not None:
+            return await self._usar_cups(next(s for s in self._cups if s["cups"] == user_input["cups"]))
+        opciones = [
+            SelectOptionDict(
+                value=s["cups"],
+                label=" · ".join(
+                    str(x) for x in (s["cups"], s.get("municipality"), s.get("distributor")) if x
+                ),
+            )
+            for s in self._cups
+        ]
+        esquema = vol.Schema(
+            {
+                vol.Required("cups"): SelectSelector(
+                    SelectSelectorConfig(options=opciones, mode=SelectSelectorMode.LIST)
+                )
+            }
+        )
+        return self.async_show_form(step_id="datadis_cups", data_schema=esquema)
+
+    async def _usar_cups(self, suministro: dict[str, Any]) -> SubentryFlowResult:
+        ya = cups_configurados(self._get_entry()).get(suministro.get("cups"))
+        if ya is not None:  # ese CUPS ya tiene cuenta: se usa la que hay
+            self._cuenta_nueva = None
+            return await self._usar_datadis(ya, estadistica_de(self._get_entry().subentries[ya]))
+        self._cuenta_nueva = datos_cuenta(self._credenciales, suministro)
+        return await self._usar_datadis(None, self._cuenta_nueva[1]["estadistica"])
+
+    async def _usar_datadis(self, cuenta: str | None, estadistica: str) -> SubentryFlowResult:
+        """Enlaza el suministro con la estadística de la cuenta (la cuenta nueva se crea al final)."""
+        self._datos[CONF_DATADIS_CUENTA] = cuenta
+        if self._datos[CONF_TIPO_FUENTE] == FUENTE_AMBOS:
+            self._datos[CONF_FUENTE_OFICIAL] = estadistica
+            return await self._comprobacion_o_factura()
+        self._datos[CONF_FUENTE] = estadistica
+        self._sin_shelly()
+        return await self.async_step_factura()
+
+    def _crear_cuenta_nueva(self) -> None:
+        """Crea la cuenta de Datadis elegida en este flujo (si es nueva) y enlaza el suministro con ella."""
+        if self._cuenta_nueva is None:
+            return
+        titulo, datos = self._cuenta_nueva
+        cuenta = ConfigSubentry(
+            data=MappingProxyType(datos), subentry_type=SUBENTRY_DATADIS, title=titulo, unique_id=None
+        )
+        self.hass.config_entries.async_add_subentry(self._get_entry(), cuenta)
+        self._datos[CONF_DATADIS_CUENTA] = cuenta.subentry_id
+        self._cuenta_nueva = None
 
     async def async_step_comprobacion(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         """Opcional: comprobar el consumo de HA con la memoria de un Shelly EM."""
@@ -308,7 +542,9 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
             if codigo_postal and not (len(codigo_postal) == 5 and codigo_postal.isdigit()):
                 errores[CONF_CODIGO_POSTAL] = "codigo_postal_invalido"
             elif not codigo_postal and (
-                user_input.get(CONF_COMPARAR_MENSUAL) or user_input.get(CONF_SEGUNDA_OPINION)
+                user_input.get(CONF_COMPARAR_MENSUAL)
+                or user_input.get(CONF_COMPARAR_FIN_MES)
+                or user_input.get(CONF_SEGUNDA_OPINION)
             ):
                 errores[CONF_CODIGO_POSTAL] = "codigo_postal_requerido"
             if error := self._validar_fin_ultima_factura(user_input.get(CONF_FIN_ULTIMA_FACTURA)):
@@ -323,6 +559,7 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
                     CONF_ARRASTRE_INICIAL: int(user_input.get(CONF_ARRASTRE_INICIAL) or 0),
                     CONF_CODIGO_POSTAL: codigo_postal or None,
                     CONF_COMPARAR_MENSUAL: bool(user_input.get(CONF_COMPARAR_MENSUAL)),
+                    CONF_COMPARAR_FIN_MES: bool(user_input.get(CONF_COMPARAR_FIN_MES)),
                     CONF_SEGUNDA_OPINION: bool(user_input.get(CONF_SEGUNDA_OPINION)),
                     CONF_COMPARADOR_DESTINO: user_input.get(CONF_COMPARADOR_DESTINO) or None,
                     CONF_COMPARADOR_ENVIO: user_input.get(CONF_COMPARADOR_ENVIO, "siempre"),
@@ -330,7 +567,12 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
                     CONF_COMPARADOR_FORMATO: user_input.get(CONF_COMPARADOR_FORMATO, "completo"),
                 }
             )
+            # Solo se guarda si se ha cambiado alguna vez (sin la clave rige DEFAULT_EN_CURSO).
+            en_curso = user_input.get(CONF_FACTURA_EN_CURSO, DEFAULT_EN_CURSO)
+            if en_curso != DEFAULT_EN_CURSO or CONF_FACTURA_EN_CURSO in self._datos:
+                self._datos[CONF_FACTURA_EN_CURSO] = en_curso
             self._datos.setdefault(CONF_IDS_HEREDADOS, {})
+            self._crear_cuenta_nueva()
             if self._reconfigurando:
                 inicio_antes = self._inicio_periodo_actual()
                 nuevo = self._datos.get(CONF_FIN_ULTIMA_FACTURA)
@@ -375,6 +617,7 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
                     CONF_CODIGO_POSTAL, description={"suggested_value": actual.get(CONF_CODIGO_POSTAL)}
                 ): str,
                 vol.Optional(CONF_COMPARAR_MENSUAL, default=bool(actual.get(CONF_COMPARAR_MENSUAL))): bool,
+                vol.Optional(CONF_COMPARAR_FIN_MES, default=bool(actual.get(CONF_COMPARAR_FIN_MES))): bool,
                 vol.Optional(CONF_SEGUNDA_OPINION, default=bool(actual.get(CONF_SEGUNDA_OPINION))): bool,
                 vol.Optional(
                     CONF_COMPARADOR_DESTINO,
@@ -391,6 +634,15 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
                 ): _select(FORMATOS_COMPARADOR, CONF_COMPARADOR_FORMATO),
             }
         )
+        if self._datos.get(CONF_TIPO_FUENTE) != FUENTE_NINGUNA:
+            # Qué enseñar mientras la fuente no ha publicado las últimas horas (Datadis tarda días).
+            esquema = esquema.extend(
+                {
+                    vol.Optional(
+                        CONF_FACTURA_EN_CURSO, default=actual.get(CONF_FACTURA_EN_CURSO, DEFAULT_EN_CURSO)
+                    ): _select(list(MODOS_EN_CURSO), CONF_FACTURA_EN_CURSO)
+                }
+            )
         return self.async_show_form(step_id="factura", data_schema=esquema, errors=errores)
 
     # --- factura real (conciliación) -------------------------------------------------
@@ -580,8 +832,8 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
                 },
             )
         lineas = [f"- {_dma(f.inicio)} – {_dma(f.fin)}: **{_euros_texto(f.total)}**" for _, f in buenas]
-        es = self.hass.config.language.split("-")[0] == "es"
-        motivos = MOTIVOS_ZIP["es" if es else "en"]
+        lengua = idioma(self.hass.config.language)
+        motivos = MOTIVOS_ZIP[lengua]
         malas = [f"- {nombre}: {motivos.get(motivo, motivo)}" for nombre, motivo in lote.malas]
         return self.async_show_form(
             step_id="factura_lote",
@@ -589,25 +841,13 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
             description_placeholders={
                 "n": str(len(buenas)),
                 "lista": "\n".join(lineas),
-                "descartadas": (
-                    "\n\n" + ("Se quedan fuera:" if es else "Left out:") + "\n" + "\n".join(malas)
-                )
-                if malas
-                else "",
+                "descartadas": ("\n\n" + QUEDAN_FUERA[lengua] + "\n" + "\n".join(malas)) if malas else "",
             },
         )
 
     def _sugerencia_factura(self, facturacion: Any) -> dict[str, Any]:
-        leida = self._leida
-        if leida is not None:
-            return {
-                "inicio": leida.inicio.isoformat(),
-                "fin": leida.fin.isoformat(),
-                "emision": leida.emision.isoformat() if leida.emision else None,
-                **{f"kwh_{p.lower()}": v for p, v in leida.kwh.items()},
-                "total": float(leida.total),
-                "kwh_bonificados": leida.bonificados,
-            }
+        if self._leida is not None:
+            return campos_factura(self._leida)
         pendiente = facturacion.periodo_pendiente()
         if pendiente is None:
             return {}
@@ -621,27 +861,9 @@ class SuministroSubentryFlow(ConfigSubentryFlow):
 
     # --- validación -----------------------------------------------------------------
 
-    def _validar_fuente(self, tipo: str, fuente: str) -> str | None:
-        otros = [
-            dict(s.data)
-            for sid, s in self._get_entry().subentries.items()
-            if not (self._reconfigurando and sid == self._reconfigure_subentry_id)
-        ]
-        if fuente_en_uso(otros, tipo, fuente):
-            return "fuente_en_uso"
-        if tipo == FUENTE_ESTADISTICA:
-            # Las estadísticas de entidades (sensor.x) se eligen como sensor.
-            return None if ":" in fuente else "estadistica_no_externa"
-        estado = self.hass.states.get(fuente)
-        if estado is None:
-            return "fuente_no_encontrada"
-        if (
-            estado.attributes.get("device_class") != "energy"
-            or estado.attributes.get("unit_of_measurement") not in UNIDADES_ENERGIA
-            or estado.attributes.get("state_class") not in STATE_CLASSES_ENERGIA
-        ):
-            return "fuente_no_energia"
-        return None
+    def _validar_fuente(self, tipo: str, fuente: str | None) -> str | None:
+        excluir = self._reconfigure_subentry_id if self._reconfigurando else None
+        return validar_fuente(self.hass, self._get_entry(), tipo, fuente, excluir)
 
 
 # Límites de lo subido (para no leer un ZIP enorme o malicioso). Una factura de la COR pesa ~1 MiB;
@@ -664,6 +886,7 @@ MOTIVOS_ZIP = {
         "factura_futura": "acaba después de hoy (revisa las fechas de la factura)",
         "periodo_no_valido": "el periodo no tiene entre 1 y 62 días",
         "datos_no_validos": "importe a cero o más kWh bonificados que consumidos",
+        "pdf_no_subido": "no se ha podido leer el archivo subido (vuelve a subirlo)",
     },
     "en": {
         "pdf_no_reconocido": "not recognised (only bills from Comercializadora Regulada, Gas & Power)",
@@ -674,7 +897,49 @@ MOTIVOS_ZIP = {
         "factura_futura": "ends after today (check the bill dates)",
         "periodo_no_valido": "the period is not between 1 and 62 days",
         "datos_no_validos": "zero amount, or more discounted kWh than consumed",
+        "pdf_no_subido": "the uploaded file could not be read (upload it again)",
     },
+    "ca": {
+        "pdf_no_reconocido": "no es reconeix (només factures de la Comercializadora Regulada, Gas & Power)",
+        "es_abono": "és un abonament (import negatiu)",
+        "demasiado_grande": "massa gran",
+        "sobran": f"hi ha més de {MAX_FACTURAS_ZIP} PDF al ZIP",
+        "no_legible": "no es pot descomprimir (té contrasenya o està malmès?)",
+        "factura_futura": "acaba després d'avui (revisa les dates de la factura)",
+        "periodo_no_valido": "el període no té entre 1 i 62 dies",
+        "datos_no_validos": "import a zero o més kWh bonificats que consumits",
+        "pdf_no_subido": "no s'ha pogut llegir el fitxer pujat (torna'l a pujar)",
+    },
+    "gl": {
+        "pdf_no_reconocido": "non se recoñece (só facturas da Comercializadora Regulada, Gas & Power)",
+        "es_abono": "é un abono (importe negativo)",
+        "demasiado_grande": "demasiado grande",
+        "sobran": f"hai máis de {MAX_FACTURAS_ZIP} PDF no ZIP",
+        "no_legible": "non se pode descomprimir (ten contrasinal ou está danado?)",
+        "factura_futura": "remata despois de hoxe (revisa as datas da factura)",
+        "periodo_no_valido": "o período non ten entre 1 e 62 días",
+        "datos_no_validos": "importe a cero ou máis kWh bonificados que consumidos",
+        "pdf_no_subido": "non se puido ler o ficheiro subido (vólveo subir)",
+    },
+    "eu": {
+        "pdf_no_reconocido": "ez da ezagutzen (Comercializadora Regulada, Gas & Power-en fakturak soilik)",
+        "es_abono": "abonu bat da (zenbateko negatiboa)",
+        "demasiado_grande": "handiegia",
+        "sobran": f"{MAX_FACTURAS_ZIP} PDF baino gehiago daude ZIPean",
+        "no_legible": "ezin da deskonprimitu (pasahitza du edo hondatuta dago?)",
+        "factura_futura": "gaur baino geroago amaitzen da (berrikusi fakturaren datak)",
+        "periodo_no_valido": "aldiak ez ditu 1 eta 62 egun artean",
+        "datos_no_validos": "zenbatekoa zero da, edo kWh hobaridunak kontsumitutakoak baino gehiago dira",
+        "pdf_no_subido": "ezin izan da igotako fitxategia irakurri (igo ezazu berriro)",
+    },
+}
+# Encabezado de las facturas del ZIP que no entran (formulario del lote).
+QUEDAN_FUERA = {
+    "es": "Se quedan fuera:",
+    "en": "Left out:",
+    "ca": "Es queden fora:",
+    "gl": "Quedan fóra:",
+    "eu": "Kanpoan geratzen dira:",
 }
 
 
@@ -712,6 +977,19 @@ class Subida:
             self.malas.append((nombre, "es_abono"))
         else:
             self.buenas.append((nombre, factura))
+
+
+def campos_factura(f: DatosFactura) -> dict[str, Any]:
+    """Una factura leída con los campos del formulario `factura_datos` (y del servicio
+    `conciliar_factura`)."""
+    return {
+        "inicio": f.inicio.isoformat(),
+        "fin": f.fin.isoformat(),
+        "emision": f.emision.isoformat() if f.emision else None,
+        **{f"kwh_{p.lower()}": v for p, v in f.kwh.items()},
+        "total": float(f.total),
+        "kwh_bonificados": f.bonificados,
+    }
 
 
 def _leer_subida(hass: Any, archivo: str) -> Subida:

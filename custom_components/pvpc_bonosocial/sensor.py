@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
@@ -19,13 +19,11 @@ from homeassistant.const import (
     CURRENCY_EURO,
     UnitOfEnergy,
     UnitOfPower,
-    UnitOfTime,
 )
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
@@ -37,15 +35,12 @@ from .const import (
     DEFAULT_ENABLE_PRIVATE_API,
     DEFAULT_NAME,
     DEFAULT_SHOW_REFERENCE_PRICE,
-    DEFAULT_UPDATE_FREQUENCY,
     DOMAIN,
     LEGACY_ATTR_ENABLE_INJECTION_PRICE,
     PREFIJO_ENTIDADES,
     PRICE_MODES,
     SUBENTRY_RESUMEN,
     SUFIJOS_ENTIDADES,
-    UPDATE_FREQUENCY_BY_SENSOR,
-    UPDATE_FREQUENCY_OPTIONS,
     normalize_better_price_target,
 )
 from .helpers import ahora_precios, config_entrada, make_sensor_unique_id
@@ -92,8 +87,7 @@ class PVPCAttributeSensorDescription(SensorEntityDescription):
     """Describe a PVPC attribute-backed sensor."""
 
     attribute_key: str | None = None
-    value_fn: Callable[[ElecPricesDataUpdateCoordinator], StateType] | None = None
-    update_every_minute: bool = False
+    value_fn: Callable[[ElecPricesDataUpdateCoordinator], StateType | datetime] | None = None
 
 
 def entity_id_de(clave: str) -> str:
@@ -101,32 +95,24 @@ def entity_id_de(clave: str) -> str:
     return f"sensor.{PREFIJO_ENTIDADES}{SUFIJOS_ENTIDADES[clave]}"
 
 
-def _format_time_to_better_price(
-    coordinator: ElecPricesDataUpdateCoordinator,
-) -> float | None:
+def _instante_mejor_precio(coordinator: ElecPricesDataUpdateCoordinator) -> datetime | None:
+    """Comienzo de la siguiente hora con el mejor precio (la de «Siguiente mejor precio»)."""
     next_target = _next_target_price(coordinator)
-    if not next_target:
-        return None
-    next_ts, _price, _ratio = next_target
-    now_utc = ensure_utc_time(dt_util.utcnow())
-    delta_seconds = int((next_ts - now_utc).total_seconds())
-    return _format_time_delta(coordinator, "pvpc_time_to_next_best", delta_seconds)
+    return next_target[0] if next_target else None
 
 
-def _format_time_to_next_price(
-    coordinator: ElecPricesDataUpdateCoordinator,
-) -> float | None:
+def _instante_siguiente_precio(coordinator: ElecPricesDataUpdateCoordinator) -> datetime | None:
+    """Comienzo de la hora del siguiente precio."""
     next_price = _next_price_candidate(coordinator)
-    if not next_price:
-        return None
-    next_ts, _price = next_price
-    now_utc = ensure_utc_time(dt_util.utcnow())
-    delta_seconds = int((next_ts - now_utc).total_seconds())
-    return _format_time_delta(coordinator, "pvpc_next_price_in", delta_seconds)
+    return next_price[0] if next_price else None
 
 
-def _segundos_hasta_periodo(coordinator: ElecPricesDataUpdateCoordinator, calcular) -> int:
-    """Segundos hasta el siguiente periodo según `calcular` (de precio o de potencia)."""
+def _inicio_siguiente_periodo(coordinator: ElecPricesDataUpdateCoordinator, calcular) -> datetime:
+    """Instante (UTC) en que empieza el siguiente periodo según `calcular` (de precio o de potencia).
+
+    Los periodos cambian siempre en una hora en punto local, así que basta el temporizador de cada
+    hora del coordinador para que el valor pase al siguiente cambio justo cuando llega este.
+    """
     now_local = ensure_utc_time(dt_util.utcnow()).astimezone(_local_timezone(coordinator))
     hour_start = now_local.replace(minute=0, second=0, microsecond=0)
     _current_period, _next_period, delta = calcular(
@@ -134,67 +120,16 @@ def _segundos_hasta_periodo(coordinator: ElecPricesDataUpdateCoordinator, calcul
         zone_ceuta_melilla=coordinator.api.tariff != TARIFFS[0],
         published=coordinator.api.published_period,
     )
-    # En UTC: el día del cambio de hora, la resta en hora de pared se come o suma una hora.
-    next_period_start = hour_start.astimezone(UTC) + delta
-    return int((next_period_start - now_local).total_seconds())
+    # En UTC: el día del cambio de hora, la suma en hora de pared se come o añade una hora.
+    return hour_start.astimezone(UTC) + delta
 
 
-def _format_time_to_next_period(coordinator: ElecPricesDataUpdateCoordinator) -> float | None:
-    segundos = _segundos_hasta_periodo(coordinator, get_current_and_next_price_periods)
-    return _format_time_delta(coordinator, "pvpc_next_period_in", segundos)
+def _instante_siguiente_periodo(coordinator: ElecPricesDataUpdateCoordinator) -> datetime:
+    return _inicio_siguiente_periodo(coordinator, get_current_and_next_price_periods)
 
 
-def _format_time_to_next_power_period(coordinator: ElecPricesDataUpdateCoordinator) -> float | None:
-    segundos = _segundos_hasta_periodo(coordinator, get_current_and_next_power_periods)
-    return _format_time_delta(coordinator, "pvpc_next_power_period_in", segundos)
-
-
-def _normalize_update_frequency(value: str | None) -> str:
-    if value in UPDATE_FREQUENCY_OPTIONS:
-        return value
-    return DEFAULT_UPDATE_FREQUENCY
-
-
-def _get_update_frequency(coordinator: ElecPricesDataUpdateCoordinator, sensor_key: str) -> str:
-    option_key = UPDATE_FREQUENCY_BY_SENSOR.get(sensor_key)
-    if not option_key:
-        return DEFAULT_UPDATE_FREQUENCY
-    config = config_entrada(coordinator.config_entry)
-    return _normalize_update_frequency(config.get(option_key))
-
-
-def _format_time_delta(
-    coordinator: ElecPricesDataUpdateCoordinator,
-    sensor_key: str,
-    delta_seconds: int,
-) -> float:
-    """Cuenta atrás en horas (device_class duration, unidad h): «9 h 34 min» en vez de «09:34».
-
-    Hasta la v1.2.1 era un texto «HH:MM» que se leía como una hora del reloj. Con «cada hora»
-    se redondea hacia arriba a horas enteras, como antes. Con «cada minuto» se publica el punto
-    medio del minuto ((m + 0,5) / 60): el frontend de HA trunca los minutos de la parte decimal
-    tras redondear a la precisión mostrada (2 decimales), y con el valor exacto m/60 un
-    «59 min» se quedaba en «58 min».
-    """
-    delta_seconds = max(delta_seconds, 0)
-    hours, remainder = divmod(delta_seconds, 3600)
-    if _get_update_frequency(coordinator, sensor_key) != "minute":
-        return float(hours + 1 if remainder else hours)
-    minutos = hours * 60 + remainder // 60
-    return round((minutos + 0.5) / 60, 4)
-
-
-def _apply_update_frequency(
-    description: PVPCAttributeSensorDescription,
-    frequency: str,
-) -> PVPCAttributeSensorDescription:
-    if frequency == "minute":
-        return replace(description, update_every_minute=True)
-    if frequency == "hourly":  # basta el temporizador de cada hora del coordinador
-        return replace(description, update_every_minute=False)
-    if frequency == "disabled":
-        return replace(description, update_every_minute=False, entity_registry_enabled_default=False)
-    return description
+def _instante_siguiente_periodo_potencia(coordinator: ElecPricesDataUpdateCoordinator) -> datetime:
+    return _inicio_siguiente_periodo(coordinator, get_current_and_next_power_periods)
 
 
 def _price_ratio_category(
@@ -423,12 +358,11 @@ REFERENCE_PRICE_SENSORS: dict[str, SensorEntityDescription] = {
         translation_key="precio_pvpc",
     ),
 }
-# Sensores «… en»: una duración en horas (HA la enseña como «9 h 34 min»), no una hora del reloj.
-# Sin state_class a propósito: una cuenta atrás no es una medida que merezca estadísticas.
+# Sensores «… en»: el instante del siguiente cambio (HA lo enseña como «dentro de 34 min»). El
+# estado solo cambia cuando cambia el objetivo, no cada minuto: hasta la v1.x eran una cuenta atrás
+# en horas que escribía un estado por minuto. Sin state_class: no es una medida.
 _CUENTA_ATRAS: dict[str, Any] = {
-    "device_class": SensorDeviceClass.DURATION,
-    "native_unit_of_measurement": UnitOfTime.HOURS,
-    "suggested_display_precision": 2,
+    "device_class": SensorDeviceClass.TIMESTAMP,
     "icon": "mdi:timer-sand",
 }
 # pylint: disable=unexpected-keyword-arg
@@ -486,8 +420,7 @@ ATTRIBUTE_SENSOR_TYPES: tuple[PVPCAttributeSensorDescription, ...] = (
     PVPCAttributeSensorDescription(
         key="pvpc_next_power_period_in",
         translation_key="siguiente_periodo_potencia_en",
-        value_fn=_format_time_to_next_power_period,
-        update_every_minute=True,
+        value_fn=_instante_siguiente_periodo_potencia,
         **_CUENTA_ATRAS,
     ),
     PVPCAttributeSensorDescription(
@@ -508,8 +441,7 @@ ATTRIBUTE_SENSOR_TYPES: tuple[PVPCAttributeSensorDescription, ...] = (
     PVPCAttributeSensorDescription(
         key="pvpc_next_period_in",
         translation_key="siguiente_periodo_en",
-        value_fn=_format_time_to_next_period,
-        update_every_minute=True,
+        value_fn=_instante_siguiente_periodo,
         **_CUENTA_ATRAS,
     ),
     PVPCAttributeSensorDescription(
@@ -551,8 +483,7 @@ ATTRIBUTE_SENSOR_TYPES: tuple[PVPCAttributeSensorDescription, ...] = (
     PVPCAttributeSensorDescription(
         key="pvpc_next_price_in",
         translation_key="siguiente_precio_en",
-        value_fn=_format_time_to_next_price,
-        update_every_minute=True,
+        value_fn=_instante_siguiente_precio,
         **_CUENTA_ATRAS,
     ),
     PVPCAttributeSensorDescription(
@@ -565,8 +496,7 @@ ATTRIBUTE_SENSOR_TYPES: tuple[PVPCAttributeSensorDescription, ...] = (
     PVPCAttributeSensorDescription(
         key="pvpc_time_to_next_best",
         translation_key="siguiente_mejor_precio_en",
-        value_fn=_format_time_to_better_price,
-        update_every_minute=True,
+        value_fn=_instante_mejor_precio,
         **_CUENTA_ATRAS,
     ),
     PVPCAttributeSensorDescription(
@@ -627,6 +557,17 @@ PRIVATE_API_ATTRIBUTE_SENSOR_TYPES: tuple[PVPCAttributeSensorDescription, ...] =
     ),
 )
 # pylint: enable=unexpected-keyword-arg
+# Precios hora a hora de hoy y de mañana. Son atributos para plantillas y tarjetas, no historial: no
+# se graban en el recorder (cambian con cada descarga y cada hora y multiplicaban el tamaño de cada
+# fila de estado). El estado y sus estadísticas no cambian.
+_ATRIBUTOS_PRECIO_HORARIOS = frozenset(
+    {
+        "price_02h_d",  # only on DST day change with 25h
+        "price_next_day_02h_d",
+        *(f"price_{hora:02d}h" for hora in range(24)),
+        *(f"price_next_day_{hora:02d}h" for hora in range(24)),
+    }
+)
 _ATRIBUTOS_PRECIO = frozenset(
     {
         "price_position",
@@ -634,10 +575,7 @@ _ATRIBUTOS_PRECIO = frozenset(
         "max_price_at",
         "min_price_at",
         "next_best_at",
-        "price_02h_d",  # only on DST day change with 25h
-        "price_next_day_02h_d",
-        *(f"price_{hora:02d}h" for hora in range(24)),
-        *(f"price_next_day_{hora:02d}h" for hora in range(24)),
+        *_ATRIBUTOS_PRECIO_HORARIOS,
     }
 )
 
@@ -665,12 +603,7 @@ async def async_setup_entry(
     show_reference_price = config.get(ATTR_SHOW_REFERENCE_PRICE, DEFAULT_SHOW_REFERENCE_PRICE)
     sensors = [ElecPriceSensor(coordinator, SENSOR_TYPES[0], entry_unique_id)]
     unique_id = entry_unique_id
-    for sensor_desc in ATTRIBUTE_SENSOR_TYPES:
-        update_key = UPDATE_FREQUENCY_BY_SENSOR.get(sensor_desc.key)
-        if update_key:
-            update_value = _normalize_update_frequency(config.get(update_key))
-            sensor_desc = _apply_update_frequency(sensor_desc, update_value)
-        sensors.append(PVPCAttributeSensor(coordinator, sensor_desc, unique_id))
+    sensors.extend(PVPCAttributeSensor(coordinator, desc, unique_id) for desc in ATTRIBUTE_SENSOR_TYPES)
     if enable_private_api and coordinator.api.using_private_api:
         sensors.extend(
             PVPCAttributeSensor(coordinator, sensor_desc, unique_id)
@@ -712,7 +645,9 @@ class ElecPriceSensor(CoordinatorEntity[ElecPricesDataUpdateCoordinator], Sensor
     """Class to hold the prices of electricity as a sensor."""
 
     _attr_has_entity_name = True
-    _unrecorded_attributes = frozenset({"colores_hoy", "colores_manana", "periodos_hoy", "periodos_manana"})
+    _unrecorded_attributes = frozenset(
+        {"colores_hoy", "colores_manana", "periodos_hoy", "periodos_manana", *_ATRIBUTOS_PRECIO_HORARIOS}
+    )
 
     def __init__(
         self,
@@ -831,21 +766,8 @@ class PVPCAttributeSensor(CoordinatorEntity[ElecPricesDataUpdateCoordinator], Se
         data = self.coordinator.data
         return data is not None and data.availability.get(KEY_PVPC, False)
 
-    async def async_added_to_hass(self) -> None:
-        """Handle entity which will be added."""
-        await super().async_added_to_hass()
-        if self.entity_description.update_every_minute:
-            self.async_on_remove(async_track_time_change(self.hass, self._update_on_time_change, second=[0]))
-        if self.entity_description.key in UPDATE_FREQUENCY_BY_SENSOR:
-            self._update_on_time_change(dt_util.utcnow())
-
-    @callback
-    def _update_on_time_change(self, now: datetime) -> None:
-        """Las cuentas atrás cambian cada minuto (lo de cada hora lo hace el coordinador)."""
-        self.async_write_ha_state()
-
     @property
-    def native_value(self) -> StateType:
+    def native_value(self) -> StateType | datetime:
         """Return the state of the sensor."""
         if self.entity_description.value_fn is not None:
             return self.entity_description.value_fn(self.coordinator)

@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 from homeassistant.components import persistent_notification
 from homeassistant.components.date import DateEntity
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
@@ -15,6 +14,7 @@ from homeassistant.util import dt as dt_util
 from .const import DOMAIN, SUBENTRY_SUMINISTRO
 from .facturacion import FacturacionSuministro
 from .helpers import primera_subentrada
+from .idiomas import error, fecha, idioma
 from .prices.aiopvpc.const import REFERENCE_TZ
 from .prices.coordinator import PVPCConfigEntry
 from .sensor_suministro import dispositivo, entity_id_suministro
@@ -29,6 +29,21 @@ AVISO_FECHA_PASADA = {
         "Period end on a past date",
         "You set {fecha} as the end of the current period of “{nombre}”. Since that date has already "
         "passed, the period closed on that day with a calculated bill and a new one has started.",
+    ),
+    "ca": (
+        "Fi del període en una data passada",
+        "Has fixat el {fecha} com a fi del període en curs de «{nombre}». Com que aquesta data ja ha passat, "
+        "el període s'ha tancat aquell dia amb una factura calculada i n'ha començat un de nou.",
+    ),
+    "gl": (
+        "Fin do período nunha data pasada",
+        "Fixaches o {fecha} como fin do período en curso de «{nombre}». Como esa data xa pasou, o período "
+        "pechouse ese día cunha factura calculada e comezou un novo.",
+    ),
+    "eu": (
+        "Aldiaren amaiera iraganeko data batean",
+        "{fecha} jarri duzu «{nombre}» hornidurako uneko aldiaren amaiera gisa. Data hori igaro denez, aldia "
+        "egun horretan itxi da faktura kalkulatu batekin, eta beste bat hasi da.",
     ),
 }
 
@@ -62,18 +77,26 @@ class FinPeriodo(CoordinatorEntity[FacturacionSuministro], DateEntity):
         try:
             await self.coordinator.async_fijar_corte(value)
         except ValueError as exc:
-            raise HomeAssistantError(str(exc)) from exc
+            inicio = self.coordinator.inicio_periodo
+            if inicio is None:
+                raise error(self.hass, "sin_periodo_en_curso") from exc
+            raise error(
+                self.hass,
+                "fin_periodo_no_valido",
+                inicio=f"{inicio:%d/%m/%Y}",
+                fin=f"{inicio + timedelta(days=62):%d/%m/%Y}",
+            ) from exc
         if value < dt_util.now(REFERENCE_TZ).date():  # con la fecha de hoy aún no se cierra
             self._avisar_fecha_pasada(value)
 
-    def _avisar_fecha_pasada(self, fecha: date) -> None:
+    def _avisar_fecha_pasada(self, dia: date) -> None:
         """Poner una fecha pasada cierra el periodo, y antes pasaba sin decir nada."""
-        idioma = "es" if self.hass.config.language.split("-")[0] in ("es", "ca", "gl", "eu") else "en"
-        titulo, texto = AVISO_FECHA_PASADA[idioma]
+        lengua = idioma(self.hass.config.language)
+        titulo, texto = AVISO_FECHA_PASADA[lengua]
         sub = self.coordinator.subentrada
         persistent_notification.async_create(
             self.hass,
-            texto.format(fecha=f"{fecha:%d/%m/%Y}", nombre=sub.title),
+            texto.format(fecha=fecha(dia, lengua), nombre=sub.title),
             title=titulo,
             notification_id=f"{DOMAIN}_fin_periodo_{sub.subentry_id}",
         )

@@ -46,12 +46,22 @@ from .const import (
 )
 from .flujo_resumen import POR_DEFECTO
 from .helpers import ahora_precios
+from .idiomas import idioma as idioma_de
 from .prices.aiopvpc.const import REFERENCE_TZ
 from .prices.aiopvpc.pvpc_tariff import _price_period_key
 from .prices.festivos import es_festivo_p3
 from .prices.historico import HistoricoPrecios
 from .prices.periodos import periodos_del_dia
-from .resumen import COLORES, DiaPrecios, Mensaje, Opciones, colores, texto_hoy, texto_manana
+from .resumen import (
+    COLORES,
+    ConsumoProvisional,
+    DiaPrecios,
+    Mensaje,
+    Opciones,
+    colores,
+    texto_hoy,
+    texto_manana,
+)
 
 _LOGGER = logging.getLogger(__name__)
 LABORABLES_REFERENCIA = 5
@@ -132,7 +142,7 @@ def _opciones(datos: Mapping[str, Any], markdown: bool, idioma: str, historico, 
         formato=datos.get(CONF_FORMATO_TABLA, "barras"),
         resto_hoy=bool(datos.get(CONF_RESTO_HOY, True)),
         markdown=markdown,
-        idioma="es" if idioma.startswith("es") else "en",
+        idioma=idioma_de(idioma),
         referencias=referencias,
     )
 
@@ -145,7 +155,7 @@ def texto(
     coordinador = entry.runtime_data
     historico: HistoricoPrecios | None = getattr(coordinador, "historico", None)
     if historico is None:
-        raise HomeAssistantError("Todavía no hay histórico de precios")
+        raise HomeAssistantError(translation_domain=DOMAIN, translation_key="sin_historico")
     ahora = ahora_precios(hass.config.time_zone)
     hoy = dia_precios(historico, ahora.date())
     if not manana:
@@ -157,10 +167,20 @@ def texto(
     facturacion = getattr(coordinador, "suministros", {}).get(datos.get(CONF_SUMINISTRO))
     if facturacion is not None and facturacion.data is not None:
         d = facturacion.data
-        if datos[CONF_INCLUIR_CONSUMO]:
-            consumo = (d.kwh_hoy, d.coste_hoy)
-        if datos[CONF_INCLUIR_FACTURA] and d.estimacion is not None and d.estimacion.acumulado is not None:
-            factura = (d.estimacion.acumulado.total, d.estimacion.prevision.total)
+        sin_fuente = getattr(facturacion, "sin_fuente", False)
+        provisional = getattr(d, "provisional", False)
+        if datos[CONF_INCLUIR_CONSUMO] and not sin_fuente:
+            if provisional and getattr(d, "datos_hasta", None) is not None:
+                # La fuente va con retraso (Datadis): ni «0 kWh» ni un coste de hoy que solo son los fijos.
+                estimado = d.modo_en_curso == "estimar" and d.kwh_hoy_estimado is not None
+                consumo = ConsumoProvisional(
+                    d.kwh_hoy_estimado if estimado else d.kwh_hoy, d.datos_hasta, estimado
+                )
+            else:
+                consumo = (d.kwh_hoy, d.coste_hoy)
+        acumulado = getattr(d, "acumulado_mostrado", None)
+        if datos[CONF_INCLUIR_FACTURA] and acumulado is not None and not sin_fuente:
+            factura = (acumulado.total, d.estimacion.prevision.total, provisional)
     return texto_manana(hoy, siguiente, _posicion(hoy, ahora), opciones, consumo, factura)
 
 

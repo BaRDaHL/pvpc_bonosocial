@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from decimal import ROUND_HALF_EVEN, Decimal
 
 COLORES = ("🟩", "🟨", "🟧", "🟥")
@@ -51,9 +51,16 @@ TEXTOS = {
         "media": "Media: hoy {hoy} → mañana {manana} ({cambio} %)",
         "consumo": "⚡ Consumido hasta ahora: {negrita}{kwh} kWh · {eur} €{negrita}",
         "factura": "🧾 Factura en curso: {acumulado} € (previsión {prevision} €)",
+        "consumo_estimado": (
+            "⚡ Consumido hasta ahora: {negrita}≈{kwh} kWh{negrita} (estimado; datos hasta {hasta})"
+        ),
+        "consumo_sin_datos": "⚡ Consumo de hoy: sin datos todavía (datos hasta {hasta})",
+        "consumo_recibido": "⚡ Consumido hasta {hasta}: {negrita}{kwh} kWh{negrita}",
+        "factura_provisional": "🧾 Factura en curso: ≈{acumulado} € provisional (previsión {prevision} €)",
         "sin_datos": "Sin datos de precios todavía.",
         "periodos": {"P1": "P", "P2": "L", "P3": "V"},
         "decimal": ",",
+        "dia_hora": "%d/%m %H:%M",  # strftime: «datos hasta» de otro día (eu: mes/día)
     },
     "en": {
         "titulo_hoy": "⚡ Electricity prices today (€/kWh)",
@@ -67,11 +74,98 @@ TEXTOS = {
         "media": "Average: today {hoy} → tomorrow {manana} ({cambio} %)",
         "consumo": "⚡ Used so far: {negrita}{kwh} kWh · {eur} €{negrita}",
         "factura": "🧾 Current bill: {acumulado} € (forecast {prevision} €)",
+        "consumo_estimado": "⚡ Used so far: {negrita}≈{kwh} kWh{negrita} (estimated; data until {hasta})",
+        "consumo_sin_datos": "⚡ Used today: no data yet (data until {hasta})",
+        "consumo_recibido": "⚡ Used until {hasta}: {negrita}{kwh} kWh{negrita}",
+        "factura_provisional": "🧾 Current bill: ≈{acumulado} € provisional (forecast {prevision} €)",
         "sin_datos": "No price data yet.",
         "periodos": {"P1": "P", "P2": "S", "P3": "O"},
         "decimal": ".",
+        "dia_hora": "%Y-%m-%d %H:%M",
+    },
+    "ca": {
+        "titulo_hoy": "⚡ Preus de la llum avui (€/kWh)",
+        "titulo_manana": "🌙 Preus de la llum demà vs. avui (€/kWh)",
+        "barata": " ⬅️ 🤑 barata",
+        "cara": " ⬅️ 💸 cara",
+        "ahora": " 👈 ara",
+        "separador": "──── demà ────",
+        "franjas": "🧺 Millors franges de {horas} h:",
+        "franjas_manana": "🧺 Millors franges de {horas} h demà:",
+        "media": "Mitjana: avui {hoy} → demà {manana} ({cambio} %)",
+        "consumo": "⚡ Consumit fins ara: {negrita}{kwh} kWh · {eur} €{negrita}",
+        "factura": "🧾 Factura en curs: {acumulado} € (previsió {prevision} €)",
+        "consumo_estimado": (
+            "⚡ Consumit fins ara: {negrita}≈{kwh} kWh{negrita} (estimat; dades fins a {hasta})"
+        ),
+        "consumo_sin_datos": "⚡ Consum d'avui: encara sense dades (dades fins a {hasta})",
+        "consumo_recibido": "⚡ Consumit fins a {hasta}: {negrita}{kwh} kWh{negrita}",
+        "factura_provisional": "🧾 Factura en curs: ≈{acumulado} € provisional (previsió {prevision} €)",
+        "sin_datos": "Encara no hi ha dades de preus.",
+        # Punta, pla i vall: la «P» ya es la punta; el llano («pla») lleva dos letras (se alinean).
+        "periodos": {"P1": "P", "P2": "Pl", "P3": "V"},
+        "decimal": ",",
+        "dia_hora": "%d/%m %H:%M",
+    },
+    "gl": {
+        "titulo_hoy": "⚡ Prezos da luz hoxe (€/kWh)",
+        "titulo_manana": "🌙 Prezos da luz mañá vs. hoxe (€/kWh)",
+        "barata": " ⬅️ 🤑 barata",
+        "cara": " ⬅️ 💸 cara",
+        "ahora": " 👈 agora",
+        "separador": "──── mañá ────",
+        "franjas": "🧺 Mellores franxas de {horas} h:",
+        "franjas_manana": "🧺 Mellores franxas de {horas} h mañá:",
+        "media": "Media: hoxe {hoy} → mañá {manana} ({cambio} %)",
+        "consumo": "⚡ Consumido ata agora: {negrita}{kwh} kWh · {eur} €{negrita}",
+        "factura": "🧾 Factura en curso: {acumulado} € (previsión {prevision} €)",
+        "consumo_estimado": (
+            "⚡ Consumido ata agora: {negrita}≈{kwh} kWh{negrita} (estimado; datos ata {hasta})"
+        ),
+        "consumo_sin_datos": "⚡ Consumo de hoxe: aínda sen datos (datos ata {hasta})",
+        "consumo_recibido": "⚡ Consumido ata {hasta}: {negrita}{kwh} kWh{negrita}",
+        "factura_provisional": "🧾 Factura en curso: ≈{acumulado} € provisional (previsión {prevision} €)",
+        "sin_datos": "Aínda non hai datos de prezos.",
+        "periodos": {"P1": "P", "P2": "C", "P3": "V"},
+        "decimal": ",",
+        "dia_hora": "%d/%m %H:%M",
+    },
+    "eu": {
+        "titulo_hoy": "⚡ Argindarraren prezioak gaur (€/kWh)",
+        "titulo_manana": "🌙 Argindarraren prezioak bihar, gaurkoekin alderatuta (€/kWh)",
+        "barata": " ⬅️ 🤑 merkea",
+        "cara": " ⬅️ 💸 garestia",
+        "ahora": " 👈 orain",
+        "separador": "──── bihar ────",
+        "franjas": "🧺 {horas} orduko tarte onenak:",
+        "franjas_manana": "🧺 Biharko {horas} orduko tarte onenak:",
+        "media": "Batez bestekoa: gaur {hoy} → bihar {manana} (% {cambio})",
+        "consumo": "⚡ Orain arte kontsumitua: {negrita}{kwh} kWh · {eur} €{negrita}",
+        "factura": "🧾 Aldi honetako faktura: {acumulado} € (aurreikuspena: {prevision} €)",
+        "consumo_estimado": (
+            "⚡ Orain arte kontsumitua: {negrita}≈{kwh} kWh{negrita} (zenbatetsia; datuak {hasta} arte)"
+        ),
+        "consumo_sin_datos": "⚡ Gaurko kontsumoa: oraindik daturik ez (datuak {hasta} arte)",
+        "consumo_recibido": "⚡ {hasta} arte kontsumitua: {negrita}{kwh} kWh{negrita}",
+        "factura_provisional": (
+            "🧾 Aldi honetako faktura: ≈{acumulado} € behin-behinean (aurreikuspena: {prevision} €)"
+        ),
+        "sin_datos": "Oraindik ez dago prezioen daturik.",
+        "periodos": {"P1": "P", "P2": "L", "P3": "H"},
+        "decimal": ",",
+        "dia_hora": "%m/%d %H:%M",
     },
 }
+
+
+@dataclass(frozen=True)
+class ConsumoProvisional:
+    """Consumo de hoy cuando la fuente aún no ha publicado todas las horas (Datadis va con días de
+    retraso): en vez de «0 kWh», lo estimado (`kwh`) o solo lo recibido (`estimado` falso)."""
+
+    kwh: Decimal  # estimado (medido + pendiente) o, con «solo lo recibido», lo medido
+    hasta: datetime  # fin (hora local) de la última hora con dato
+    estimado: bool
 
 
 @dataclass(frozen=True)
@@ -181,7 +275,9 @@ def _fila(
 ) -> str:
     hora = dia.horas[i]
     n = _cuadrados(dia.precios[i], escala)
-    periodo = f" {t['periodos'].get(dia.periodos[i] or '', '·')}" if _con_periodo(dia, opciones) else ""
+    letras = t["periodos"]
+    ancho = max(len(x) for x in letras.values())  # todas las filas igual de anchas (el «Pl» catalán)
+    periodo = f" {letras.get(dia.periodos[i] or '', '·').ljust(ancho)}" if _con_periodo(dia, opciones) else ""
     cabeza = f"{RELOJES[hora % 12]}{hora:02d}{periodo}"
     precio = _num(dia.precios[i], 3, t["decimal"]) + flecha  # la flecha, pegada al precio
     bolita = BOLITAS[COLORES.index(color)]
@@ -285,8 +381,8 @@ def texto_manana(
     manana: DiaPrecios | None,
     ahora: int,
     opciones: Opciones,
-    consumo: tuple[Decimal, Decimal] | None = None,
-    factura: tuple[Decimal, Decimal] | None = None,
+    consumo: tuple[Decimal, Decimal] | ConsumoProvisional | None = None,
+    factura: tuple[Decimal, Decimal] | tuple[Decimal, Decimal, bool] | None = None,
 ) -> Mensaje | None:
     """Mensaje de la noche. None si mañana aún no tiene precios (para reintentar)."""
     t = TEXTOS[opciones.idioma]
@@ -335,18 +431,28 @@ def texto_manana(
         medias = {"hoy": _num(media_hoy, 3, sep), "manana": _num(media_manana, 3, sep)}
         precios.append(t["media"].format(cambio=cambio, **medias))
     gasto = []
-    if consumo is not None:
+    negrita = "*" if opciones.markdown else ""
+    if isinstance(consumo, ConsumoProvisional):
+        hoy_local = consumo.hasta.date() if hoy is None else hoy.dia
+        hasta = (
+            f"{consumo.hasta:%H:%M}"
+            if consumo.hasta.date() == hoy_local
+            else consumo.hasta.strftime(t["dia_hora"])
+        )
+        if consumo.estimado:
+            clave = "consumo_estimado"
+        elif consumo.hasta.date() == hoy_local and consumo.hasta.hour:
+            clave = "consumo_recibido"
+        else:
+            clave = "consumo_sin_datos"
+        gasto.append(t[clave].format(negrita=negrita, kwh=_num(consumo.kwh, 1, sep), hasta=hasta))
+    elif consumo is not None:
         gasto.append(
-            t["consumo"].format(
-                negrita="*" if opciones.markdown else "",
-                kwh=_num(consumo[0], 1, sep),
-                eur=_num(consumo[1], 2, sep),
-            )
+            t["consumo"].format(negrita=negrita, kwh=_num(consumo[0], 1, sep), eur=_num(consumo[1], 2, sep))
         )
     if factura is not None:
-        gasto.append(
-            t["factura"].format(acumulado=_num(factura[0], 2, sep), prevision=_num(factura[1], 2, sep))
-        )
+        clave = "factura_provisional" if len(factura) > 2 and factura[2] else "factura"
+        gasto.append(t[clave].format(acumulado=_num(factura[0], 2, sep), prevision=_num(factura[1], 2, sep)))
     bloques = [
         "\n".join(precios),
         "\n".join(gasto),

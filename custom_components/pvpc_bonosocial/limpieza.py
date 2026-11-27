@@ -6,7 +6,7 @@ entrada). Por eso no se limpia «al borrar» sino al arrancar, reconciliando con
 
 - Stores: un índice propio (`pvpc_bonosocial.subentradas`, entry_id → subentradas) recuerda las
   subentradas de cada entrada; las que estaban en el índice y ya no están en la entrada se
-  borran (`suministro_`, `datadis_` y `comparador_<id>`). El registro común de consultas a
+  borran (`suministro_`, `shelly_`, `datadis_` y `comparador_<id>`). El registro común de consultas a
   Datadis (`datadis_consultas`) no es de ninguna subentrada y no se toca nunca (protección
   contra el 429).
 - Avisos: se recorre el issue registry y se borra cualquier aviso del dominio cuyo id lleve el
@@ -30,7 +30,7 @@ from homeassistant.helpers.storage import Store
 from .const import DOMAIN
 
 STORE_INDICE = f"{DOMAIN}.subentradas"
-STORES_POR_SUBENTRADA = ("suministro", "datadis", "comparador")
+STORES_POR_SUBENTRADA = ("suministro", "shelly", "datadis", "comparador")
 # Los id de subentrada son ULID (26 caracteres de Crockford base32) y van entre «_» en los avisos.
 _ULID_EN_AVISO = re.compile(r"(?:^|_)([0-9A-HJKMNP-TV-Z]{26})(?=_|$)")
 _CANDADO = f"{DOMAIN}_limpieza"

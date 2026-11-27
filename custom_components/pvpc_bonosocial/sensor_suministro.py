@@ -51,6 +51,10 @@ def _euros(x: Decimal | None) -> float | None:
     return None if x is None else float(x.quantize(Decimal("0.01")))
 
 
+def _iso(t: datetime | None) -> str | None:
+    return t.isoformat() if t is not None else None
+
+
 class _Base(CoordinatorEntity[FacturacionSuministro], SensorEntity):
     _attr_has_entity_name = True
     clave: str = ""
@@ -83,7 +87,9 @@ class FacturaActual(_Base):
     _attr_device_class = SensorDeviceClass.MONETARY
     _attr_native_unit_of_measurement = EUR
     _attr_suggested_display_precision = 2
-    _unrecorded_attributes = frozenset({"desglose", "kwh_medidos", "kwh_previstos", "facturas"})
+    _unrecorded_attributes = frozenset(
+        {"desglose", "kwh_medidos", "kwh_previstos", "facturas", "datos_hasta", "kwh_pendientes_estimados"}
+    )
 
     @property
     def native_value(self) -> float | None:
@@ -93,8 +99,18 @@ class FacturaActual(_Base):
     def extra_state_attributes(self) -> dict[str, Any]:
         e = self.d.estimacion
         f = e.prevision
+        sin_fuente = self.coordinator.sin_fuente
+        mostrado = self.d.acumulado_mostrado
         return {
-            "acumulado": _euros(e.acumulado.total) if e.acumulado else 0.0,
+            # Sin fuente no hay acumulado de energía: solo la previsión aproximada con la última factura.
+            "acumulado": None if sin_fuente else _euros(mostrado.total) if mostrado else 0.0,
+            "acumulado_medido": _euros(e.acumulado.total) if e.acumulado and not sin_fuente else None,
+            "provisional": self.d.provisional,
+            "aproximada": sin_fuente,
+            "datos_hasta": _iso(self.d.datos_hasta),
+            "horas_pendientes": self.d.horas_pendientes,
+            "kwh_pendientes_estimados": round(float(sum(e.kwh_pendientes.values(), Decimal(0))), 2),
+            "factura_en_curso": self.d.modo_en_curso,
             "prevision_baja": _euros(e.prevision_baja),
             "prevision_alta": _euros(e.prevision_alta),
             "inicio": e.inicio.isoformat(),
@@ -152,6 +168,10 @@ class FacturaAnterior(_Base):
             "estado": a.get("estado", "estimada"),
             "kwh": a.get("kwh"),
         }
+        if a.get("estado") != "conciliada":
+            out["provisional"] = bool(a.get("provisional") or a.get("incompleta"))
+            if a.get("aproximada"):
+                out["aproximada"] = True
         if a.get("estado") == "conciliada" and a.get("total_estimado"):
             out["estimada"] = float(Decimal(a["total_estimado"]))
             out["desviacion"] = float(Decimal(a["total_estimado"]) - Decimal(a["total"]))
@@ -168,6 +188,7 @@ class ComprobacionFactura(_Base):
         "no_cuadra",
         "arrastre",
         "incompleta",
+        "aproximada",
         "sin_comprobar",
         "cnmc_no_responde",
         "desactivada",
@@ -217,6 +238,8 @@ class CosteHoy(_Base):
     _attr_state_class = SensorStateClass.TOTAL
     _attr_native_unit_of_measurement = EUR
     _attr_suggested_display_precision = 2
+    # Cambian cada hora: no se guardan en el historial (no engordan la base de datos).
+    _unrecorded_attributes = frozenset({"kwh_hoy", "kwh_hoy_estimado", "datos_hasta", "provisional"})
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
@@ -224,8 +247,26 @@ class CosteHoy(_Base):
         self.async_on_remove(async_track_time_change(self.hass, self._escribir, hour=0, minute=0, second=0))
 
     @property
+    def available(self) -> bool:
+        # Sin fuente de consumo horario no hay coste de cada hora.
+        return super().available and not self.coordinator.sin_fuente
+
+    @property
     def native_value(self) -> float | None:
+        # Solo lo medido (lo lee el panel de Energía); lo pendiente estimado va en los atributos.
         return round(float(self.d.coste_hoy), 4)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        d = self.d
+        return {
+            "kwh_hoy": round(float(d.kwh_hoy), 3),
+            "kwh_hoy_estimado": round(float(d.kwh_hoy_estimado), 3)
+            if d.kwh_hoy_estimado is not None
+            else None,
+            "datos_hasta": _iso(d.datos_hasta),
+            "provisional": d.provisional,
+        }
 
     @property
     def last_reset(self) -> datetime:
@@ -281,19 +322,43 @@ class KwhBonificables(_Base):
     _attr_suggested_display_precision = 0
 
     @property
+    def available(self) -> bool:
+        # Sin consumo horario no se sabe cuántos quedan (la factura real lo dirá).
+        return super().available and not self.coordinator.sin_fuente
+
+    @property
     def native_value(self) -> float | None:
         return round(float(self.d.estimacion.kwh_bonificables_restantes), 1)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        return {"limite_periodo": self.d.estimacion.limite_kwh, "arrastre_kwh": self.d.arrastre_kwh}
+        e = self.d.estimacion
+        return {
+            "limite_periodo": e.limite_kwh,
+            "arrastre_kwh": self.d.arrastre_kwh,
+            # Lo pendiente de publicar cuenta como gastado (estimado): si no, sobrarían kWh de más.
+            "kwh_pendientes_estimados": round(float(sum(e.kwh_pendientes.values(), Decimal(0))), 2),
+            "provisional": self.d.provisional,
+        }
 
 
 class EstadoDatos(_Base):
     clave = "estado_datos"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    # Lo que cambia cada hora o es una lista no se guarda en el historial.
+    _unrecorded_attributes = frozenset(
+        {"datos_hasta", "retraso_h", "dias_con_huecos", "datos_oficiales_hasta", "horas_medidor"}
+    )
     _attr_device_class = SensorDeviceClass.ENUM
-    _attr_options = ["ok", "sin_fecha", "sin_consumo", "precios_incompletos", "consumo_incompleto"]  # noqa: RUF012
+    _attr_options = [  # noqa: RUF012
+        "ok",
+        "sin_fecha",
+        "sin_consumo",
+        "precios_incompletos",
+        "consumo_incompleto",
+        "datos_pendientes",
+        "sin_fuente",
+    ]
 
     @property
     def available(self) -> bool:
@@ -306,17 +371,25 @@ class EstadoDatos(_Base):
             return d.problema
         if d.horas_sin_precio:
             return "precios_incompletos"
-        if d.horas_sin_consumo:
-            return "consumo_incompleto"
-        return "ok"
+        # consumo_incompleto (huecos, o la fuente lleva más de lo normal sin datos) · datos_pendientes
+        # (lo normal de Datadis: las últimas horas aún no publicadas, estimadas) · ok
+        return d.estado_consumo
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         d = self.d
         historico = self.coordinator.historico
         dias = historico.dias()
-        return {
+        ahora = dt_util.utcnow()  # en UTC: restar dos horas de Madrid no cuenta el cambio de hora
+        out = {
             "fuente": self.coordinator.datos.get("fuente"),
+            "tipo_fuente": self.coordinator.tipo_fuente,
+            "datos_hasta": _iso(d.datos_hasta),
+            "retraso_h": int((ahora - d.datos_hasta).total_seconds() // 3600) if d.datos_hasta else None,
+            "horas_pendientes": d.horas_pendientes,
+            "huecos": d.huecos,
+            "dias_con_huecos": [x.isoformat() for x in d.dias_con_huecos[:10]],
+            "provisional": d.provisional,
             "ultima_hora_medida": d.ultima_hora_medida.isoformat() if d.ultima_hora_medida else None,
             "precios_hasta": dias[-1].isoformat() if dias else None,
             "tarifas": historico.tarifas.version if historico.tarifas else None,
@@ -335,6 +408,22 @@ class EstadoDatos(_Base):
             "horas_corregidas_shelly": d.horas_corregidas_shelly,
             "shelly": self.coordinator.estado_shelly if self.coordinator.usa_shelly else None,
         }
+        if self.coordinator.tipo_fuente == "ambos":
+            lectura = d.lectura
+            out["datos_oficiales_hasta"] = _iso(d.oficial_hasta)
+            out["horas_medidor"] = d.horas_medidor
+            out["calibracion_datadis"] = (
+                {
+                    "alfa": round(float(lectura.calibracion_datadis.alfa), 4),
+                    "consumo_no_medido_w": round(float(lectura.calibracion_datadis.gamma_kwh_hora) * 1000, 1),
+                }
+                if lectura and lectura.calibracion_datadis
+                else "sin calibrar"
+            )
+            out["datadis_frente_medidor"] = (
+                round(float(lectura.cociente_datadis), 4) if lectura and lectura.cociente_datadis else None
+            )
+        return out
 
 
 TIPOS = (

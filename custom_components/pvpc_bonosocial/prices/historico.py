@@ -118,6 +118,10 @@ class HistoricoPrecios:
         )
         self._dias: dict[date, PreciosDia] = {}
         self._periodos: dict[datetime, str | None] = {}
+        # Hora (inicio en UTC) → (PCB, TEU): la factura lo pide por cada hora del periodo.
+        self._horas: dict[datetime, tuple[Decimal, Decimal]] = {}
+        # Sube con cada cambio de precios: la factura no se recalcula si no ha cambiado nada.
+        self.version = 0
         # Días pasados que ESIOS no tiene o que no se pudieron leer: no se reintentan
         # hasta el siguiente arranque, para que el relleno no se atasque en ellos.
         self._sin_datos: set[date] = set()
@@ -129,6 +133,20 @@ class HistoricoPrecios:
 
     def dias(self) -> list[date]:
         return sorted(self._dias)
+
+    def hora(self, inicio_utc: datetime) -> tuple[str | None, Decimal, Decimal] | None:
+        """(periodo por el TEU, PCB, TEU) de la hora que empieza exactamente en `inicio_utc`, o None."""
+        precios = self._horas.get(inicio_utc)
+        if precios is None:
+            return None
+        return self._periodos.get(inicio_utc), precios[0], precios[1]
+
+    def periodos_dia(self, dia: date) -> list[str | None]:
+        """Periodo por el TEU de cada hora del día (orden del archivo 70), ya calculado al incorporarlo."""
+        precios = self._dias.get(dia)
+        if precios is None:
+            return []
+        return [self._periodos.get(inicio) for inicio in precios.inicios_utc()]
 
     def periodo_publicado(self, inicio: datetime) -> str | None:
         """Periodo por el TEU de la hora que empieza en `inicio`, o None sin dato."""
@@ -171,7 +189,14 @@ class HistoricoPrecios:
         }
 
     def _incorporar(self, precios: PreciosDia) -> None:
+        self.version += 1
+        previos = self._dias.get(precios.dia)
+        if previos is not None:
+            for inicio in previos.inicios_utc():
+                self._horas.pop(inicio, None)
         self._dias[precios.dia] = precios
+        for inicio, pcb, teu in zip(precios.inicios_utc(), precios.pcb, precios.teu, strict=True):
+            self._horas[inicio] = (pcb, teu)
         if self.tarifas is None:
             return
         periodos = periodos_del_dia(precios.dia, precios.teu, self.tarifas)
@@ -181,8 +206,10 @@ class HistoricoPrecios:
     def _purgar(self, hoy: date) -> None:
         limite = hoy - timedelta(days=DIAS_CONSERVADOS)
         for dia in [d for d in self._dias if d < limite]:
+            self.version += 1
             for inicio in self._dias.pop(dia).inicios_utc():
                 self._periodos.pop(inicio, None)
+                self._horas.pop(inicio, None)
 
     # --- descarga -------------------------------------------------------------------
 

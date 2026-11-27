@@ -41,17 +41,9 @@
           "name": "Nombre de la entrada",
           "tariff": "Tarifa aplicable por zona geográfica",
           "better_price_target": "Objetivo de «Siguiente mejor precio»",
-          "next_price_in_update": "Actualización de «Siguiente precio en»",
-          "next_best_in_update": "Actualización de «Siguiente mejor precio en»",
-          "next_period_in_update": "Actualización de «Siguiente periodo en»",
-          "next_power_period_in_update": "Actualización de «Siguiente periodo de potencia en»",
           "enable_private_api": "Usar la API privada de ESIOS (con token)"
         },
         "data_description": {
-          "next_price_in_update": "Cada minuto, cada hora o desactivado (la entidad se desactiva).",
-          "next_best_in_update": "Cada minuto, cada hora o desactivado (la entidad se desactiva).",
-          "next_period_in_update": "Cada minuto, cada hora o desactivado (la entidad se desactiva).",
-          "next_power_period_in_update": "Cada minuto, cada hora o desactivado (la entidad se desactiva).",
           "better_price_target": "Nivel de precio que tiene que alcanzar una hora para que «Siguiente mejor precio» la elija.",
           "name": "Nombre con el que aparece en Dispositivos y servicios. Los sensores se llaman siempre sensor.pvpc_bs_*."
         }
@@ -99,17 +91,9 @@
         "description": "PVPC + Bono Social funciona sin token (API pública de ESIOS). Con un token personal de ESIOS (API privada) se obtienen además el precio de los excedentes, el precio mayorista del día siguiente (OMIE), el ajuste del gas (MAG) y el modo de precio indexado. La potencia contratada se pide al añadir el suministro.",
         "data": {
           "better_price_target": "Objetivo de «Siguiente mejor precio»",
-          "next_price_in_update": "Actualización de «Siguiente precio en»",
-          "next_best_in_update": "Actualización de «Siguiente mejor precio en»",
-          "next_period_in_update": "Actualización de «Siguiente periodo en»",
-          "next_power_period_in_update": "Actualización de «Siguiente periodo de potencia en»",
           "enable_private_api": "Usar la API privada de ESIOS (con token)"
         },
         "data_description": {
-          "next_price_in_update": "Cada minuto, cada hora o desactivado (la entidad se desactiva).",
-          "next_best_in_update": "Cada minuto, cada hora o desactivado (la entidad se desactiva).",
-          "next_period_in_update": "Cada minuto, cada hora o desactivado (la entidad se desactiva).",
-          "next_power_period_in_update": "Cada minuto, cada hora o desactivado (la entidad se desactiva).",
           "better_price_target": "Nivel de precio que tiene que alcanzar una hora para que «Siguiente mejor precio» la elija."
         }
       },
@@ -269,7 +253,9 @@
           "sin_fecha": "Falta la fecha de la última factura",
           "sin_consumo": "Sin datos de consumo",
           "precios_incompletos": "Faltan precios",
-          "consumo_incompleto": "Faltan horas de consumo"
+          "consumo_incompleto": "Faltan horas de consumo",
+          "datos_pendientes": "Pendiente de datos (provisional)",
+          "sin_fuente": "Sin fuente de consumo (solo facturas)"
         }
       },
       "estado_datadis": {
@@ -295,7 +281,8 @@
           "incompleta": "No comparable (faltan horas de consumo)",
           "sin_comprobar": "Sin comprobar",
           "cnmc_no_responde": "La CNMC no responde",
-          "desactivada": "Desactivada"
+          "desactivada": "Desactivada",
+          "aproximada": "Aproximada (sin curva horaria)"
         }
       }
     },
@@ -316,13 +303,6 @@
         "neutral": "Neutral",
         "cheap": "Barato",
         "very_cheap": "Muy barato"
-      }
-    },
-    "update_frequency": {
-      "options": {
-        "disabled": "Desactivado",
-        "hourly": "Cada hora",
-        "minute": "Cada minuto"
       }
     },
     "price_mode": {
@@ -349,8 +329,11 @@
     },
     "tipo_fuente": {
       "options": {
-        "sensor": "Sensor de energía de Home Assistant",
-        "estadistica": "Estadística externa (dominio:objeto)"
+        "sensor": "Un medidor de energía en Home Assistant (Shelly, Emporia, IoTaWatt, lector P1, pinza Zigbee…)",
+        "datadis": "Datadis (curva oficial del contador, con 1-5 días de retraso)",
+        "ambos": "Las dos: medidor para lo reciente y Datadis como dato oficial (lo más preciso)",
+        "ninguna": "Ninguna: solo introduciré mis facturas (previsión aproximada)",
+        "estadistica": "Avanzado: estadística externa de otra integración (dominio:objeto)"
       }
     },
     "shelly_frecuencia": {
@@ -391,6 +374,17 @@
         "color_precio": "Color en el precio, barra fina detrás",
         "barra_fija": "Barra de ancho fijo, precio alineado detrás",
         "dos_columnas": "Dos columnas (00–11 h y 12–23 h)"
+      }
+    },
+    "factura_en_curso": {
+      "options": {
+        "estimar": "Estimar lo pendiente (provisional)",
+        "recibido": "Solo lo recibido"
+      }
+    },
+    "cuenta": {
+      "options": {
+        "nueva": "Añadir una cuenta de Datadis nueva"
       }
     }
   },
@@ -472,11 +466,50 @@
     },
     "periodo_cerrado_incompleto": {
       "title": "Periodo cerrado con horas sin consumo en «{suministro}»",
-      "description": "Al cerrar estos periodos faltaba el consumo de algunas horas (por ejemplo, Datadis aún no lo había publicado), que se han contado como 0 kWh: {periodos}. En total, {horas} horas. El periodo se recalcula solo en cuanto llega el consumo, y el aviso desaparece. Si no llega en {dias} días, se queda como está: introduce la factura real del periodo para corregirlo."
+      "description": "Al cerrar estos periodos faltaba el consumo de algunas horas y ya no se espera que llegue pronto (huecos, o la fuente lleva más de lo normal sin publicar): {periodos}. En total, {horas} horas. Las horas que solo estaban pendientes de publicar se han estimado; los huecos cuentan como 0 kWh. El periodo se recalcula solo en cuanto llega el consumo, y el aviso desaparece. Si no llega en {dias} días, se queda como está: introduce la factura real del periodo para corregirlo."
     },
     "factura_no_cuadra_medidor": {
       "title": "Una factura de «{suministro}» no cuadra con el medidor",
       "description": "Los kWh de estas facturas se alejan demasiado de lo que midió el medidor en el mismo periodo (contador ÷ medidor fuera de {minimo}–{maximo}): {facturas}. No se usan para calibrar el medidor; las demás facturas sí. Suele ser una factura mal introducida (revisa los kWh por periodo y las fechas) o un medidor que no mide todo el suministro. Si corriges la factura (introdúcela otra vez con las mismas fechas), el aviso desaparece."
+    },
+    "fuente_sin_datos": {
+      "title": "La fuente de consumo de «{suministro}» no da datos",
+      "description": "La fuente {fuente} no tiene ningún dato desde hace más de {horas} horas (último dato: {desde}). ¿Se ha renombrado o borrado la entidad, o la integración que la importa ha dejado de funcionar? Si la entidad cambió de nombre en el registro de entidades, la integración la sigue sola; si no, abre este aviso y elige la fuente correcta. Para cambiar de perfil (Datadis, sin fuente…), reconfigura el suministro. El aviso desaparece en cuanto vuelven los datos.",
+      "fix_flow": {
+        "step": {
+          "fuente": {
+            "title": "Otra fuente para «{suministro}»",
+            "description": "La fuente {fuente} no tiene ningún dato desde hace más de {horas} horas (último dato: {desde}). ¿Se ha renombrado o borrado la entidad, o la integración que la importa ha dejado de funcionar? Si la entidad cambió de nombre en el registro de entidades, la integración la sigue sola y basta con esperar.\n\nSi no, elige la fuente correcta: el medidor (un sensor de energía acumulada: kWh o Wh, total o total_increasing) o, si el suministro usa una estadística externa, la estadística (dominio:objeto). Se conservan las facturas y el resto de datos del suministro; lo calculado con la fuente anterior se revisa con la nueva cuando tenga datos. Para cambiar de perfil (Datadis, sin fuente…), reconfigura el suministro.",
+            "data": {
+              "fuente": "Fuente"
+            }
+          }
+        },
+        "error": {
+          "obligatorio": "Este campo es obligatorio.",
+          "misma_fuente": "Es la fuente que ya usa el suministro: elige otra.",
+          "fuente_en_uso": "Esa fuente ya la usa otro suministro.",
+          "estadistica_no_externa": "Elige una estadística externa (dominio:objeto). Para usar un sensor, reconfigura el suministro y elige «Un medidor de energía en Home Assistant».",
+          "fuente_no_encontrada": "No existe esa entidad o todavía no tiene estado.",
+          "fuente_no_energia": "El sensor debe ser de energía (kWh, Wh o MWh) con state_class total o total_increasing."
+        },
+        "abort": {
+          "ya_no_existe": "El suministro ya no existe.",
+          "perfil_cambiado": "El suministro ya no usa un medidor ni una estadística externa: no hay fuente que cambiar aquí."
+        }
+      }
+    },
+    "fuente_sin_datos_datadis": {
+      "title": "Datadis no da datos de «{suministro}»",
+      "description": "La estadística de Datadis {fuente} no tiene ningún dato desde hace más de {horas} horas (último dato: {desde}). Datadis publica con 1-5 días de retraso, pero tanto tiempo suele ser un problema de la cuenta: revisa que el usuario y la contraseña de la cuenta de Datadis sigan valiendo (reconfigura la cuenta si los cambiaste) o si Datadis está caído. Para usar otra fuente (un medidor, sin fuente…), reconfigura el suministro. El aviso desaparece en cuanto vuelven los datos."
+    },
+    "medidor_no_coincide_datadis": {
+      "title": "El medidor de «{suministro}» no coincide con Datadis",
+      "description": "En los últimos días completos con datos de las dos fuentes, Datadis ({datadis}) da un {diferencia} % frente al medidor {medidor}. Para las horas que Datadis aún no ha publicado se usa el medidor calibrado contra Datadis. Comprueba que el medidor mide todo el suministro (todas las fases, la pinza en la acometida) y que la cuenta de Datadis es la de este suministro."
+    },
+    "medidor_no_coincide_datadis_sin_calibrar": {
+      "title": "El medidor de «{suministro}» no coincide con Datadis",
+      "description": "En los últimos días completos con datos de las dos fuentes, Datadis ({datadis}) da un {diferencia} % frente al medidor {medidor}. La diferencia es demasiado grande para calibrar el medidor contra Datadis, así que para las horas que Datadis aún no ha publicado se usa el medidor tal cual. Comprueba que el medidor mide todo el suministro (todas las fases, la pinza en la acometida) y que la cuenta de Datadis es la de este suministro."
     }
   },
   "config_subentries": {
@@ -500,7 +533,7 @@
           },
           "data_description": {
             "categoria": "Fija el límite anual de kWh con descuento (RD 897/2017). Obligatoria con bono social.",
-            "tipo_fuente": "Sin una fuente de consumo horario no se puede calcular la factura.",
+            "tipo_fuente": "De dónde sale el consumo hora a hora. Con Datadis las cifras recientes son provisionales (Datadis publica con días de retraso). Sin fuente, la factura en curso es una previsión aproximada con la última factura real, y no hay coste de hoy ni kWh bonificables restantes.",
             "potencia_p1_kw": "Entre 0,1 y 15 kW.",
             "potencia_p2_kw": "Entre 0,1 y 15 kW."
           }
@@ -525,14 +558,14 @@
           },
           "data_description": {
             "categoria": "Fija el límite anual de kWh con descuento (RD 897/2017). Obligatoria con bono social.",
-            "tipo_fuente": "Sin una fuente de consumo horario no se puede calcular la factura.",
+            "tipo_fuente": "De dónde sale el consumo hora a hora. Con Datadis las cifras recientes son provisionales (Datadis publica con días de retraso). Sin fuente, la factura en curso es una previsión aproximada con la última factura real, y no hay coste de hoy ni kWh bonificables restantes.",
             "potencia_p1_kw": "Entre 0,1 y 15 kW.",
             "potencia_p2_kw": "Entre 0,1 y 15 kW."
           }
         },
         "fuente": {
           "title": "Fuente del consumo",
-          "description": "Un sensor de energía (kWh, acumulado) o una estadística externa que importe la curva horaria (por ejemplo, de Datadis).",
+          "description": "Elige el medidor: cualquier sensor de energía acumulada (kWh o Wh, total o total_increasing) de cualquier marca (Shelly, Emporia, IoTaWatt, lector P1/DSMR, pinza Tuya/Zigbee, un utility_meter o una integración de Riemann…). En la opción avanzada, una estadística externa que importe la curva horaria.",
           "data": {
             "fuente": "Fuente"
           }
@@ -547,22 +580,26 @@
             "arrastre_inicial_kwh": "kWh con descuento acumulados (arrastre)",
             "codigo_postal": "Código postal (para las opciones de la CNMC)",
             "comparar_mensual": "Comparar tarifas cada mes",
+            "comparar_fin_de_mes": "Completar el histórico de comparativas a fin de mes",
             "segunda_opinion_cnmc": "Comprobar cada factura con la CNMC",
             "comparador_destino": "Enviar la comparativa de tarifas a",
             "comparador_envio": "Cuándo enviarla",
             "comparador_umbral_eur": "Ahorro mínimo para enviarla (€/año)",
-            "comparador_formato": "Formato del mensaje"
+            "comparador_formato": "Formato del mensaje",
+            "factura_en_curso": "Factura en curso"
           },
           "data_description": {
             "arrastre_inicial_kwh": "Los kWh bonificables que te sobraron en los últimos 12 meses y que aún no has gastado. Si no lo sabes, deja 0: se corregirá al conciliar las facturas.",
-            "codigo_postal": "Opcional: solo hace falta para las dos opciones de abajo, que envían datos a la CNMC. Comparar tarifas envía el código postal, las potencias y los kWh anuales por periodo. Comprobar cada factura envía además el consumo hora a hora del periodo y el tipo de bono. Sin esas opciones no se envía nada.",
+            "codigo_postal": "Opcional: solo hace falta para las opciones de abajo, que envían datos a la CNMC. Comparar tarifas envía el código postal, las potencias y los kWh anuales por periodo. Comprobar cada factura envía además el consumo hora a hora del periodo y el tipo de bono. Sin esas opciones no se envía nada.",
             "comparar_mensual": "El día 2 de cada mes compara tus últimos 12 meses con las ofertas de la CNMC y deja una notificación. Necesita el código postal.",
+            "comparar_fin_de_mes": "Completar el histórico: si en el mes no se ha comparado, compara el último día (a las 21:43) sin notificación ni envío, solo para rellenar el histórico de comparativas de la tarjeta. Envía a la CNMC lo mismo que «Comparar tarifas cada mes». Necesita el código postal.",
             "segunda_opinion_cnmc": "Al introducir una factura real, la integración pide la misma factura al simulador oficial de la CNMC (con los kWh del contador de la factura) y te avisa si no cuadra. Se envían el consumo hora a hora del periodo, las potencias, el tipo de bono y el código postal (sin CUPS). Necesita el código postal.",
             "comparador_destino": "Opcional. Una entidad notify (un chat de Telegram, el móvil…). Para Telegram hace falta la integración Telegram bot configurada en Home Assistant. Además de la notificación de Home Assistant, la comparativa (botón o mensual) se envía ahí.",
             "comparador_umbral_eur": "Solo con «Solo si hay una oferta que ahorre»: la mejor oferta tiene que ahorrar más que esto al año.",
             "fin_ultima_factura": "Fin de la última factura: es el inicio del periodo en curso. Al reconfigurar se propone el que rige ahora; si lo cambias, el periodo en curso pasa a empezar ese día (también hacia atrás) y se recalculan los periodos estimados posteriores.",
             "dias_hasta_emision": "Entre 0 y 30 días.",
-            "alquiler_contador_eur_mes": "Entre 0 y 5 €."
+            "alquiler_contador_eur_mes": "Entre 0 y 5 €.",
+            "factura_en_curso": "Mientras la fuente no ha publicado las últimas horas (Datadis tarda de 1 a 5 días): estimarlas con tu consumo de las últimas semanas (cifras provisionales, marcadas con ≈) o enseñar solo lo recibido («datos hasta …»). La previsión al cierre siempre las estima, y los kWh bonificables restantes las cuentan como gastadas."
           }
         },
         "comprobacion": {
@@ -620,12 +657,34 @@
             "factura_real": "Añadir otra factura",
             "terminar": "Terminar"
           }
+        },
+        "datadis": {
+          "title": "Cuenta de Datadis",
+          "description": "Elige la cuenta de Datadis de la que sale la curva horaria de este suministro, o añade una nueva.",
+          "data": {
+            "cuenta": "Cuenta"
+          }
+        },
+        "datadis_nueva": {
+          "title": "Cuenta de Datadis nueva",
+          "description": "Usuario y contraseña de datadis.es. La cuenta se crea al terminar el alta del suministro; la primera descarga tarda unos minutos y, hasta entonces, la factura no tiene consumo.",
+          "data": {
+            "usuario": "Usuario (NIF/NIE)",
+            "clave": "Contraseña"
+          }
+        },
+        "datadis_cups": {
+          "title": "Suministro de Datadis",
+          "description": "Tu cuenta de Datadis tiene varios suministros: elige el de este.",
+          "data": {
+            "cups": "Suministro"
+          }
         }
       },
       "error": {
         "categoria_requerida": "Con bono social hay que indicar la unidad de convivencia.",
         "fuente_en_uso": "Esa fuente ya la usa otro suministro.",
-        "estadistica_no_externa": "Elige una estadística externa (dominio:objeto). Para un sensor, vuelve atrás y elige «Sensor de energía».",
+        "estadistica_no_externa": "Elige una estadística externa (dominio:objeto). Para usar un sensor, cierra este asistente, vuelve a empezar y elige «Un medidor de energía en Home Assistant».",
         "fuente_no_encontrada": "No existe esa entidad o todavía no tiene estado.",
         "fuente_no_energia": "El sensor debe ser de energía (kWh, Wh o MWh) con state_class total o total_increasing.",
         "pdf_no_reconocido": "No se reconoce el PDF. Solo se leen las facturas de la Comercializadora Regulada, Gas & Power (Naturgy); con otras, deja el archivo vacío e introduce los datos a mano.",
@@ -650,7 +709,10 @@
         "rango_kwh": "Debe estar entre 0 y 100000 kWh.",
         "rango_total": "Debe estar entre 0 y 100000 €.",
         "codigo_postal_requerido": "Para comparar tarifas o comprobar las facturas con la CNMC hace falta el código postal.",
-        "nombre_en_uso": "Ya hay un suministro con ese nombre: elige otro para que no se mezclen sus costes en el panel de Energía."
+        "nombre_en_uso": "Ya hay un suministro con ese nombre: elige otro para que no se mezclen sus costes en el panel de Energía.",
+        "credenciales": "Usuario o contraseña de Datadis incorrectos.",
+        "no_responde": "Datadis no responde. Inténtalo más tarde.",
+        "sin_suministros": "Datadis no devuelve ningún suministro para esta cuenta."
       },
       "abort": {
         "reconfigure_successful": "Suministro actualizado.",
@@ -764,6 +826,7 @@
           "description": "¿Qué quieres hacer?",
           "menu_options": {
             "importar_csv": "Importar un CSV de datadis.es",
+            "historico": "Descargar histórico completo",
             "cuenta": "Cambiar usuario o contraseña"
           }
         },
@@ -773,6 +836,10 @@
           "data": {
             "csv": "CSV de consumo"
           }
+        },
+        "historico": {
+          "title": "Descargar histórico completo",
+          "description": "Pide a Datadis todo el consumo horario que permite (como mucho dos años): de {desde} a {hasta}. Lo más reciente ya lo trae la consulta diaria. Va en segundo plano y puede tardar unos minutos; al terminar saldrá una notificación. Las horas que ya tengas guardadas en esos meses se sustituyen por las de Datadis, igual que al importar un CSV. Si Datadis no responde o pide esperar (solo deja repetir una consulta cada 24 h), se reintenta más tarde."
         },
         "cuenta": {
           "title": "Cuenta de Datadis",
@@ -793,7 +860,9 @@
         "ya_configurado": "Ese suministro ya está configurado.",
         "reconfigure_successful": "Cuenta actualizada: se consultará Datadis ahora.",
         "no_cargada": "La integración no está cargada. Actívala y vuelve a intentarlo.",
-        "csv_importado": "Importadas {horas} horas. Días descartados: {rechazados}."
+        "csv_importado": "Importadas {horas} horas. Días descartados: {rechazados}.",
+        "historico_iniciado": "Descarga iniciada ({desde} – {hasta}). Al terminar saldrá una notificación; mientras, el atributo «historico» del sensor de estado de Datadis indica cómo va.",
+        "historico_nada": "No hay nada más que descargar: la consulta diaria ya cubre todo lo que deja Datadis."
       }
     }
   },
@@ -837,6 +906,24 @@
         "kwh_bonificados": {
           "name": "kWh bonificados",
           "description": "Suma de los kWh con descuento de la factura (opcional, mejora el cálculo del bono)."
+        },
+        "comprobar": {
+          "name": "Comprobar con la CNMC",
+          "description": "Pide a la CNMC la comprobación de la última factura (si el suministro la tiene activada). Al introducir varias seguidas, basta con la última."
+        }
+      }
+    },
+    "leer_facturas": {
+      "name": "Leer facturas",
+      "description": "Lee los PDF de factura subidos (o ZIP con varios) con el mismo lector que «Factura real» y devuelve sus datos para revisarlos, sin introducir nada. Solo se leen las facturas de la Comercializadora Regulada, Gas & Power (Naturgy).",
+      "fields": {
+        "suministro": {
+          "name": "Suministro",
+          "description": "El suministro de las facturas."
+        },
+        "archivos": {
+          "name": "Archivos",
+          "description": "Ids de los archivos subidos a Home Assistant (PDF o ZIP), hasta 12."
         }
       }
     },
@@ -893,6 +980,68 @@
           "description": "Entidad de notificación (por ejemplo, un chat de Telegram). Si no se indica, la de las opciones del suministro."
         }
       }
+    }
+  },
+  "exceptions": {
+    "sin_historico": {
+      "message": "Todavía no hay histórico de precios."
+    },
+    "dispositivo_no_existe": {
+      "message": "No existe el dispositivo {device_id}."
+    },
+    "no_es_suministro": {
+      "message": "Ese dispositivo no es un suministro de PVPC + Bono Social."
+    },
+    "importe_a_cero": {
+      "message": "El total de la factura no puede ser cero."
+    },
+    "bonificados_mayor_que_consumo": {
+      "message": "Los kWh bonificados no pueden superar al consumo."
+    },
+    "periodo_factura_no_valido": {
+      "message": "El periodo de la factura debe tener entre 1 y 62 días."
+    },
+    "factura_futura": {
+      "message": "La factura no puede acabar después de hoy."
+    },
+    "factura_no_guardada": {
+      "message": "No se ha podido guardar la factura: {error}"
+    },
+    "no_cargada": {
+      "message": "PVPC + Bono Social no está cargada."
+    },
+    "sin_resumen": {
+      "message": "No hay ningún resumen configurado: añade uno o indica el destino."
+    },
+    "resumen_no_enviado": {
+      "message": "No se pudo enviar el resumen a {destinos}"
+    },
+    "manana_sin_precios": {
+      "message": "Mañana aún no tiene precios publicados."
+    },
+    "sin_comparativa": {
+      "message": "Aún no hay ninguna comparativa: compara las tarifas antes de enviarla."
+    },
+    "comparativa_sin_destino": {
+      "message": "El suministro no tiene destino para la comparativa: elígelo en las opciones del suministro."
+    },
+    "comparar_sin_codigo_postal": {
+      "message": "Falta el código postal del suministro: añádelo con la rueda dentada ⚙ del suministro (Reconfigurar) para comparar tarifas."
+    },
+    "comparar_sin_datos": {
+      "message": "Aún no hay ningún periodo de factura cerrado: hace falta al menos uno para comparar."
+    },
+    "comparar_cnmc_no_responde": {
+      "message": "El comparador de la CNMC no responde; inténtalo más tarde."
+    },
+    "fin_periodo_no_valido": {
+      "message": "El fin del periodo tiene que ser posterior al {inicio} y como mucho el {fin}."
+    },
+    "sin_periodo_en_curso": {
+      "message": "Todavía no hay un periodo en curso."
+    },
+    "subentrada_error": {
+      "message": "error inesperado: {tipo}"
     }
   }
 }
